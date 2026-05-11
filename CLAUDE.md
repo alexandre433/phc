@@ -1,61 +1,131 @@
-# CLAUDE Coding Guidelines
+# CLAUDE.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+## Project
 
-## 1. Think Before Coding
+PHC is a new compiled programming language (PHP ergonomics, C speed, Rust memory safety). Compiler and toolchain written in Rust. Currently in design and scaffolding phase.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+## Build Commands
 
-Before implementing:
+```
+cargo check
+cargo build
+cargo test
+cargo fmt
+cargo clippy
+```
 
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+Run single test: `cargo test -p <crate-name> <test_name>`
 
-## 2. Simplicity First
+## Architecture
 
-**Minimum code that solves the problem. Nothing speculative.**
+Rust workspace. Pipeline: source → lexer → parser → AST → semantic → typecheck → borrowcheck → IR → lower → opt → codegen → binary.
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+Crate responsibilities:
+- `phc` — CLI entry point
+- `phc-ast` — AST node definitions
+- `phc-lexer` — tokenization (logos)
+- `phc-parser` — parsing
+- `phc-semantic` — name resolution, semantic analysis
+- `phc-typecheck` — type inference and checking
+- `phc-borrowcheck` — ownership/borrow checking
+- `phc-ir` — intermediate representation
+- `phc-lower` — AST → IR lowering
+- `phc-opt` — optimization passes
+- `phc-codegen` — LLVM codegen (inkwell)
+- `phc-runtime` — async, CoW, panic support
+- `phc-build` — build system (pack-level caching, parallel compilation)
+- `phc-pkg` — package manager
+- `phc-fmt` — formatter
+- `phc-lint` — linter
+- `phc-lsp` — LSP server (tower-lsp, miette for diagnostics)
+- `phc-test` — testing framework
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+`spec/` holds the formal language specification (currently placeholder).
 
-## 3. Surgical Changes
+## Canonical Design Source
 
-**Touch only what you must. Clean up only your own mess.**
+Precedence order:
+1. User instructions in current conversation
+2. Files in `spec/`
+3. GitHub issue `#1` — current design source of truth until formal spec exists
+4. Issues `#2–#11` — phase implementation roadmap
 
-When editing existing code:
+## Locked Design Decisions
 
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+Do not contradict these unless the user explicitly changes them:
 
-When your changes create orphans:
+- **Modules**: called *packs*, acyclic only, private by default
+- **OOP**: no class inheritance, no `extends` in v0; reuse via traits, interfaces, composition
+- **Async**: explicit `async`/`await`, structured concurrency (task groups, parent-child cancellation), no implicit promotion
+- **Memory**: ownership + borrowing (not GC); lifetimes inferred by default; CoW for strings and collections
+- **Mutability**: immutable by default; `flip` keyword for mutable bindings; `:=` for reassignment; `&name` shared borrow, `&flip name` mutable borrow
+- **Types**: static by default; `dyn` for explicit dynamic opt-in; non-nullable by default; `?` for nullable
+- **Errors**: Result-style for domain failures; exceptions/panics only for unrecoverable faults
 
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+## Still Open — Do Not Invent
 
-The test: Every changed line should trace directly to the user's request.
+Do not silently decide any of these. Offer options or ask:
 
-## 4. Goal-Driven Execution
+- Function, class, struct, enum declaration syntax
+- Pattern matching syntax
+- Trait/interface method resolution details
+- Generic syntax and bounds
+- Visibility keywords
+- Import/pack syntax
+- Lambda/closure syntax
+- String interpolation syntax
+- Property/accessor syntax
+- Manifest format
+- Standard library surface
 
-**Define success criteria. Loop until verified.**
+When syntax decisions are needed: ask, or offer 2–4 concrete options, or implement syntax-independent infrastructure first.
 
-Transform tasks into verifiable goals:
+## Phase Model
 
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
+| Issue | Phase |
+|-------|-------|
+| `#2` | Phase 1: Language Spec & Formal Grammar |
+| `#3` | Phase 2: Lexer & Parser |
+| `#4` | Phase 3: Type Checker & Semantic Analysis |
+| `#5` | Phase 4: IR & Lowering |
+| `#6` | Phase 5: Code Generation & Runtime |
+| `#7` | Phase 6: Standard Library |
+| `#8` | Phase 7: Package Manager & Build System |
+| `#9` | Phase 8: Tooling (fmt, lint, LSP) |
+| `#10` | Phase 9: Testing Framework |
+| `#11` | Phase 10: Docs & Release |
 
-For multi-step tasks, state a brief plan:
+Do not pull future-phase work into earlier phases unless explicitly asked.
+
+## Rust Implementation Rules
+
+- Keep crates single-purpose; mirror compiler phases
+- Explicit types at public boundaries
+- No unnecessary macros
+- No `unsafe` unless required for performance/FFI — document why
+- Preserve spans and source locations; diagnostics are first-class
+- Design for pack-level caching, invalidation, and parallel compilation
+
+## Commit Style
+
+```
+chore: scaffold parser crate
+feat(parser): add token stream abstraction
+docs(spec): add operator precedence draft
+refactor(ir): split control-flow nodes from value nodes
+```
+
+## Behavioral Guidelines
+
+**Think before coding.** State assumptions. Surface tradeoffs. If multiple interpretations exist, present them. If unclear, stop and ask.
+
+**Simplicity first.** Minimum code. No speculative abstractions. If 200 lines could be 50, rewrite. Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+**Surgical changes.** Touch only what the task requires. Match existing style. Mention unrelated dead code, don't delete it. Every changed line should trace directly to the user's request.
+
+**Goal-driven execution.** Define verifiable success criteria before starting. For multi-step tasks, state a brief plan:
 
 ```
 1. [Step] → verify: [check]
@@ -65,51 +135,21 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+**Use model for judgment only.** Classification, drafting, summarization. Not routing, retries, or deterministic transforms.
 
-## Rule 5 — Use the model only for judgment calls
+**Token budgets.** Per-task: 4,000 tokens. Per-session: 30,000. Summarize and start fresh if approaching limit. Surface the breach.
 
-Use me for: classification, drafting, summarization, extraction.
-Do NOT use me for: routing, retries, deterministic transforms.
-If code can answer, code answers.
+**Surface conflicts.** If two patterns contradict, pick one (more recent/tested), explain why, flag the other.
 
-## Rule 6 — Token budgets are not advisory
+**Read before write.** Before adding code, read exports, callers, shared utilities.
 
-Per-task: 4,000 tokens. Per-session: 30,000 tokens.
-If approaching budget, summarize and start fresh.
-Surface the breach. Do not silently overrun.
+**Tests verify intent.** Tests must encode WHY behavior matters, not just WHAT it does.
 
-## Rule 7 — Surface conflicts, don't average them
+**Checkpoint after significant steps.** Summarize what's done, verified, and left.
 
-If two patterns contradict, pick one (more recent / more tested).
-Explain why. Flag the other for cleanup.
-Don't blend conflicting patterns.
+**Match codebase conventions.** Conformance over taste. Surface genuine concerns, don't fork silently.
 
-## Rule 8 — Read before you write
-
-Before adding code, read exports, immediate callers, shared utilities.
-"Looks orthogonal" is dangerous. If unsure why code is structured a way, ask.
-
-## Rule 9 — Tests verify intent, not just behavior
-
-Tests must encode WHY behavior matters, not just WHAT it does.
-A test that can't fail when business logic changes is wrong.
-
-## Rule 10 — Checkpoint after every significant step
-
-Summarize what was done, what's verified, what's left.
-Don't continue from a state you can't describe back.
-If you lose track, stop and restate.
-
-## Rule 11 — Match the codebase's conventions, even if you disagree
-
-Conformance > taste inside the codebase.
-If you genuinely think a convention is harmful, surface it. Don't fork silently.
-
-## Rule 12 — Fail loud
-
-"Completed" is wrong if anything was skipped silently.
-"Tests pass" is wrong if any were skipped.
-Default to surfacing uncertainty, not hiding it.
+**Fail loud.** Never silently skip. Surface uncertainty.
 
 ---
 
