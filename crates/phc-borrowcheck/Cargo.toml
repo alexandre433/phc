@@ -1,0 +1,12 @@
+[package]
+name = "phc-borrowcheck"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC borrow checker and lifetime inference"
+
+[dependencies]
+phc-ast = { path = "../phc-ast" }
+miette = { workspace = true }

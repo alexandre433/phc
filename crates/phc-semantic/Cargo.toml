@@ -1,0 +1,12 @@
+[package]
+name = "phc-semantic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC semantic analysis and validation"
+
+[dependencies]
+phc-ast = { path = "../phc-ast" }
+miette = { workspace = true }

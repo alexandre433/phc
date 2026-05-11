@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "phc",
+    "crates/phc-ast",
+    "crates/phc-lexer",
+    "crates/phc-parser",
+    "crates/phc-typecheck",
+    "crates/phc-borrowcheck",
+    "crates/phc-semantic",
+    "crates/phc-ir",
+    "crates/phc-lower",
+    "crates/phc-opt",
+    "crates/phc-codegen",
+    "crates/phc-runtime",
+    "crates/phc-fmt",
+    "crates/phc-lint",
+    "crates/phc-lsp",
+    "crates/phc-build",
+    "crates/phc-pkg",
+    "crates/phc-test",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Alexandre Candeias"]
+repository = "https://github.com/alexandre433/phc"
+
+[workspace.dependencies]
+# Lexing
+logos = "0.14"
+
+# Error diagnostics
+miette = { version = "7", features = ["fancy"] }
+thiserror = "1"
+
+# LSP
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

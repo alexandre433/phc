@@ -1,0 +1,11 @@
+[package]
+name = "phc-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC LLVM code generation backend"
+
+[dependencies]
+phc-ir = { path = "../phc-ir" }

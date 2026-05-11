@@ -1,0 +1,12 @@
+[package]
+name = "phc-pkg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC package manager and dependency resolver"
+
+[dependencies]
+toml = { workspace = true }
+serde = { workspace = true }

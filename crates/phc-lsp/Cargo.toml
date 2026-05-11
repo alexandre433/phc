@@ -1,0 +1,14 @@
+[package]
+name = "phc-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC Language Server Protocol (LSP) implementation"
+
+[dependencies]
+tower-lsp = { workspace = true }
+tokio = { workspace = true }
+phc-ast = { path = "../phc-ast" }
+phc-typecheck = { path = "../phc-typecheck" }

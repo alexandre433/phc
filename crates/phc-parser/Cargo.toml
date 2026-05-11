@@ -1,0 +1,13 @@
+[package]
+name = "phc-parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC parser — produces a typed AST from tokens"
+
+[dependencies]
+phc-ast = { path = "../phc-ast" }
+phc-lexer = { path = "../phc-lexer" }
+miette = { workspace = true }
