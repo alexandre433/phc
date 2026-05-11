@@ -1,0 +1,198 @@
+(* PHC v0 — Formal Grammar
+   Status: in progress (Phase 1). Productions are added as design decisions land.
+   Source of truth supersedes GitHub issue #1 once Phase 1 is accepted.
+*)
+
+(* ===== Lexical structure ===== *)
+
+(* Whitespace and comments are skipped by the lexer, not represented in productions. *)
+LineComment   = "//" { any-char-except-newline } newline ;
+BlockComment  = "/*" { any-char | BlockComment } "*/" ;       (* nesting allowed *)
+
+(* Identifiers: ASCII for v0. Unicode identifier rules deferred. *)
+Identifier    = ( letter | "_" ) { letter | digit | "_" } ;
+letter        = "A".."Z" | "a".."z" ;
+digit         = "0".."9" ;
+
+(* Literals *)
+IntLiteral    = digit { digit | "_" } ;
+FloatLiteral  = digit { digit | "_" } "." digit { digit | "_" } ;
+BoolLiteral   = "true" | "false" ;
+NullLiteral   = "null" ;
+(* String literal — every double-quoted string interpolates (D-017). *)
+StringLiteral = '"' { StringPart } '"' ;
+StringPart    = StringChar | EscapeSeq | InterpExpr | "{{" | "}}" ;
+InterpExpr    = "{" Expression "}" ;
+EscapeSeq     = "\\" ( '"' | "\\" | "n" | "t" | "r" | "0" | "u" "{" hex+ "}" ) ;
+(* StringChar: any character except `"`, `\`, `{`, `}`. *)
+
+(* Reserved keywords — see spec/keywords.md for the canonical list.
+   Locked so far: flip, async, await, dyn, public, true, false, null.
+   More keywords are added as declaration forms are decided. *)
+
+(* Visibility modifier (D-008) *)
+Visibility    = [ "public" ] ;
+
+(* Locked operators / punctuation *)
+AssignReassign = ":=" ;
+SharedBorrow   = "&" ;       (* prefix on an identifier for shared borrow *)
+MutBorrow      = "&" "flip" ; (* two tokens; lexer keeps them separate *)
+Nullable       = "?" ;       (* suffix on a type *)
+
+(* ===== Types ===== *)
+
+Type            = TypePath [ TypeArgs ] [ Nullable ] ;
+TypePath        = Identifier { "." Identifier } ;
+TypeArgs        = "<" Type { "," Type } ">" ;
+Nullable        = "?" ;
+
+(* Generic parameter list on a declaration (D-014) *)
+GenericParams   = "<" GenericParam { "," GenericParam } ">" ;
+GenericParam    = Identifier [ ":" BoundList ] ;
+BoundList       = TypePath { "+" TypePath } ;
+
+(* ===== Expressions =====
+   Precedence table (highest → lowest), C-family conventional:
+     1. PrimaryExpr / call / member access / index / `.` path
+     2. unary `!`, unary `-`, borrow `&` / `&flip`, `await`
+     3. `as` cast
+     4. `*` `/` `%`
+     5. `+` `-`
+     6. `<` `<=` `>` `>=`
+     7. `==` `!=`
+     8. `&&`
+     9. `||`
+    10. `??`  (null-coalesce)
+    11. (`match` and `Lambda` are expressions at the top level of this table)
+   Right-associative: `as`, `??`. Others left-associative.
+   See spec/operators.md for the same information in tabular form.
+*)
+
+Expression      = NullCoalesce ;
+NullCoalesce    = OrExpr        { "??"  OrExpr } ;           (* right-assoc handled in parser *)
+OrExpr          = AndExpr       { "||"  AndExpr } ;
+AndExpr         = EqExpr        { "&&"  EqExpr } ;
+EqExpr          = CmpExpr       { ( "==" | "!=" ) CmpExpr } ;
+CmpExpr         = AddExpr       { ( "<" | "<=" | ">" | ">=" ) AddExpr } ;
+AddExpr         = MulExpr       { ( "+" | "-" ) MulExpr } ;
+MulExpr         = CastExpr      { ( "*" | "/" | "%" ) CastExpr } ;
+CastExpr        = UnaryExpr     { "as" Type } ;
+UnaryExpr       = ( "!" | "-" | "await" | BorrowMod ) UnaryExpr
+                | PostfixExpr ;
+PostfixExpr     = PrimaryExpr { Postfix } ;
+Postfix         = "." Identifier
+                | "(" [ ArgList ] ")"
+                | "[" Expression "]" ;
+ArgList         = Expression { "," Expression } [ "," ] ;
+
+PrimaryExpr     = Literal
+                | "this"
+                | Identifier
+                | TypePath                 (* for static-style access, e.g. Method.Get *)
+                | StringLiteral            (* interpolation is part of StringLiteral *)
+                | MatchExpr
+                | Lambda
+                | "(" Expression ")" ;
+
+(* Lambda expression (D-016) *)
+Lambda          = "(" [ ParamList ] ")" [ ":" Type ] "=>" LambdaBody ;
+LambdaBody      = Expression
+                | Block ;
+
+Literal         = IntLiteral
+                | FloatLiteral
+                | BoolLiteral
+                | NullLiteral
+                | StringLiteral ;
+
+(* ===== Statements ===== *)
+
+Statement       = LocalBinding
+                | Reassign
+                | IfStmt
+                | WhileStmt
+                | ForStmt
+                | ReturnStmt
+                | BreakStmt
+                | ContinueStmt
+                | ExprStmt ;
+
+IfStmt          = "if" "(" Expression ")" Block { "else" "if" "(" Expression ")" Block } [ "else" Block ] ;
+WhileStmt       = "while" "(" Expression ")" Block ;
+ForStmt         = "for" "(" Type Identifier "in" Expression ")" Block ;
+ReturnStmt      = "return" [ Expression ] ";" ;
+BreakStmt       = "break" ";" ;
+ContinueStmt    = "continue" ";" ;
+ExprStmt        = Expression ";" ;
+
+(* ===== Declarations ===== *)
+
+(* Function declaration (D-009) *)
+FunctionDecl  = Visibility [ "async" ] "function" Identifier "(" [ ParamList ] ")" ":" Type Block ;
+ParamList     = Param { "," Param } ;
+Param         = ParamType Identifier ;
+ParamType     = [ BorrowMod ] Type ;
+BorrowMod     = "&" | "&" "flip" ;
+Block         = "{" { Statement } "}" ;
+
+(* Local binding (D-010) *)
+LocalBinding  = [ "flip" ] Type Identifier "=" Expression ";" ;
+Reassign      = Identifier ":=" Expression ";" ;
+
+(* Pack declaration and imports (D-011) *)
+SourceFile    = PackDecl { UseDecl } { Item } ;
+PackDecl      = "pack" PackPath ";" ;
+UseDecl       = "use" PackPath [ "." "{" ImportList "}" ] ";" ;
+PackPath      = Identifier { "." Identifier } ;
+ImportList    = Identifier { "," Identifier } ;
+
+(* Class declaration (D-012) *)
+ClassDecl     = Visibility "class" Identifier "{" { ClassMember } "}" ;
+ClassMember   = ConstructDecl
+              | FieldDecl
+              | FunctionDecl ;
+ConstructDecl = "construct" "(" [ ConstructParams ] ")" Block ;
+ConstructParams = ConstructParam { "," ConstructParam } [ "," ] ;
+ConstructParam  = [ "public" ] [ "flip" ] Type Identifier ;
+FieldDecl     = Visibility [ "flip" ] Type Identifier [ "=" Expression ] [ HookBlock ] ";" ;
+
+(* Property hooks (D-018) *)
+HookBlock     = "{" { Hook } "}" ;
+Hook          = GetHook | SetHook ;
+GetHook       = "get" "=>" Expression ";"
+              | "get" Block ;
+SetHook       = "set" "(" Type Identifier ")" Block ;
+
+(* Enum declaration (D-012) *)
+EnumDecl      = Visibility "enum" Identifier [ ":" Type ] "{" EnumVariants "}" ;
+EnumVariants  = EnumVariant { "," EnumVariant } [ "," ] ;
+EnumVariant   = Identifier [ "=" Literal ] ;
+
+(* Interface and trait declarations (D-013) *)
+InterfaceDecl = Visibility "interface" Identifier "{" { MethodSig } "}" ;
+MethodSig     = "function" Identifier "(" [ ParamList ] ")" ":" Type ";" ;
+
+TraitDecl     = Visibility "trait" Identifier "{" { FunctionDecl } "}" ;
+
+(* Class header extension for interface implementation (extends ClassDecl from D-012) *)
+ClassHeader   = Visibility "class" Identifier [ "implements" InterfaceList ] ;
+InterfaceList = Identifier { "," Identifier } ;
+
+(* In-class trait mixin (extends ClassMember from D-012) *)
+TraitUse      = "use" Identifier ";" ;
+
+(* ===== Pattern matching (D-015) ===== *)
+
+MatchExpr     = "match" "(" Expression ")" "{" MatchArms "}" ;
+MatchArms     = MatchArm { "," MatchArm } [ "," ] ;
+MatchArm      = Pattern [ "if" Expression ] "=>" Expression ;
+Pattern       = OrPattern ;
+OrPattern     = AtomPattern { "|" AtomPattern } ;
+AtomPattern   = "_"
+              | Literal
+              | EnumVariantPath
+              | Identifier ;                    (* binding capture *)
+EnumVariantPath = Identifier "." Identifier ;
+
+(* ===== Async ===== *)
+(* TBD — async fn, await expr, task group. *)

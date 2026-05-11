@@ -1,19 +1,23 @@
 # PHC Language Specification
 
-This directory contains the formal language specification for PHC v0.
+This directory holds the formal language specification for PHC v0.
 
 ## Status
 
-> ⚠️ Not yet written. This directory will be populated during **Phase 1** ([issue #2](https://github.com/alexandre433/phc/issues/2)).
+> ✅ Phase 1 complete (2026-05-11). This directory is the **canonical** design source for PHC v0. It supersedes GitHub issue #1.
 
-## Planned Files
+## Files
 
 | File | Description |
 |------|-------------|
-| `grammar.ebnf` | Formal EBNF grammar covering all PHC syntax |
-| `language-reference.md` | Full language reference for developers |
-| `design-decisions.md` | Rationale for every major design decision |
+| [`grammar.ebnf`](./grammar.ebnf) | Formal EBNF grammar |
+| [`language-reference.md`](./language-reference.md) | Developer-facing language reference |
+| [`design-decisions.md`](./design-decisions.md) | Rationale for every locked and provisional decision (D-001…D-022) |
+| [`keywords.md`](./keywords.md) | Reserved keyword table |
+| [`operators.md`](./operators.md) | Operator precedence / associativity table |
 
-## Current Design Decisions
+## Phase status
 
-All locked and open design decisions are tracked in [issue #1](https://github.com/alexandre433/phc/issues/1) until the formal spec is written.
+- **Phase 1 (#2)** — closed. All locked decisions and the formal grammar live here.
+- **Phase 2 (#3)** lexer/parser work consumes this directory as input.
+- D-021 (test syntax) and D-022 (stdlib core surface) are intentionally provisional and will be finalised in Phase 9 and Phase 6 respectively.

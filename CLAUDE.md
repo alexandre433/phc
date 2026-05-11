@@ -48,8 +48,8 @@ Crate responsibilities:
 
 Precedence order:
 1. User instructions in current conversation
-2. Files in `spec/`
-3. GitHub issue `#1` — current design source of truth until formal spec exists
+2. Files in `spec/` — canonical design source as of 2026-05-11 (Phase 1 complete)
+3. GitHub issue `#1` — historical context only; `spec/` overrides on any conflict
 4. Issues `#2–#11` — phase implementation roadmap
 
 ## Locked Design Decisions
@@ -66,21 +66,12 @@ Do not contradict these unless the user explicitly changes them:
 
 ## Still Open — Do Not Invent
 
-Do not silently decide any of these. Offer options or ask:
+Phase 1 closed every syntax decision listed in issue #1's checklist (see `spec/design-decisions.md`, D-008…D-020). Only the following remain provisional and must not be silently expanded:
 
-- Function, class, struct, enum declaration syntax
-- Pattern matching syntax
-- Trait/interface method resolution details
-- Generic syntax and bounds
-- Visibility keywords
-- Import/pack syntax
-- Lambda/closure syntax
-- String interpolation syntax
-- Property/accessor syntax
-- Manifest format
-- Standard library surface
+- D-021 — Test syntax. Locked enough to reserve the `test` keyword; full surface is Phase 9 work.
+- D-022 — Standard library core surface. Primitive widths, collection method surfaces, `Result`/`Option`/`Display`/`From`/`Into` shapes are Phase 6 work.
 
-When syntax decisions are needed: ask, or offer 2–4 concrete options, or implement syntax-independent infrastructure first.
+Any syntax decision not yet recorded in `spec/`: ask, or offer 2–4 concrete options.
 
 ## Phase Model
 

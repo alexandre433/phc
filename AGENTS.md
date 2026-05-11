@@ -23,12 +23,12 @@ The repo already contains a Rust workspace skeleton with crate placeholders for 
 Use the following precedence when deciding what is true:
 
 1. User instructions in the current conversation
-2. Files committed in the repository, especially inside `spec/`
-3. GitHub issue `#1` — current canonical source for PHC v0 design decisions until the formal spec is written
+2. Files in `spec/` — canonical design source as of 2026-05-11 (Phase 1 complete)
+3. GitHub issue `#1` — historical context only; `spec/` overrides on any conflict
 4. Child phase issues `#2–#11` — implementation roadmap and scope per phase
 5. Issue `#12` — post-v0 roadmap
 
-Important: issue `#1` is the current design source of truth for now, but once Phase 1 is completed, the formal spec files in `spec/` should become the real canonical source.
+Phase 1 has been completed: the spec files in `spec/` are now the canonical source.
 
 ## What has already been decided
 
@@ -98,28 +98,14 @@ These decisions are already locked unless the user explicitly changes them.
 
 ## What is still open
 
-These areas are still unresolved and should not be silently invented unless the user explicitly asks for a proposal or final decision.
+Phase 1 resolved every syntax item from issue #1's open checklist (see `spec/design-decisions.md`, D-008…D-020). The remaining provisional items are:
 
-- Function declaration syntax
-- Class, struct, and enum declaration syntax
-- Enum and sum type design
-- Pattern matching design and syntax
-- Trait and interface details and method resolution
-- Generic syntax and generic bounds syntax
-- Visibility keyword syntax
-- Import, module, and pack syntax
-- Lambda and closure syntax
-- String interpolation syntax
-- Property and accessor syntax
-- Type inference scope details
-- Value vs reference semantics for user-defined types
-- Casting and conversion rules
-- Manifest format details
-- Test syntax details
-- Standard library surface details
-- Formatter, linter, and LSP exact expectations
+- **D-021 — Test syntax** (provisional; finalised in Phase 9 / issue #10)
+- **D-022 — Standard library core surface** (provisional; finalised in Phase 6 / issue #7)
+- **Formatter, linter, LSP details** — Phase 8 (issue #9)
+- **Lockfile, workspaces, features** — Phase 7 (issue #8)
 
-When these need to be addressed, prefer adding the decision to issue `#1` and then reflecting it in `spec/`.
+When extending these, record the decision in `spec/design-decisions.md` and update `spec/grammar.ebnf` / `spec/language-reference.md` accordingly. Reflect material changes in `CLAUDE.md` and this file too.
 
 ## Repo structure
 
