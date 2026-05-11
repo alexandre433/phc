@@ -51,11 +51,11 @@ Once Phase 1 is accepted this file supersedes GitHub issue #1 as the source of t
 - **Status**: locked.
 
 ### D-006a — Type name casing convention
-- **Decision**: Built-in / primitive types are spelled **lowercase** (e.g. `string`, `int`, `float`, `bin`, `long`, `bool`). User-defined types (classes, structs, enums, traits, interfaces) are spelled **PascalCase** (e.g. `User`, `Result`, `HttpError`).
-- **Rationale**: Visual distinction between language-provided primitives and user types at every type position; PHP-familiar primitive spellings; consistent with Go and Rust primitive conventions.
-- **Date**: 2026-05-11.
+- **Decision**: **Anything supplied by the language or its standard library is spelled lowercase**: primitives (`int`, `float`, `bool`, `string`, `byte`, `bytes`, `void`), containers (`list`, `map`, `set`, `array`), stdlib traits (`display`, `from`, `into`), stdlib error/result types (`result`, `option`, `parseError`, `overflowError`). **User-defined types stay PascalCase** (e.g. `User`, `HttpError`, `Greet`, `Loggable`). The visual distinction is the rule: "is this name shipping with the compiler?" → lowercase. "Did I author this in my own pack?" → PascalCase.
+- **Rationale**: At a glance, every type name in source tells the reader whether it is part of the language surface or part of the user's code. Matches the PHP feel for primitives, keeps user-authored classes capitalised in the Java/PHP tradition.
+- **Date**: 2026-05-11 (amended after initial Phase 1 lock).
 - **Status**: locked.
-- **Follow-ups**: the exact list of primitive type names (e.g. is it `int` or `int32`/`int64`? what is `bin`? signed vs unsigned?) is deferred to D-022 (stdlib core surface). Until then, examples in `spec/` use `int`, `string`, `float`, `bool` as placeholders.
+- **Follow-ups**: the canonical primitive widths and stdlib name surface live in D-022.
 
 ### D-007 — Error handling: Result + panics
 - **Decision**: Result-style for expected/domain failures. Exceptions/panics only for unrecoverable faults. No unchecked exceptions for normal control flow.
@@ -88,6 +88,10 @@ All items below are resolved. See "Resolved this phase" for the entries.
 14. D-021 — Test syntax (provisional; finalised in Phase 9)
 15. D-022 — Standard library core surface (provisional; finalised in Phase 6)
 
+Amendment added after the first-pass Phase 1 commit `3df7de5`:
+
+16. D-023 — Identifier sigils and member access (`$`, `->`, `::`, `.`) — amends D-009/D-010/D-012/D-013/D-016/D-017/D-018
+
 ---
 
 ## Resolved this phase
@@ -97,7 +101,7 @@ All items below are resolved. See "Resolved this phase" for the entries.
   - **Pack-scoped (default, no keyword)** — the item is visible to every file in the same pack, and invisible outside the pack. In PHC, "private" means "private to the pack", not "private to the file".
   - **Cross-pack (`public` keyword)** — the item is visible to any pack that imports it.
   ```phc
-  function helper(): void { }     // visible across files in this pack, hidden outside
+  function helper(): void { }        // visible across files in this pack, hidden outside
   public function login(): void { }  // visible to importing packs
   ```
 - **Alternatives considered**: `pub` (Rust-style); `export` (JS-style); `open` (Swift/Kotlin overload); a three-level model with a separate `internal` keyword for pack-scoped and file-private as the default.
@@ -109,19 +113,19 @@ All items below are resolved. See "Resolved this phase" for the entries.
 ### D-009 — Function declaration syntax: `function` (PHP-style)
 - **Decision**: Functions are declared with the `function` keyword. Parameter list uses **type-then-name** order with no sigils. Return type follows a `:`. The `return` keyword is required to yield a value. Statements terminate with `;`.
   ```phc
-  function greet(string name): string {
-      return "Hello, " + name;
+  function greet(string $name): string {
+      return "Hello, {$name}";
   }
 
-  public function add(int a, int b): int {
-      return a + b;
+  public function add(int $a, int $b): int {
+      return $a + $b;
   }
 
-  async function fetch(string url): Result<Bytes, HttpError> {
+  async function fetch(string $url): result<bytes, HttpError> {
       // ...
   }
   ```
-  (`Bytes` and `HttpError` are user/library types and thus PascalCase; `string` is primitive and lowercase — see D-006a.)
+  (`result` and `bytes` are stdlib and thus lowercase; `HttpError` is user-defined and PascalCase. Sigils and arrows follow D-023.)
 - **Alternatives considered**: `fn` (Rust/Swift, terse, arrow return), `fun` (Kotlin, mid-length), `func` (Go/Swift, word-like).
 - **Rationale**: PHC's target audience is PHP-familiar; `function` is the term they already type every day. Verbosity is mitigated by PHC having no `$` sigils, so PHP devs get the familiarity without the noise.
 - **Date**: 2026-05-11.
@@ -140,17 +144,17 @@ All items below are resolved. See "Resolved this phase" for the entries.
 - **Decision**: Local bindings are declared type-then-name, matching D-009 parameter order. Immutable bindings have no leading keyword. Mutable bindings are prefixed with `flip` (D-005). Reassignment of a `flip` binding uses `:=`. Borrow modifiers `&` / `&flip` appear before the type in parameter positions.
   ```phc
   // immutable
-  int count = 42;
-  string name = "Alex";
-  User u = User.new();      // constructor / factory form is TBD (D-012)
+  int $count = 42;
+  string $name = "Alex";
+  User $u = User("Ada", 30);    // construction is a call (D-012)
 
   // mutable
-  flip int score = 0;
-  score := score + 1;
+  flip int $score = 0;
+  $score := $score + 1;
 
   // borrows in parameter positions
-  function render(&User user): void { /* ... */ }
-  function mutate(&flip User user): void { /* ... */ }
+  function render(&User $user): void { /* ... */ }
+  function mutate(&flip User $user): void { /* ... */ }
   ```
 - **Alternatives considered**: `let type name = expr;` (Rust-like explicit binding keyword); `var name = expr;` with type inference at the binding site.
 - **Rationale**: Symmetry with D-009 parameter syntax. PHP/C/Java developers read `int count = 42;` at a glance. Avoids introducing yet another keyword (`let`) when the type already signals "this is a binding".
@@ -161,7 +165,7 @@ All items below are resolved. See "Resolved this phase" for the entries.
   - `void` is a primitive type (lowercase per D-006a) used as the return type of functions with no meaningful return value.
   - Borrow modifier placement: `&` / `&flip` appears before the type in parameter positions.
   - Initialiser required in v0: every binding has `= expr`. Forward declaration is not supported in v0.
-- **Follow-ups**: constructor/factory call form (`User.new()` vs `new User(...)` vs `User { ... }`) is part of D-012.
+- **Follow-ups**: constructor/factory call form (`User::new()` vs `new User(...)` vs `User { ... }`) is part of D-012. Resolved by D-012 + D-023: construction is a plain call `User(...)`; static factories use `::`.
 
 ### D-011 — Pack declaration and imports
 - **Decision**: Each source file begins with `pack <path>;`. Items from other packs are brought in with `use`. Pack paths are dot-separated. Grouped imports are written with `{}`.
@@ -171,9 +175,8 @@ All items below are resolved. See "Resolved this phase" for the entries.
 
   use app.http.Request;
   use app.db.{Connection, Pool};
-  use std.collections.HashMap;
 
-  public function login(&Request req): Result<Session, AuthError> {
+  public function login(&Request $req): result<Session, AuthError> {
       // ...
   }
   ```
@@ -198,25 +201,25 @@ All items below are resolved. See "Resolved this phase" for the entries.
   ```phc
   public class User {
       construct(
-          public string name,   // promoted: public field `name`
-          int age,              // init-only param, not a field
+          public string $name,   // promoted: public field `$name`
+          int $age,              // init-only param, not a field
       ) {
-          this.createdAt = Time.now();
+          $this->createdAt = instant::now();
       }
 
       // explicit, non-promoted field
-      Instant createdAt;
+      instant $createdAt;
 
       // explicit mutable field
-      flip int loginCount = 0;
+      flip int $loginCount = 0;
 
       public function greet(): string {
-          return "Hi, " + this.name;
+          return "Hi, {$this->name}";
       }
   }
 
-  User u = User("Alex", 30);
-  u.loginCount := u.loginCount + 1;
+  User $u = User("Ada", 30);
+  $u->loginCount := $u->loginCount + 1;
   ```
 
   ```phc
@@ -232,8 +235,8 @@ All items below are resolved. See "Resolved this phase" for the entries.
       NotFound = 404,
   }
 
-  Method m = Method.Get;
-  Status s = Status.Ok;
+  Method $m = Method::Get;
+  Status $s = Status::Ok;
   ```
 - **Alternatives considered**: Java/C#-style `new User(...)`; Kotlin-style primary constructor on the class header; tagged-union enums; allowing both plain and tagged-union enums.
 - **Rationale**: PHP 8 muscle memory for the target audience. Promotion-via-visibility-marker keeps the cheap path cheap and still allows init-only params. Plain enums plus future traits/interfaces cover the Result/Option use case without burdening v0 with full algebraic data types.
@@ -241,9 +244,9 @@ All items below are resolved. See "Resolved this phase" for the entries.
 - **Status**: locked.
 - **Implied sub-decisions**:
   - **`class`, `construct`, `enum`, `this`** are reserved keywords.
-  - **Variant access** uses `.` for consistency with pack paths (`Method.Get`, `Status.Ok`).
+  - **Variant access** uses `::` (D-023): `Method::Get`, `Status::Ok`.
   - **Field declarations** inside a class body use the local-binding form from D-010 (`type name [= expr];`, with optional `flip` prefix).
-  - **Field initialisation in `construct`** uses `this.field = expr;`. After construction, immutable fields cannot be reassigned; `flip` fields can be reassigned with `:=`.
+  - **Field initialisation in `construct`** uses `$this->field = expr;` (D-023). After construction, immutable fields cannot be reassigned; `flip` fields can be reassigned with `:=`.
   - **Single constructor in v0.** Multiple/overloaded constructors are deferred (named factory methods cover the gap).
   - **No `new` keyword.** Construction is a call: `User(args)`.
   - **No inheritance** (carried from D-002). Reuse via interfaces/traits (D-013).
@@ -265,17 +268,17 @@ All items below are resolved. See "Resolved this phase" for the entries.
 
   public trait Loggable {
       function log(): void {
-          Logger.info(this.toString());
+          Logger::info($this->toString());
       }
   }
 
   public class User implements Greet {
       use Loggable;
 
-      construct(public string name) { }
+      construct(public string $name) { }
 
       public function greet(): string {
-          return "Hi, " + this.name;
+          return "Hi, {$this->name}";
       }
   }
   ```
@@ -298,16 +301,16 @@ All items below are resolved. See "Resolved this phase" for the entries.
 ### D-014 — Generic parameters and bounds
 - **Decision**: Generic parameters use **angle brackets** with **inline bounds**. Multiple bounds combine with `+`. **Call sites never carry explicit type arguments** — generic arguments are always inferred from the call.
   ```phc
-  function max<T: Ord>(T a, T b): T { ... }
-  public class Map<K: Hash, V> { ... }
+  function max<T: Ord>(T $a, T $b): T { ... }
+  public class Pair<A, B: Hash> { ... }
   public interface Container<T> {
-      function add(T item): void;
-      function get(int idx): T?;
+      function add(T $item): void;
+      function get(int $idx): T?;
   }
 
   // call sites — no <T> needed:
-  int m = max(3, 7);
-  Map<string, User> users = Map();   // type still required at the binding site (D-010)
+  int $m = max(3, 7);
+  map<string, User> $users = map();   // type still required at the binding site (D-010)
   ```
 - **Alternatives considered**: trailing `where T: Bound` clause; `T extends Bound` (TS/Java); explicit turbofish at call sites.
 - **Rationale**: Inline `<T: Bound>` keeps signatures self-contained for the common case. Mandatory call-site inference matches the D-006 preference for terse generics and aligns with modern languages (Rust, Kotlin, Swift, TS).
@@ -315,7 +318,7 @@ All items below are resolved. See "Resolved this phase" for the entries.
 - **Status**: locked.
 - **Implied sub-decisions**:
   - **Multiple bounds**: `T: A + B` joins bounds with `+`.
-  - **`<>` at types still required where the type is named** (e.g. `Map<string, User>` at the binding site is part of the type, not a call-site argument).
+  - **`<>` at types still required where the type is named** (e.g. `map<string, User>` at the binding site is part of the type, not a call-site argument).
   - **No explicit type-argument syntax at call sites in v0.** If inference fails, the user must rewrite to provide more type context (e.g. annotate the result binding). A turbofish (`::<T>`) escape hatch may be added if real code shows it's needed.
 - **Follow-ups**:
   - Variance annotations (`in` / `out`, covariant / contravariant): deferred.
@@ -323,24 +326,24 @@ All items below are resolved. See "Resolved this phase" for the entries.
   - Const generics: out of scope for v0.
 
 ### D-015 — Pattern matching (`match` expression)
-- **Decision**: PHC adopts a **PHP 8-style `match` expression**. The scrutinee is in parentheses. Arms are comma-separated and use `=>` between the pattern and the result expression. Patterns support: literals, identifier captures, enum variants (`Method.Get`), wildcard `_`, OR-patterns joined with `|`, and optional `if <guard>` guards. `match` is **expression-shaped** — it returns a value, even though regular function bodies are statement-shaped (D-009). A `match` used as a statement simply discards the value.
+- **Decision**: PHC adopts a **PHP 8-style `match` expression**. The scrutinee is in parentheses. Arms are comma-separated and use `=>` between the pattern and the result expression. Patterns support: literals, identifier captures (e.g. `$s`), enum variants (`Method::Get` per D-023), wildcard `_`, OR-patterns joined with `|`, and optional `if <guard>` guards. `match` is **expression-shaped** — it returns a value, even though regular function bodies are statement-shaped (D-009). A `match` used as a statement simply discards the value.
 
   Exhaustiveness:
   - When the scrutinee is an enum, the compiler verifies that every variant is covered. A `_` arm is unnecessary in that case.
   - For any other scrutinee (int, string, class instance, etc.), a final `_` arm is required.
 
   ```phc
-  int code = match (status) {
-      Status.Ok => 0,
-      Status.NotFound | Status.Gone => 404,
-      s if s.isServerError() => 500,
+  int $code = match ($status) {
+      Status::Ok => 0,
+      Status::NotFound | Status::Gone => 404,
+      $s if $s->isServerError() => 500,
       _ => -1,
   };
 
   // statement form (value discarded)
-  match (method) {
-      Method.Get => handleGet(),
-      Method.Post => handlePost(),
+  match ($method) {
+      Method::Get => handleGet(),
+      Method::Post => handlePost(),
       _ => respond(405),
   };
   ```
@@ -367,23 +370,23 @@ All items below are resolved. See "Resolved this phase" for the entries.
   - reassignment via `:=` inside the body → captured by **mutable borrow**, which is only legal when the outer binding is `flip`.
 
   ```phc
-  List<int> doubled = nums.map((int n): int => n * 2);
+  list<int> $doubled = $nums->map((int $n): int => $n * 2);
 
   // return type elided (void)
-  button.onClick(() => Logger.info("clicked"));
+  $button->onClick(() => Logger::info("clicked"));
 
   // block body
-  list.forEach((User u) => {
-      Logger.info(u.name);
-      u.loginCount := u.loginCount + 1;
+  $users->forEach((User $u) => {
+      Logger::info($u->name);
+      $u->loginCount := $u->loginCount + 1;
   });
 
   // captures
-  int threshold = 10;
-  List<int> big = nums.filter((int n): bool => n > threshold);   // shared borrow
+  int $threshold = 10;
+  list<int> $big = $nums->filter((int $n): bool => $n > $threshold);   // shared borrow
 
-  flip int hits = 0;
-  nums.forEach((int n) => { if (n > threshold) hits := hits + 1; });  // hits is flip → mutable capture OK
+  flip int $hits = 0;
+  $nums->forEach((int $n) => { if ($n > $threshold) $hits := $hits + 1; });  // $hits is flip → mutable capture OK
   ```
 - **Alternatives considered**: PHP 8 dual form (`fn ... =>` + `function ... { }`); a single `fn (params) => body` form; PHP `use (...)` explicit capture lists; no-capture lambdas.
 - **Rationale**: A single keyword-less arrow is the smallest possible lambda surface. Auto-capture with inferred borrow mode matches Rust/Swift ergonomics while respecting D-005 mutability rules — mutating captures fall out as a compile error unless the binding is explicitly `flip`.
@@ -401,13 +404,13 @@ All items below are resolved. See "Resolved this phase" for the entries.
 ### D-017 — String interpolation: always-on with `{expr}`
 - **Decision**: All double-quoted strings are interpolated. An embedded expression sits inside `{ ... }`. To write a literal `{` or `}` in a string, double it: `{{` and `}}`. Standard backslash escapes (`\"`, `\\`, `\n`, `\t`, etc.) work as expected. Any expression is permitted inside `{ ... }`; the result is converted to `string` via the standard formatting trait (TBD in D-022).
   ```phc
-  string g = "Hello, {user.name}! You have {inbox.count} messages.";
+  string $g = "Hello, {$user->name}! You have {$inbox->count} messages.";
 
   // literal braces in output
-  string json = "{{\"key\": \"value\"}}";
+  string $json = "{{\"key\": \"value\"}}";
 
   // arbitrary expressions
-  string log = "User {user.name} scored {score * 2}";
+  string $log = "User {$user->name} scored {$score * 2}";
   ```
 - **Alternatives considered**: opt-in `f"..."` prefix (Python/Hack); opt-in `$"..."` prefix (C#); JS-style backticks with `${ ... }`.
 - **Rationale**: PHP devs already expect interpolation inside `"..."`. Without `$` sigils, the cleanest port is "every double-quoted string interpolates". Doubling for literal braces is a tiny tax for the cleanest call-site syntax.
@@ -416,7 +419,7 @@ All items below are resolved. See "Resolved this phase" for the entries.
 - **Implied sub-decisions**:
   - **The single-quoted `'...'` form is reserved for the raw-string variant** (deferred — needed to support strings full of `{` without escaping). For v0, only double-quoted strings exist.
   - **Embedded expressions are full expressions**, not just identifiers; precedence cuts at the closing `}`.
-  - **Conversion to string** for the interpolated expression goes through a `Display`/`ToString` trait, the exact shape of which is part of D-022 (stdlib core).
+  - **Conversion to string** for the interpolated expression goes through the stdlib `display` trait (D-022), the exact shape of which is owned by Phase 6.
 - **Follow-ups**:
   - Format specifiers (`{value:.2f}`, padding, hex, etc.): deferred.
   - Raw-string form (probably `'...'` or `r"..."`): deferred.
@@ -429,25 +432,25 @@ All items below are resolved. See "Resolved this phase" for the entries.
   - A property with only a `get` hook is read-only from outside the class. A property that should be writable from outside must have a `set` hook *and* the backing field must be `flip`. Writes use `:=` per D-005.
   ```phc
   public class User {
-      construct(public string firstName, public string lastName) { }
+      construct(public string $firstName, public string $lastName) { }
 
       // computed, read-only from anywhere
-      public string fullName {
-          get => "{this.firstName} {this.lastName}";
+      public string $fullName {
+          get => "{$this->firstName} {$this->lastName}";
       }
 
       // backing field with validated setter
-      flip int age = 0 {
-          set(int value) {
-              if (value < 0) panic("age must be non-negative");
-              this.age = value;       // direct assign to backing field, no recursion
+      flip int $age = 0 {
+          set(int $value) {
+              if ($value < 0) panic("age must be non-negative");
+              $this->age = $value;       // direct assign to backing field, no recursion
           }
       }
   }
 
-  User u = User("Ada", "Lovelace");
-  string f = u.fullName;   // calls the get hook
-  u.age := 25;             // runs the set hook
+  User $u = User("Ada", "Lovelace");
+  string $f = $u->fullName;   // calls the get hook
+  $u->age := 25;              // runs the set hook
   ```
 - **Alternatives considered**: method-based `getX()` / `setX()` only; C#-style `{ get; set; }` auto-properties; Kotlin computed properties.
 - **Rationale**: PHP 8.4 just shipped this exact feature; PHC's target audience will recognise it immediately. The plain-field path stays plain; hook syntax only appears when behaviour is needed.
@@ -465,29 +468,28 @@ All items below are resolved. See "Resolved this phase" for the entries.
 
 ### D-019 — Casting and conversion: `as` is total, methods are fallible
 - **Decision**: The `value as <Type>` expression is permitted **only** when the conversion is total and lossless. The typechecker rejects any lossy or fallible `as`. Lossless cases include:
-  - Widening numeric conversions where every value of the source type is representable in the target (`int → long`, `int → float` for the matching width, etc.).
-  - Upcast to a trait/interface the source type implements (`User as Display`).
+  - Widening numeric conversions where every value of the source type is representable in the target (`byte → int`, `int → float` for the canonical widths in D-022, etc.). Note: with the polymorphic-storage `int`/`float` rules in D-022, most "widening" cases between same-named types disappear — they happen at the storage layer, not at the type layer.
+  - Upcast to a trait/interface the source type implements (`$user as display`).
   - Upcast to `dyn T` (D-006).
 
-  Anything fallible — narrowing, parsing, lossy float→int, downcast — is exposed as a method that returns `Result<T, E>` (with a domain error) or `T?` (when the only failure mode is "not representable").
+  Anything fallible — narrowing, parsing, lossy float→int, downcast — is exposed as a method that returns `result<T, E>` (with a domain error) or `T?` (when the only failure mode is "not representable").
   ```phc
-  long big = 5 as long;                   // OK: widening
-  Display d = user as Display;            // OK: upcast
+  // Widening / upcast cases (now mostly handled by the polymorphic int rules in D-022).
+  display $d = $user as display;          // OK: upcast to a stdlib trait
+  dyn $any = $user as dyn;                // OK: upcast to dyn
 
-  // int small = big as int;              // COMPILE ERROR: long → int can overflow
-  Result<int, OverflowError> r = big.toInt();
-
-  string s = "42";
-  Result<int, ParseError> p = s.toInt();
-  int? maybeInt = s.tryParseInt();        // null on failure when caller does not need the error
+  // Fallible / parse / narrowing — through methods that return result<...> or T?.
+  string $s = "42";
+  result<int, parseError> $p = $s->toInt();
+  int? $maybe = $s->tryParseInt();
   ```
 - **Alternatives considered**: `as` for everything with panic on failure (violates D-007); `as` for safe + `as?` returning `T?` for fallible (compresses two distinct failure shapes into one).
-- **Rationale**: Anchors the type system in D-007: failures that the compiler can prove are impossible cost nothing; failures the compiler cannot prove must surface in the type. The user picks `Result` vs `T?` based on whether the cause matters.
+- **Rationale**: Anchors the type system in D-007: failures that the compiler can prove are impossible cost nothing; failures the compiler cannot prove must surface in the type. The user picks `result` vs `T?` based on whether the cause matters.
 - **Date**: 2026-05-11.
 - **Status**: locked.
 - **Implied sub-decisions**:
   - **`as` is a reserved keyword.**
-  - **Conversion trait** (`From`/`Into` shape — name TBD) is the canonical extension point for user types and is part of D-022 (stdlib core).
+  - **Conversion trait** (`from`/`into` shape, lowercase per D-006a) is the canonical extension point for user types and is part of D-022 (stdlib core).
   - **No reinterpret/bit-cast** in v0 (that would require `unsafe` and is out of v0 scope).
 - **Follow-ups**:
   - Pattern downcasting (`match` on a `dyn T` value to recover concrete type): deferred.
@@ -528,15 +530,15 @@ All items below are resolved. See "Resolved this phase" for the entries.
   - JSON schema / `$schema` field — Phase 8 (tooling).
 
 ### D-021 — Test syntax (provisional)
-- **Decision (provisional)**: PHC tests are declared with the `test` keyword inside any source file. A test is a named block that runs as part of `phc test`. Assertions are ordinary function calls returning `Result`. The test fails if it returns an `Err` or if the body panics.
+- **Decision (provisional)**: PHC tests are declared with the `test` keyword inside any source file. A test is a named block that runs as part of `phc test`. Assertions are ordinary function calls returning `result`. The test fails if it returns an `err` variant or if the body panics.
   ```phc
   test "addition is commutative" {
-      assert.eq(add(2, 3), add(3, 2));
+      assert::eq(add(2, 3), add(3, 2));
   }
 
   test "login rejects empty password" {
-      Result<Session, AuthError> r = login("alex", "");
-      assert.isErr(r);
+      result<Session, AuthError> $r = login("alex", "");
+      assert::isErr($r);
   }
   ```
 - **Status**: provisional. Locked just enough that other Phase 1 docs and lexer work can know `test` is a reserved keyword.
@@ -549,13 +551,74 @@ All items below are resolved. See "Resolved this phase" for the entries.
 - **Implied reservations**: `test` is a reserved keyword (visible to the lexer in Phase 2).
 
 ### D-022 — Standard library core surface (provisional)
-- **Decision (provisional)**: A small "prelude" is in scope; the exact shape is owned by Phase 6 (#7). The placeholders below are the items v0 spec text refers to and the names other decisions depend on.
-  - **Primitive types (D-006a)**: `int`, `long`, `float`, `bool`, `string`, `bin`, `void`. Exact widths and signedness are open.
-  - **Built-in collections (CoW per D-004)**: `List<T>`, `Map<K, V>`, `Set<T>`. Names provisional.
-  - **Error / option types (D-007)**: `Result<T, E>`, `Option<T>` (or the `?` nullable form alone — open).
-  - **Formatting trait (D-017)**: `Display` (or equivalent) provides the conversion used by string interpolation.
-  - **Conversion traits (D-019)**: `From<T>` / `Into<T>` (names provisional) drive user-defined `as` and `.to…()` shapes.
-  - **Async runtime (D-003)**: a `TaskGroup` type plus `await` integration.
-- **Status**: provisional. Locked just enough that other spec text can refer to these names without inventing them.
-- **Date**: 2026-05-11.
-- **Open in Phase 6 (#7)**: complete name list, method surfaces, primitive widths, panic API.
+- **Decision (provisional)**: All stdlib names are lowercase (D-006a). The locked primitive set is **`int`**, **`float`**, **`byte`**, **`bytes`**, **`bool`**, **`string`**, **`void`**. There is no separate `long`, `double`, `decimal`, or `short` keyword.
+  - **`int`** is a polymorphic signed integer. Its **canonical width is 64-bit signed** at every type boundary that has to commit to a layout (function parameters and returns, fields, generic instantiations, FFI). For local bindings whose value range the compiler can prove, narrower storage (i8 / i16 / i32) may be picked silently as an optimisation; the user-visible type is still `int`. Integer literals outside the canonical i64 range are a compile-time error.
+  - **`float`** mirrors `int`: canonical width is **64-bit IEEE-754** at boundaries; narrower storage (f32) may be picked locally when the compiler can prove the value is representable.
+  - **`byte`** is an 8-bit unsigned scalar (`0..255`). Fixed width.
+  - **`bytes`** is an owned, CoW sequence of `byte`. The container for raw binary data; indexed and iterated as `byte`.
+  - **`bool`** is the two-valued boolean. Fixed width (1 bit conceptually; one register slot in practice).
+  - **`string`** is an owned, CoW UTF-8 string (D-004). No separate `char` type in v0; iterating a `string` yields code points by method, not by a primitive type.
+  - **`void`** is the absence-of-value return type (D-010).
+
+  **Built-in collections** (all lowercase, CoW per D-004): `list<T>`, `map<K, V>`, `set<T>`. **`array<T>` is an alias for `list<T>`** for PHP muscle-memory at the call site.
+
+  **Stdlib traits and types** (provisional names, lowercase per D-006a): `result<T, E>`, `option<T>`, `display`, `from<T>`, `into<T>`, `taskGroup`, plus stdlib error types like `parseError`, `overflowError`. User-defined errors stay PascalCase (e.g. `AuthError`, `HttpError`).
+- **Status**: provisional. The primitive set itself is locked; the trait/error/method surfaces are owned by Phase 6 (#7).
+- **Date**: 2026-05-11 (amended after initial Phase 1 lock).
+- **Open in Phase 6 (#7)**: complete name list, method surfaces, panic API, arbitrary-precision integer fallback (if any), encoding-conversion API, iterator protocol.
+
+### D-023 — Identifier sigils and member access (`$`, `->`, `::`, `.`)
+- **Decision**: PHC adopts PHP-style sigils and three distinct access operators. This amends D-009 (function parameters), D-010 (local bindings), D-012 (classes), D-013 (traits/interfaces), D-016 (lambdas), D-017 (string interpolation), and D-018 (property hooks). Every example in this document and `spec/language-reference.md` uses the post-amendment form.
+
+  | Form | Used for | Example |
+  |------|----------|---------|
+  | `$name` | Every variable, parameter, and field reference at the use site. The declaration site of a parameter or field also carries `$`. | `$user`, `$count`, `$this` |
+  | `->` | Member access on an **instance** of a class (instance fields, instance methods, property hooks). | `$user->name`, `$this->loginCount`, `$conn->open()` |
+  | `::` | **Static** access: enum variants, static methods, class constants. | `method::Get`, `status::Ok`, `User::new()` (factory style) |
+  | `.` | **Path** separator only — pack paths, namespaced type references in declarations. | `pack app.auth;`, `use app.http.Request;`, `app.http.Request` |
+
+  PHC keeps **no `new` keyword** (D-012). Construction is still a call: `User("Ada", 30)`. Factory methods (when introduced) use `::`: `User::fromJson(...)`.
+
+  `$this` is the implicit receiver inside any method or constructor body and is the only sigil-prefixed identifier with a reserved meaning.
+
+  ```phc
+  pack app.auth;
+
+  use app.http.Request;
+
+  public class User {
+      construct(public string $name, int $age) {
+          $this->createdAt = instant::now();
+      }
+
+      instant $createdAt;
+      flip int $loginCount = 0;
+
+      public function greet(): string {
+          return "Hi, {$this->name}";
+      }
+  }
+
+  public function login(&Request $req): result<session, AuthError> {
+      User $u = User("Ada", 30);
+      $u->loginCount := $u->loginCount + 1;
+      method $m = method::Get;
+      return ok(session::open($u));
+  }
+  ```
+- **Alternatives considered**: keep the sigil-less / single-`.` form locked in the first pass of Phase 1; partial adoption (sigils only on `$this`); JS-shaped `obj.member` plus `Class.staticMember` (loses static/instance distinction at the call site).
+- **Rationale**: PHC's target audience reads `$user->name` instantly. The three-operator split makes static vs instance vs path unambiguous at every use site — `Status.Ok` (was) is now `status::Ok` and cannot be confused with a member access on a value named `status`.
+- **Date**: 2026-05-11 (introduced after the first-pass Phase 1 commit `3df7de5`).
+- **Status**: locked.
+- **Implied sub-decisions**:
+  - **Sigil characters**: `$` is reserved as a leading-identifier sigil. `$$` (variable-variable) and PHP heredoc forms are **not** supported in v0.
+  - **`->`, `::`, `.` are three distinct tokens.** The lexer produces them as separate tokens; the parser uses them to switch member-access semantics.
+  - **String interpolation (D-017)** still uses `{expr}`. Inside the braces, sigils and arrows are required as elsewhere: `"Hello, {$user->name}"`.
+  - **Pattern matching (D-015)** scrutinees and arm patterns use the same sigils. `match ($status) { status::Ok => 0, _ => -1 }`.
+  - **Local-binding LHS** carries `$`: `int $count = 42;`, `flip int $score = 0;`, `$score := $score + 1;`.
+  - **Borrows** stay as in D-005: `&$user`, `&flip $user`. The sigil sits on the identifier; `&` / `&flip` is a prefix on the borrow expression.
+  - **Trait `use` inside a class body** (D-013) is unaffected — the trait name is a type, not a variable.
+  - **Pack `use` declarations** (D-011) are unaffected — they reference type paths, not values.
+- **Follow-ups**:
+  - `static` keyword for static methods / class constants: deferred to a later edition once user code exposes the need.
+  - Optional chaining (`?->`): deferred.

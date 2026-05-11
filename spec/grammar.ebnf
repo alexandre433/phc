@@ -1,6 +1,6 @@
 (* PHC v0 — Formal Grammar
-   Status: in progress (Phase 1). Productions are added as design decisions land.
-   Source of truth supersedes GitHub issue #1 once Phase 1 is accepted.
+   Status: canonical (Phase 1 complete; amended with D-023 after commit `3df7de5`).
+   Supersedes GitHub issue #1.
 *)
 
 (* ===== Lexical structure ===== *)
@@ -13,6 +13,9 @@ BlockComment  = "/*" { any-char | BlockComment } "*/" ;       (* nesting allowed
 Identifier    = ( letter | "_" ) { letter | digit | "_" } ;
 letter        = "A".."Z" | "a".."z" ;
 digit         = "0".."9" ;
+
+(* Sigil-prefixed variable / parameter / field reference (D-023). *)
+VarRef        = "$" Identifier ;
 
 (* Literals *)
 IntLiteral    = digit { digit | "_" } ;
@@ -27,24 +30,28 @@ EscapeSeq     = "\\" ( '"' | "\\" | "n" | "t" | "r" | "0" | "u" "{" hex+ "}" ) ;
 (* StringChar: any character except `"`, `\`, `{`, `}`. *)
 
 (* Reserved keywords — see spec/keywords.md for the canonical list.
-   Locked so far: flip, async, await, dyn, public, true, false, null.
-   More keywords are added as declaration forms are decided. *)
+   Locked so far: flip, async, await, dyn, public, function, return, void,
+   pack, use, class, construct, this, enum, interface, trait, implements,
+   match, if, else, while, for, in, break, continue, as, test, true, false, null.
+   Contextual: get, set. *)
 
 (* Visibility modifier (D-008) *)
 Visibility    = [ "public" ] ;
 
 (* Locked operators / punctuation *)
 AssignReassign = ":=" ;
-SharedBorrow   = "&" ;       (* prefix on an identifier for shared borrow *)
+SharedBorrow   = "&" ;       (* prefix on a VarRef for shared borrow *)
 MutBorrow      = "&" "flip" ; (* two tokens; lexer keeps them separate *)
 Nullable       = "?" ;       (* suffix on a type *)
+Arrow          = "->" ;       (* instance member access (D-023) *)
+StaticOp       = "::" ;       (* static access (D-023) *)
+Dot            = "." ;        (* path separator only (D-023) *)
 
 (* ===== Types ===== *)
 
 Type            = TypePath [ TypeArgs ] [ Nullable ] ;
 TypePath        = Identifier { "." Identifier } ;
 TypeArgs        = "<" Type { "," Type } ">" ;
-Nullable        = "?" ;
 
 (* Generic parameter list on a declaration (D-014) *)
 GenericParams   = "<" GenericParam { "," GenericParam } ">" ;
@@ -53,7 +60,7 @@ BoundList       = TypePath { "+" TypePath } ;
 
 (* ===== Expressions =====
    Precedence table (highest → lowest), C-family conventional:
-     1. PrimaryExpr / call / member access / index / `.` path
+     1. PrimaryExpr / call / index / instance member access `->` / static access `::`
      2. unary `!`, unary `-`, borrow `&` / `&flip`, `await`
      3. `as` cast
      4. `*` `/` `%`
@@ -69,7 +76,7 @@ BoundList       = TypePath { "+" TypePath } ;
 *)
 
 Expression      = NullCoalesce ;
-NullCoalesce    = OrExpr        { "??"  OrExpr } ;           (* right-assoc handled in parser *)
+NullCoalesce    = OrExpr        { "??"  OrExpr } ;
 OrExpr          = AndExpr       { "||"  AndExpr } ;
 AndExpr         = EqExpr        { "&&"  EqExpr } ;
 EqExpr          = CmpExpr       { ( "==" | "!=" ) CmpExpr } ;
@@ -80,22 +87,25 @@ CastExpr        = UnaryExpr     { "as" Type } ;
 UnaryExpr       = ( "!" | "-" | "await" | BorrowMod ) UnaryExpr
                 | PostfixExpr ;
 PostfixExpr     = PrimaryExpr { Postfix } ;
-Postfix         = "." Identifier
+Postfix         = "->" Identifier               (* instance member, D-023 *)
+                | "::" Identifier               (* static member, D-023 *)
                 | "(" [ ArgList ] ")"
                 | "[" Expression "]" ;
 ArgList         = Expression { "," Expression } [ "," ] ;
 
 PrimaryExpr     = Literal
-                | "this"
-                | Identifier
-                | TypePath                 (* for static-style access, e.g. Method.Get *)
-                | StringLiteral            (* interpolation is part of StringLiteral *)
+                | "$this"
+                | VarRef
+                | TypeName                      (* type-level: starts a class/enum/trait static chain *)
                 | MatchExpr
                 | Lambda
                 | "(" Expression ")" ;
+TypeName        = Identifier ;                  (* parser distinguishes Type vs Var by leading sigil *)
 
 (* Lambda expression (D-016) *)
-Lambda          = "(" [ ParamList ] ")" [ ":" Type ] "=>" LambdaBody ;
+Lambda          = "(" [ LambdaParams ] ")" [ ":" Type ] "=>" LambdaBody ;
+LambdaParams    = LambdaParam { "," LambdaParam } ;
+LambdaParam     = [ BorrowMod ] Type VarRef ;
 LambdaBody      = Expression
                 | Block ;
 
@@ -119,80 +129,89 @@ Statement       = LocalBinding
 
 IfStmt          = "if" "(" Expression ")" Block { "else" "if" "(" Expression ")" Block } [ "else" Block ] ;
 WhileStmt       = "while" "(" Expression ")" Block ;
-ForStmt         = "for" "(" Type Identifier "in" Expression ")" Block ;
+ForStmt         = "for" "(" Type VarRef "in" Expression ")" Block ;
 ReturnStmt      = "return" [ Expression ] ";" ;
 BreakStmt       = "break" ";" ;
 ContinueStmt    = "continue" ";" ;
 ExprStmt        = Expression ";" ;
 
+(* Local binding (D-010 + D-023) *)
+LocalBinding    = [ "flip" ] Type VarRef "=" Expression ";" ;
+Reassign        = ReassignLhs ":=" Expression ";" ;
+ReassignLhs     = VarRef { Arrow Identifier } ;   (* e.g. $u, $u->loginCount *)
+
 (* ===== Declarations ===== *)
 
-(* Function declaration (D-009) *)
-FunctionDecl  = Visibility [ "async" ] "function" Identifier "(" [ ParamList ] ")" ":" Type Block ;
-ParamList     = Param { "," Param } ;
-Param         = ParamType Identifier ;
-ParamType     = [ BorrowMod ] Type ;
-BorrowMod     = "&" | "&" "flip" ;
-Block         = "{" { Statement } "}" ;
-
-(* Local binding (D-010) *)
-LocalBinding  = [ "flip" ] Type Identifier "=" Expression ";" ;
-Reassign      = Identifier ":=" Expression ";" ;
+(* Function declaration (D-009 + D-023) *)
+FunctionDecl    = Visibility [ "async" ] "function" Identifier [ GenericParams ] "(" [ ParamList ] ")" ":" Type Block ;
+ParamList       = Param { "," Param } [ "," ] ;
+Param           = [ BorrowMod ] Type VarRef ;
+BorrowMod       = "&" | "&" "flip" ;
+Block           = "{" { Statement } "}" ;
 
 (* Pack declaration and imports (D-011) *)
-SourceFile    = PackDecl { UseDecl } { Item } ;
-PackDecl      = "pack" PackPath ";" ;
-UseDecl       = "use" PackPath [ "." "{" ImportList "}" ] ";" ;
-PackPath      = Identifier { "." Identifier } ;
-ImportList    = Identifier { "," Identifier } ;
+SourceFile      = PackDecl { UseDecl } { Item } ;
+PackDecl        = "pack" PackPath ";" ;
+UseDecl         = "use" PackPath [ "." "{" ImportList "}" ] ";" ;
+PackPath        = Identifier { "." Identifier } ;
+ImportList      = Identifier { "," Identifier } ;
+Item            = FunctionDecl
+                | ClassDecl
+                | EnumDecl
+                | InterfaceDecl
+                | TraitDecl
+                | TestDecl ;
 
-(* Class declaration (D-012) *)
-ClassDecl     = Visibility "class" Identifier "{" { ClassMember } "}" ;
-ClassMember   = ConstructDecl
-              | FieldDecl
-              | FunctionDecl ;
-ConstructDecl = "construct" "(" [ ConstructParams ] ")" Block ;
+(* Class declaration (D-012 + D-023) *)
+ClassDecl       = Visibility "class" Identifier [ GenericParams ] [ "implements" InterfaceList ] "{" { ClassMember } "}" ;
+InterfaceList   = TypePath { "," TypePath } ;
+ClassMember     = ConstructDecl
+                | TraitUse
+                | FieldDecl
+                | FunctionDecl ;
+ConstructDecl   = "construct" "(" [ ConstructParams ] ")" Block ;
 ConstructParams = ConstructParam { "," ConstructParam } [ "," ] ;
-ConstructParam  = [ "public" ] [ "flip" ] Type Identifier ;
-FieldDecl     = Visibility [ "flip" ] Type Identifier [ "=" Expression ] [ HookBlock ] ";" ;
+ConstructParam  = [ "public" ] [ BorrowMod ] [ "flip" ] Type VarRef ;
+FieldDecl       = Visibility [ "flip" ] Type VarRef [ "=" Expression ] [ HookBlock ] ";" ;
+TraitUse        = "use" TypePath ";" ;
 
-(* Property hooks (D-018) *)
-HookBlock     = "{" { Hook } "}" ;
-Hook          = GetHook | SetHook ;
-GetHook       = "get" "=>" Expression ";"
-              | "get" Block ;
-SetHook       = "set" "(" Type Identifier ")" Block ;
+(* Property hooks (D-018 + D-023) *)
+HookBlock       = "{" { Hook } "}" ;
+Hook            = GetHook | SetHook ;
+GetHook         = "get" "=>" Expression ";"
+                | "get" Block ;
+SetHook         = "set" "(" Type VarRef ")" Block ;
+(* Inside a SetHook body, `$this->field = expr;` is a hook-local exception to D-005:
+   it writes the backing field directly without recursing through the setter. *)
 
-(* Enum declaration (D-012) *)
-EnumDecl      = Visibility "enum" Identifier [ ":" Type ] "{" EnumVariants "}" ;
-EnumVariants  = EnumVariant { "," EnumVariant } [ "," ] ;
-EnumVariant   = Identifier [ "=" Literal ] ;
+(* Enum declaration (D-012 + D-023) *)
+EnumDecl        = Visibility "enum" Identifier [ ":" Type ] "{" EnumVariants "}" ;
+EnumVariants    = EnumVariant { "," EnumVariant } [ "," ] ;
+EnumVariant     = Identifier [ "=" Literal ] ;
 
 (* Interface and trait declarations (D-013) *)
-InterfaceDecl = Visibility "interface" Identifier "{" { MethodSig } "}" ;
-MethodSig     = "function" Identifier "(" [ ParamList ] ")" ":" Type ";" ;
+InterfaceDecl   = Visibility "interface" Identifier [ GenericParams ] "{" { MethodSig } "}" ;
+MethodSig       = "function" Identifier [ GenericParams ] "(" [ ParamList ] ")" ":" Type ";" ;
 
-TraitDecl     = Visibility "trait" Identifier "{" { FunctionDecl } "}" ;
+TraitDecl       = Visibility "trait" Identifier [ GenericParams ] "{" { FunctionDecl } "}" ;
 
-(* Class header extension for interface implementation (extends ClassDecl from D-012) *)
-ClassHeader   = Visibility "class" Identifier [ "implements" InterfaceList ] ;
-InterfaceList = Identifier { "," Identifier } ;
+(* Test declaration (D-021, provisional) *)
+TestDecl        = "test" StringLiteral Block ;
 
-(* In-class trait mixin (extends ClassMember from D-012) *)
-TraitUse      = "use" Identifier ";" ;
+(* ===== Pattern matching (D-015 + D-023) ===== *)
 
-(* ===== Pattern matching (D-015) ===== *)
-
-MatchExpr     = "match" "(" Expression ")" "{" MatchArms "}" ;
-MatchArms     = MatchArm { "," MatchArm } [ "," ] ;
-MatchArm      = Pattern [ "if" Expression ] "=>" Expression ;
-Pattern       = OrPattern ;
-OrPattern     = AtomPattern { "|" AtomPattern } ;
-AtomPattern   = "_"
-              | Literal
-              | EnumVariantPath
-              | Identifier ;                    (* binding capture *)
-EnumVariantPath = Identifier "." Identifier ;
+MatchExpr       = "match" "(" Expression ")" "{" MatchArms "}" ;
+MatchArms       = MatchArm { "," MatchArm } [ "," ] ;
+MatchArm        = Pattern [ "if" Expression ] "=>" Expression ;
+Pattern         = OrPattern ;
+OrPattern       = AtomPattern { "|" AtomPattern } ;
+AtomPattern     = "_"
+                | Literal
+                | EnumVariantPath
+                | VarRef ;                       (* binding capture, e.g. $s *)
+EnumVariantPath = Identifier "::" Identifier ;   (* e.g. Status::Ok *)
 
 (* ===== Async ===== *)
-(* TBD — async fn, await expr, task group. *)
+(* `async function` is covered by FunctionDecl. `await` is a unary prefix in
+   UnaryExpr. `taskGroup` and structured-concurrency syntax are finalised in
+   Phase 5 / Phase 6 (D-022 provisional). *)

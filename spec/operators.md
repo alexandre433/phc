@@ -6,10 +6,14 @@ Canonical precedence/associativity table. Grows as expression syntax lands.
 
 | Operator | Meaning | Notes |
 |----------|---------|-------|
-| `:=`     | Reassignment to a `flip` binding | D-005. Not an expression in v0 — TBD whether statement-only. |
-| `&`      | Shared borrow (prefix on a name) | D-005 |
-| `&flip`  | Mutable borrow (prefix on a name) | D-005. Two tokens, kept distinct by the lexer. |
-| `?`      | Nullable type suffix | D-006. Type-position only; expression-position `?` (e.g. Result propagation) TBD. |
+| `:=`     | Reassignment to a `flip` binding | D-005. Statement-only in v0. |
+| `&`      | Shared borrow (prefix on a `$name`) | D-005, D-023 |
+| `&flip`  | Mutable borrow (prefix on a `$name`) | D-005. Two tokens, kept distinct by the lexer. |
+| `?`      | Nullable type suffix | D-006. Type-position only; expression-position `?` (e.g. Result propagation) deferred. |
+| `->`     | Instance member access | D-023. `$obj->field`, `$obj->method()`. |
+| `::`     | Static / type-level access | D-023. `Status::Ok`, `User::new()`. |
+| `.`      | Path separator only — pack paths, namespaced types | D-023. Never a member-access operator. |
+| `$`      | Leading sigil on every variable, parameter, and field reference | D-023. |
 
 ## Banned
 
@@ -21,8 +25,8 @@ C-family conventional. Locked alongside Phase 1 grammar fill.
 
 | Lvl | Operators | Assoc | Notes |
 |-----|-----------|-------|-------|
-| 1   | `.`  `()`  `[]` | left | member access, call, index |
-| 2   | unary `!`  unary `-`  `&`  `&flip`  `await` | right | borrow modifiers only valid in expression position next to a name |
+| 1   | `->`  `::`  `()`  `[]` | left | instance member access, static access, call, index |
+| 2   | unary `!`  unary `-`  `&`  `&flip`  `await` | right | borrow modifiers only valid in expression position next to a `$name` |
 | 3   | `as` | left | total cast only (D-019) |
 | 4   | `*`  `/`  `%` | left | |
 | 5   | `+`  `-` | left | also string concatenation for `+` between two strings |
