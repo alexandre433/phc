@@ -235,16 +235,54 @@ fn unknown_type_for_call_and_member() {
 }
 
 #[test]
-fn class_methods_are_skipped_for_now() {
-    // Classes do not yet have SymbolIds for their methods, so the
-    // collector silently skips them. Future work fills this in.
+fn class_method_sig_collected() {
     let typed = typed_for(
         r#"pack a;
            public class Box {
                public function get(): int { return 1; }
            }"#,
     );
-    assert!(typed.function_sigs.is_empty());
+    // Construct (synthesised) is absent; only the method.
+    assert_eq!(typed.function_sigs.len(), 1);
+    let sig = typed.function_sigs.values().next().unwrap();
+    assert_eq!(sig.return_ty.display(), "int");
+}
+
+#[test]
+fn class_construct_sig_returns_class_type() {
+    let typed = typed_for(
+        r#"pack a;
+           public class User {
+               construct(public string $name) {}
+               public function greet(): string { return "hi"; }
+           }"#,
+    );
+    // construct + method = 2 sigs.
+    assert_eq!(typed.function_sigs.len(), 2);
+    let construct = typed
+        .function_sigs
+        .values()
+        .find(|s| s.return_ty.display() == "User")
+        .expect("construct sig should return User");
+    assert_eq!(construct.params.len(), 1);
+    assert_eq!(construct.params[0].name, "name");
+    assert_eq!(construct.params[0].ty.display(), "string");
+}
+
+#[test]
+fn trait_and_interface_method_sigs_collected() {
+    let typed = typed_for(
+        r#"pack a;
+           public interface Greet { function greet(): string; }
+           public trait Loggable { function log(): void {} }"#,
+    );
+    let return_types: std::collections::HashSet<String> = typed
+        .function_sigs
+        .values()
+        .map(|s| s.return_ty.display())
+        .collect();
+    assert!(return_types.contains("string"));
+    assert!(return_types.contains("void"));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 ---
 source: crates/phc-typecheck/tests/typecheck_examples.rs
+assertion_line: 87
 expression: rendered
 input_file: examples/class.phc
 ---
