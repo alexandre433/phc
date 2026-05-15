@@ -9,4 +9,11 @@ description = "PHC type inference and type checking"
 
 [dependencies]
 phc-ast = { path = "../phc-ast" }
-miette = { workspace = true }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
+phc-semantic = { path = "../phc-semantic" }
+
+[dev-dependencies]
+phc-parser = { path = "../phc-parser" }
+phc-lexer = { path = "../phc-lexer" }
+insta = { version = "1", features = ["glob"] }
