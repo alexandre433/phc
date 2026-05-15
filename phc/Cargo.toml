@@ -13,3 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true }
+phc-interp = { path = "../crates/phc-interp" }
+phc-parser = { path = "../crates/phc-parser" }
+phc-semantic = { path = "../crates/phc-semantic" }
+phc-typecheck = { path = "../crates/phc-typecheck" }
+phc-span = { path = "../crates/phc-span" }
