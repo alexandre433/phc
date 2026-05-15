@@ -269,7 +269,9 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::Unary { span, .. }
         | Expr::Borrow { span, .. }
         | Expr::Cast { span, .. }
-        | Expr::Binary { span, .. } => *span,
+        | Expr::Binary { span, .. }
+        | Expr::Match { span, .. }
+        | Expr::Lambda { span, .. } => *span,
     }
 }
 

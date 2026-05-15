@@ -7,15 +7,17 @@
 //! own function so the parser reads top-down and the call graph
 //! mirrors the EBNF.
 //!
-//! Match expressions and lambdas are deferred to P7; for now
-//! `parse_primary` reports an unsupported diagnostic when it sees
-//! `match` or an opening lambda.
+//! Match expressions and lambdas live alongside the precedence
+//! climber: `parse_match_expr` is dispatched from `parse_primary` on
+//! the `match` keyword, and `try_lambda` is attempted before falling
+//! back to a parenthesised expression on `(`.
 
-use phc_ast::{BinOp, Borrow, Expr, Ident, StrPart, UnaryOp};
+use phc_ast::{BinOp, Borrow, Expr, Ident, LambdaBody, MatchArm, Param, Pattern, StrPart, UnaryOp};
 use phc_lexer::{Lexer, StringPart, Token};
 use phc_span::Span;
 
-use crate::functions::parse_borrow_mod;
+use crate::functions::{expect_var_ref, parse_borrow_mod};
+use crate::statements::parse_block;
 use crate::types::parse_type;
 use crate::Cursor;
 
@@ -274,6 +276,15 @@ fn parse_primary(cursor: &mut Cursor<'_>) -> Option<Expr> {
         }
         Token::Dollar => parse_var_or_this(cursor),
         Token::LParen => {
+            // `(...)` could be a parenthesised expression or a
+            // lambda: `(Type $name, ...) [: T] => body`. Try the
+            // lambda shape first via a checkpoint and fall back to
+            // a paren expression on rollback.
+            let cp = cursor.checkpoint();
+            if let Some(lambda) = try_lambda(cursor) {
+                return Some(lambda);
+            }
+            cursor.restore(cp);
             cursor.advance();
             let inner = parse_expr(cursor)?;
             let close = cursor.expect(&Token::RParen, "`)`").ok()?;
@@ -292,11 +303,7 @@ fn parse_primary(cursor: &mut Cursor<'_>) -> Option<Expr> {
                 span: spanned.span,
             })
         }
-        Token::Match => {
-            let span = spanned.span;
-            cursor.error(span, "`match` expressions are not yet parsed (P7)");
-            None
-        }
+        Token::Match => parse_match_expr(cursor),
         _ => {
             let span = spanned.span;
             cursor.error(span, "expected an expression");
@@ -363,6 +370,213 @@ fn parse_interp_body(body: &str, host_span: Span, cursor: &mut Cursor<'_>) -> Op
     expr
 }
 
+/// Try to parse a lambda starting at the `(` lookahead. Returns
+/// `None` (without committing diagnostics, thanks to the caller's
+/// checkpoint) if the parens turn out to enclose an expression
+/// instead — i.e. the body is missing `=>` after `)` or the
+/// putative parameter list does not start with a Type.
+fn try_lambda(cursor: &mut Cursor<'_>) -> Option<Expr> {
+    let start = cursor.expect(&Token::LParen, "`(`").ok()?;
+    let mut params: Vec<Param> = Vec::new();
+    if !matches!(cursor.peek_token(), Some(Token::RParen)) {
+        let first = parse_lambda_param(cursor)?;
+        params.push(first);
+        while matches!(cursor.peek_token(), Some(Token::Comma)) {
+            cursor.advance();
+            if matches!(cursor.peek_token(), Some(Token::RParen)) {
+                break;
+            }
+            params.push(parse_lambda_param(cursor)?);
+        }
+    }
+    if !matches!(cursor.peek_token(), Some(Token::RParen)) {
+        return None;
+    }
+    cursor.advance(); // consume `)`
+    let return_type = if cursor.eat(&Token::Colon).is_some() {
+        Some(parse_type(cursor)?)
+    } else {
+        None
+    };
+    if !matches!(cursor.peek_token(), Some(Token::FatArrow)) {
+        return None;
+    }
+    cursor.advance(); // consume `=>`
+    let body = if matches!(cursor.peek_token(), Some(Token::LBrace)) {
+        let block = parse_block(cursor)?;
+        LambdaBody::Block(block)
+    } else {
+        let expr = parse_expr(cursor)?;
+        LambdaBody::Expr(Box::new(expr))
+    };
+    let hi = match &body {
+        LambdaBody::Expr(e) => expr_span(e).hi,
+        LambdaBody::Block(b) => b.span.hi,
+    };
+    Some(Expr::Lambda {
+        params,
+        return_type,
+        body,
+        span: Span::new(cursor.file(), start.lo, hi),
+    })
+}
+
+fn parse_lambda_param(cursor: &mut Cursor<'_>) -> Option<Param> {
+    let lo = cursor.current_span().lo;
+    let borrow = parse_borrow_mod(cursor);
+    let ty = parse_type(cursor)?;
+    let name = expect_var_ref(cursor)?;
+    let hi = name.span.hi;
+    Some(Param {
+        borrow,
+        ty,
+        name,
+        span: Span::new(cursor.file(), lo, hi),
+    })
+}
+
+fn parse_match_expr(cursor: &mut Cursor<'_>) -> Option<Expr> {
+    let start = cursor.expect(&Token::Match, "`match`").ok()?;
+    cursor.expect(&Token::LParen, "`(` after `match`").ok()?;
+    let scrutinee = parse_expr(cursor)?;
+    cursor.expect(&Token::RParen, "`)`").ok()?;
+    cursor
+        .expect(&Token::LBrace, "`{` opening match arms")
+        .ok()?;
+    let arms = parse_match_arms(cursor)?;
+    let close = cursor.expect(&Token::RBrace, "`}`").ok()?;
+    Some(Expr::Match {
+        scrutinee: Box::new(scrutinee),
+        arms,
+        span: Span::new(cursor.file(), start.lo, close.hi),
+    })
+}
+
+fn parse_match_arms(cursor: &mut Cursor<'_>) -> Option<Vec<MatchArm>> {
+    if matches!(cursor.peek_token(), Some(Token::RBrace)) {
+        return Some(Vec::new());
+    }
+    let first = parse_match_arm(cursor)?;
+    let mut arms = vec![first];
+    while matches!(cursor.peek_token(), Some(Token::Comma)) {
+        cursor.advance();
+        if matches!(cursor.peek_token(), Some(Token::RBrace)) {
+            break;
+        }
+        arms.push(parse_match_arm(cursor)?);
+    }
+    Some(arms)
+}
+
+fn parse_match_arm(cursor: &mut Cursor<'_>) -> Option<MatchArm> {
+    let pattern = parse_pattern(cursor)?;
+    let lo = pattern_span(&pattern).lo;
+    let guard = if cursor.eat(&Token::If).is_some() {
+        Some(parse_expr(cursor)?)
+    } else {
+        None
+    };
+    cursor.expect(&Token::FatArrow, "`=>`").ok()?;
+    let body = parse_expr(cursor)?;
+    let hi = expr_span(&body).hi;
+    Some(MatchArm {
+        pattern,
+        guard,
+        body,
+        span: Span::new(cursor.file(), lo, hi),
+    })
+}
+
+fn parse_pattern(cursor: &mut Cursor<'_>) -> Option<Pattern> {
+    let first = parse_atom_pattern(cursor)?;
+    if !matches!(cursor.peek_token(), Some(Token::Pipe)) {
+        return Some(first);
+    }
+    let lo = pattern_span(&first).lo;
+    let mut atoms = vec![first];
+    while cursor.eat(&Token::Pipe).is_some() {
+        atoms.push(parse_atom_pattern(cursor)?);
+    }
+    let hi = atoms
+        .last()
+        .map(|p| pattern_span(p).hi)
+        .unwrap_or_else(|| cursor.current_span().lo);
+    Some(Pattern::Or {
+        atoms,
+        span: Span::new(cursor.file(), lo, hi),
+    })
+}
+
+fn parse_atom_pattern(cursor: &mut Cursor<'_>) -> Option<Pattern> {
+    let spanned = cursor.peek()?.clone();
+    match spanned.token {
+        Token::IntLit(_)
+        | Token::FloatLit(_)
+        | Token::True
+        | Token::False
+        | Token::Null
+        | Token::StrLit(_) => {
+            let expr = parse_primary(cursor)?;
+            Some(Pattern::Literal(Box::new(expr)))
+        }
+        Token::Dollar => {
+            let name = expect_var_ref(cursor)?;
+            let span = name.span;
+            Some(Pattern::Var { name, span })
+        }
+        Token::Ident(name) => {
+            if name == "_" {
+                cursor.advance();
+                return Some(Pattern::Wildcard { span: spanned.span });
+            }
+            // Otherwise expect Ident `::` Ident for an enum variant
+            // path. Anything else here is invalid.
+            cursor.advance();
+            let ty = Ident {
+                name,
+                span: spanned.span,
+            };
+            cursor
+                .expect(&Token::StaticOp, "`::` after enum type name")
+                .ok()?;
+            let variant = expect_ident_in_pattern(cursor, "enum variant name")?;
+            let span = Span::new(cursor.file(), ty.span.lo, variant.span.hi);
+            Some(Pattern::EnumVariant { ty, variant, span })
+        }
+        _ => {
+            let span = spanned.span;
+            cursor.error(span, "expected a pattern");
+            None
+        }
+    }
+}
+
+fn expect_ident_in_pattern(cursor: &mut Cursor<'_>, label: &str) -> Option<Ident> {
+    let spanned = cursor.peek()?;
+    if let Token::Ident(name) = &spanned.token {
+        let ident = Ident {
+            name: name.clone(),
+            span: spanned.span,
+        };
+        cursor.advance();
+        Some(ident)
+    } else {
+        let span = spanned.span;
+        cursor.error(span, format!("expected {label}"));
+        None
+    }
+}
+
+fn pattern_span(pat: &Pattern) -> Span {
+    match pat {
+        Pattern::Wildcard { span }
+        | Pattern::Var { span, .. }
+        | Pattern::EnumVariant { span, .. }
+        | Pattern::Or { span, .. } => *span,
+        Pattern::Literal(e) => expr_span(e),
+    }
+}
+
 fn combine(lhs: Expr, rhs: Expr, op: BinOp, cursor: &Cursor<'_>) -> Expr {
     let lo = expr_span(&lhs).lo;
     let hi = expr_span(&rhs).hi;
@@ -392,7 +606,9 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::Unary { span, .. }
         | Expr::Borrow { span, .. }
         | Expr::Cast { span, .. }
-        | Expr::Binary { span, .. } => *span,
+        | Expr::Binary { span, .. }
+        | Expr::Match { span, .. }
+        | Expr::Lambda { span, .. } => *span,
     }
 }
 
@@ -674,13 +890,108 @@ mod tests {
     }
 
     #[test]
-    fn match_in_expression_emits_p7_diagnostic() {
-        let toks = tokens_of("match ($x) { _ => 1 }");
+    fn match_with_wildcard_arm() {
+        match parse_ok("match ($x) { _ => 1 }") {
+            Expr::Match { arms, .. } => {
+                assert_eq!(arms.len(), 1);
+                assert!(matches!(arms[0].pattern, Pattern::Wildcard { .. }));
+                assert!(arms[0].guard.is_none());
+            }
+            other => panic!("expected Match, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn match_with_or_pattern_and_enum_variant() {
+        match parse_ok(
+            "match ($status) { Status::Ok => 0, Status::NotFound | Status::Gone => 404, _ => -1 }",
+        ) {
+            Expr::Match { arms, .. } => {
+                assert_eq!(arms.len(), 3);
+                assert!(matches!(arms[0].pattern, Pattern::EnumVariant { .. }));
+                assert!(matches!(arms[1].pattern, Pattern::Or { .. }));
+                if let Pattern::Or { atoms, .. } = &arms[1].pattern {
+                    assert_eq!(atoms.len(), 2);
+                }
+            }
+            other => panic!("expected Match, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn match_with_var_binding_and_guard() {
+        match parse_ok("match ($s) { $code if $code > 500 => 500, _ => 200 }") {
+            Expr::Match { arms, .. } => {
+                assert!(matches!(arms[0].pattern, Pattern::Var { .. }));
+                assert!(arms[0].guard.is_some());
+            }
+            other => panic!("expected Match, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lambda_no_params_expression_body() {
+        match parse_ok("() => 42") {
+            Expr::Lambda {
+                params,
+                body,
+                return_type,
+                ..
+            } => {
+                assert!(params.is_empty());
+                assert!(return_type.is_none());
+                assert!(matches!(body, LambdaBody::Expr(_)));
+            }
+            other => panic!("expected Lambda, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lambda_with_params_and_return_type() {
+        match parse_ok("(int $n): int => $n * 2") {
+            Expr::Lambda {
+                params,
+                return_type,
+                ..
+            } => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0].name.name, "n");
+                assert!(return_type.is_some());
+            }
+            other => panic!("expected Lambda, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lambda_with_block_body() {
+        match parse_ok("(int $n) => { return $n + 1; }") {
+            Expr::Lambda { body, .. } => {
+                assert!(matches!(body, LambdaBody::Block(_)));
+            }
+            other => panic!("expected Lambda, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn paren_expression_when_not_a_lambda() {
+        // Plain `(1 + 2)` should still parse as a Paren wrapping
+        // a Binary; lambda backtracking must not corrupt this.
+        match parse_ok("(1 + 2)") {
+            Expr::Paren { inner, .. } => {
+                assert!(matches!(*inner, Expr::Binary { op: BinOp::Add, .. }));
+            }
+            other => panic!("expected Paren, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pattern_with_just_an_ident_requires_static_op() {
+        let toks = tokens_of("match ($x) { Bare => 1 }");
         let mut cursor = Cursor::new(&toks, FileId(0), 21);
         let _ = parse_expr(&mut cursor);
         let diags = cursor.into_diagnostics();
         assert!(diags
             .iter()
-            .any(|d| d.message.contains("not yet parsed (P7)")));
+            .any(|d| d.message.contains("`::` after enum type name")));
     }
 }

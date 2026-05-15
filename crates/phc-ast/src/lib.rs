@@ -455,6 +455,65 @@ pub enum Expr {
         rhs: Box<Expr>,
         span: Span,
     },
+    /// `match (scrutinee) { arm, ... }` (D-015).
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
+    /// `(params) [: T] => body` (D-016).
+    Lambda {
+        params: Vec<Param>,
+        return_type: Option<TypeRef>,
+        body: LambdaBody,
+        span: Span,
+    },
+}
+
+/// One arm of a [`Expr::Match`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub guard: Option<Expr>,
+    pub body: Expr,
+    pub span: Span,
+}
+
+/// A pattern in a `match` arm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pattern {
+    Wildcard {
+        span: Span,
+    },
+    /// Literal pattern. Stored as the literal `Expr` for span and
+    /// payload reuse; the parser only places literal-shaped exprs
+    /// here.
+    Literal(Box<Expr>),
+    /// `$name` pattern that binds the scrutinee to a fresh name.
+    Var {
+        name: Ident,
+        span: Span,
+    },
+    /// `Type::Variant` pattern matching one enum case.
+    EnumVariant {
+        ty: Ident,
+        variant: Ident,
+        span: Span,
+    },
+    /// `pat1 | pat2 | ...` — at least two atoms.
+    Or {
+        atoms: Vec<Pattern>,
+        span: Span,
+    },
+}
+
+/// Body of a [`Expr::Lambda`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LambdaBody {
+    /// `(params) => expr` — single expression body.
+    Expr(Box<Expr>),
+    /// `(params) => { stmts }` — block body, may use `return`.
+    Block(Block),
 }
 
 /// A piece of a string literal (D-017).
