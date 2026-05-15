@@ -208,6 +208,30 @@ When writing Rust code in this repo:
 - When a comment encodes a spec rule, cite the D-NNN id (e.g. `// D-005: &flip is mutable borrow`) so the link to spec/ stays explicit
 - `TODO:` comments must include the phase: `// TODO(phase-3): …`
 
+#### Visibility
+
+- Default to `pub(crate)` for items used only within the same crate
+- Promote to `pub` only when the item is part of the crate's intentional public API (re-exported for the next pipeline stage to consume)
+- Do not write `pub` for "convenience"; the wider the surface, the harder later refactors become
+- A new `pub` item warrants a one-line note in the crate's `lib.rs` `//!` summary if it changes the crate's role
+
+#### Crate dependency DAG
+
+Crates form a directed acyclic graph that mirrors the compiler pipeline. Allowed edges flow left-to-right:
+
+```
+phc-span     ← phc-ast ← phc-lexer ← phc-parser ← phc-semantic ← phc-typecheck ← phc-borrowcheck ← phc-ir ← phc-lower ← phc-opt ← phc-codegen
+phc-errors   ← every crate
+phc-runtime  ← phc-codegen, phc-build
+phc-build    ← phc-pkg, phc-codegen, phc-typecheck (and earlier stages it orchestrates)
+phc-fmt, phc-lint, phc-lsp, phc-test ← phc-parser (and later stages they consume)
+phc          (CLI binary) ← phc-build, phc-pkg, phc-fmt, phc-lint, phc-test
+```
+
+- A crate must not depend on any crate to its right in the pipeline. PRs that introduce a back-edge are rejected
+- Shared utilities go into `phc-span` or `phc-errors`, not into the crate that happens to need them first
+- New cross-cutting crates require a one-line update to this diagram in the same PR
+
 ### 5. Diagnostics matter
 
 PHC should aim for excellent diagnostics.
@@ -248,6 +272,25 @@ The threshold is parallelism, not total count. Three sequential investigator cal
 
 Read-only and write-capable agents follow the same rule. The Plan-mode 3-Explore ceiling is a separate, stricter cap that still applies inside plan mode.
 
+### 9. Branching and PRs
+
+- `main` is the protected trunk. It always reflects releasable state
+- `development` is the integration branch. Day-to-day feature work merges here first
+- Feature work happens on short-lived branches off `development`, named `feat/<scope>-<short-desc>`, `fix/<scope>-<short-desc>`, `chore/<scope>-<short-desc>`, etc.
+- Merging into `main` always requires a pull request. Direct pushes to `main` are forbidden
+- Merging a feature branch into `development` may go via PR or direct push, depending on scope; anything user-visible should still go through a PR
+- A PR may only merge into `main` after CI is green (see §*Required gates*) and at least one review is recorded
+- Rebase or squash-merge to keep history linear; avoid merge commits on `main`
+- Delete feature branches once merged
+
+### 10. Test layout
+
+- **Unit tests** live inline at the bottom of the file under `#[cfg(test)] mod tests { ... }`. Use these for testing crate-private helpers and small invariants
+- **Integration tests** live in `crates/<crate>/tests/<feature>.rs`. They consume only the crate's `pub` API. Use these for end-to-end behaviour of a crate's public surface
+- **Snapshot tests** for the lexer and parser use the `insta` crate. Snapshots live in `crates/<crate>/tests/snapshots/`. Review snapshot diffs with `cargo insta review` before committing
+- Naming: integration tests use the pattern `<phase>_<construct>_<case>` (e.g. `parse_function_decl_with_generics`). Inline unit tests are free-form but must be descriptive
+- Tests must encode *why* a behaviour matters, not only *what* it does — the test name should signal intent
+
 ## Build and validation commands
 
 Until fuller implementation exists, use these expected commands where possible:
@@ -259,6 +302,50 @@ Until fuller implementation exists, use these expected commands where possible:
 - `cargo clippy`
 
 As the project evolves, update this section with the exact expected commands.
+
+## Required gates
+
+Every commit pushed to a branch tracked by CI must pass:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo check --workspace --all-targets`
+- `cargo test --workspace`
+
+These are non-negotiable. The CI workflow at `.github/workflows/ci.yml` enforces them on every push and pull request. Run them locally before opening a PR.
+
+## License headers
+
+- Every `.rs` file (source, tests, benches) starts with `// SPDX-License-Identifier: MIT` as the first line
+- The line stays even when the file is otherwise empty
+- New files added in any phase must include the header from the first commit
+- Non-Rust files (`.toml`, `.md`, `.yml`, `.phc`) do not require a header
+
+## Feature flags
+
+Cargo features (optional dependencies, conditional code paths) are reserved for true optionality:
+
+- Prefer no feature flags until a real need appears
+- When a crate first needs an optional dependency, prefer a Cargo `[features]` entry over `#[cfg(...)]` ad-hoc gating
+- Document each new feature in this section as it is introduced (name, what it enables, default state)
+- Default features should keep the most-common build green; opt-in features must not break the default build when toggled off
+
+## Observability
+
+- **Logging**: use the `tracing` crate. Prefer structured fields (`tracing::info!(file = %path, "loaded")`) over interpolated strings. Spans (`tracing::info_span!`) wrap async tasks and long-running passes so timings are reconstructable
+- `log` (the older crate) is not used in this repo; if a dependency forces it, bridge with `tracing-log`
+- **Benchmarks**: use the `criterion` crate. Benches live in `crates/<crate>/benches/<name>.rs`. Goals: track regressions over time and produce numbers comparable against PHP, Rust, and Go for the same workload
+- Benches are not part of the CI gate but are run before any release tag
+- A bench that grows >10% versus the previous tagged release is a release blocker until investigated
+
+## Deferred follow-ups
+
+These are intentionally postponed but recorded so they are not lost:
+
+- **Supply-chain audit** — wire `cargo-audit` (RustSec advisories) and `cargo-deny` (license + banned-crate policy) into CI before the first 1.0 release
+- **Changelog** — adopt the [Keep a Changelog](https://keepachangelog.com) format starting at Phase 10 / first tagged release. No `CHANGELOG.md` exists yet by design
+- **Pre-commit hooks** — local `.git/hooks/pre-commit` enforcing fmt + clippy can be added once CI churn proves it useful
+- **Documentation rendering** — `#![deny(missing_docs)]` per crate once the first wave of doc comments lands
 
 ## Documentation rules
 
@@ -322,6 +409,7 @@ A good agent contribution in this repo:
 - improves future implementability
 - avoids inventing unresolved language syntax
 - leaves the repository easier for the next agent to pick up
+- conforms to every rule in this document — branching, commit format, comments, dep DAG, gates, headers
 
 ## Maintenance note
 
