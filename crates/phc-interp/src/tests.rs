@@ -426,6 +426,68 @@ fn no_match_arm_is_a_runtime_error() {
 }
 
 #[test]
+fn lambda_with_no_params_invoked_inline() {
+    let out = run_src(
+        r#"pack a;
+           function main(): int {
+               int $r = (() => 42)();
+               return $r;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(42))));
+}
+
+#[test]
+fn lambda_param_used_in_body() {
+    let out = run_src(
+        r#"pack a;
+           function main(): int {
+               int $r = ((int $n): int => $n * 3)(7);
+               return $r;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(21))));
+}
+
+#[test]
+fn lambda_captures_outer_binding_by_value() {
+    let out = run_src(
+        r#"pack a;
+           function main(): int {
+               int $factor = 5;
+               int $r = ((int $n): int => $n * $factor)(4);
+               return $r;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(20))));
+}
+
+#[test]
+fn lambda_stored_in_local_then_called() {
+    let out = run_src(
+        r#"pack a;
+           function main(): int {
+               int $r = call_with_seven((int $n): int => $n + 1);
+               return $r;
+           }
+           function call_with_seven(int $f): int { return $f(7); }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(8))));
+}
+
+#[test]
+fn lambda_block_body_with_return() {
+    let out = run_src(
+        r#"pack a;
+           function main(): int {
+               int $r = ((int $n): int => { return $n + 100; })(5);
+               return $r;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(105))));
+}
+
+#[test]
 fn hello_phc_example_runs_end_to_end() {
     let src = std::fs::read_to_string("../../examples/hello.phc").expect("read hello.phc");
     let out = run_src(&src);

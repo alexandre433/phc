@@ -16,8 +16,8 @@
 //! alongside the matching language feature.
 
 use phc_ast::{
-    BinOp, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item, MatchArm,
-    Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
+    BinOp, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item, LambdaBody,
+    MatchArm, Param, Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
 };
 use phc_semantic::{Resolved, Symbol, SymbolId, SymbolKind};
 use phc_typecheck::Typed;
@@ -47,6 +47,24 @@ pub enum Value {
         enum_name: String,
         variant: String,
     },
+    /// Lambda value. Captures the env (by value) at the lambda's
+    /// creation site so call-time evaluation sees the same set of
+    /// outer bindings the body referenced. Mutable capture (D-016)
+    /// is approximated by value-copy today; rewriting an outer
+    /// `flip` binding from inside the lambda is not yet observable
+    /// outside.
+    Lambda(Rc<LambdaValue>),
+}
+
+/// Owned lambda payload. Stored behind an Rc so cloning a Value is
+/// cheap and lambda values can be passed around by reference.
+#[derive(Debug)]
+pub struct LambdaValue {
+    pub params: Vec<Param>,
+    pub body: LambdaBody,
+    /// Snapshot of every binding visible at the lambda creation
+    /// site, used to seed the call-time env.
+    pub captures: HashMap<SymbolId, Value>,
 }
 
 impl Value {
@@ -60,6 +78,7 @@ impl Value {
             Value::String(s) => s.clone(),
             Value::Instance { class, .. } => format!("<{class} instance>"),
             Value::EnumVariant { enum_name, variant } => format!("{enum_name}::{variant}"),
+            Value::Lambda(_) => "<lambda>".to_string(),
         }
     }
 }
@@ -121,6 +140,19 @@ impl Env {
             }
         }
         None
+    }
+
+    /// Flatten the visible bindings into a single map. Inner-frame
+    /// values shadow outer-frame ones, matching `lookup` order.
+    /// Used by lambda capture to snapshot the env at creation time.
+    fn flatten(&self) -> HashMap<SymbolId, Value> {
+        let mut out = HashMap::new();
+        for scope in &self.bindings {
+            for (id, v) in scope {
+                out.insert(*id, v.clone());
+            }
+        }
+        out
     }
 
     /// Overwrite an existing binding in whichever enclosing scope
@@ -514,6 +546,11 @@ impl<'a> Interp<'a> {
                 let value = self.eval_expr(scrutinee, env)?;
                 self.eval_match(&value, arms, env)
             }
+            Expr::Lambda { params, body, .. } => Ok(Value::Lambda(Rc::new(LambdaValue {
+                params: params.clone(),
+                body: body.clone(),
+                captures: env.flatten(),
+            }))),
             Expr::TypeName { name, .. } => {
                 // A bare type name in expression position is rare —
                 // usually it's the head of a Static or Call. Reject
@@ -592,9 +629,66 @@ impl<'a> Interp<'a> {
                 }
             }
         }
+        // Otherwise: evaluate the callee. If it produces a Lambda
+        // value, invoke it. Covers `$f(args)` and `($f)(args)` and
+        // immediately-invoked lambdas.
+        let callee_value = self.eval_expr(callee, env)?;
+        if let Value::Lambda(lam) = callee_value {
+            return self.invoke_lambda(&lam, args, env);
+        }
         Err(RuntimeError {
             message: format!("call form not yet supported by this interpreter: {callee:?}"),
         })
+    }
+
+    fn invoke_lambda(
+        &mut self,
+        lam: &LambdaValue,
+        args: &[Expr],
+        caller_env: &mut Env,
+    ) -> Result<Value, RuntimeError> {
+        if args.len() != lam.params.len() {
+            return Err(RuntimeError {
+                message: format!(
+                    "lambda expects {} arguments, got {}",
+                    lam.params.len(),
+                    args.len()
+                ),
+            });
+        }
+        let mut arg_values = Vec::with_capacity(args.len());
+        for a in args {
+            arg_values.push(self.eval_expr(a, caller_env)?);
+        }
+        let mut env = Env::default();
+        env.enter();
+        // Seed the call-time env with the captured snapshot so the
+        // lambda body sees the outer bindings it referenced.
+        for (id, value) in &lam.captures {
+            env.bind(*id, value.clone());
+        }
+        for (param, value) in lam.params.iter().zip(arg_values) {
+            if let Some(sid) = self.symbol_at_def(param.name.span) {
+                env.bind(sid, value);
+            }
+        }
+        let result = match &lam.body {
+            LambdaBody::Expr(e) => self.eval_expr(e, &mut env),
+            LambdaBody::Block(b) => {
+                let flow = self.eval_block_body(&b.statements, &mut env)?;
+                Ok(match flow {
+                    Flow::Return(v) => v,
+                    Flow::Normal => Value::Void,
+                    Flow::Break | Flow::Continue => {
+                        return Err(RuntimeError {
+                            message: "`break`/`continue` escaped a lambda body".to_string(),
+                        });
+                    }
+                })
+            }
+        };
+        env.leave();
+        result
     }
 
     fn invoke_method(
