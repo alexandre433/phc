@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! Inline tests for the manifest reader.
 
-use crate::{read_manifest, Manifest, ManifestError};
+use crate::{discover_sources, read_manifest, Manifest, ManifestError};
 use std::collections::BTreeMap;
 
 fn write_temp(name: &str, body: &str) -> std::path::PathBuf {
@@ -81,6 +81,58 @@ fn missing_file_yields_io_error() {
     let path = std::path::PathBuf::from("target/phc-pkg-test/does-not-exist.json");
     let err = read_manifest(&path).expect_err("should fail on missing file");
     assert!(matches!(err, ManifestError::Io(_)));
+}
+
+fn discover_root(name: &str) -> std::path::PathBuf {
+    let mut p = std::path::PathBuf::from("target");
+    p.push("phc-pkg-discover");
+    p.push(name);
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::create_dir_all(&p).expect("create discover root");
+    p
+}
+
+#[test]
+fn discover_collects_phc_files_recursively() {
+    let root = discover_root("recursive");
+    std::fs::write(root.join("a.phc"), "pack a;").unwrap();
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(root.join("sub").join("b.phc"), "pack a.b;").unwrap();
+    std::fs::write(root.join("sub").join("c.txt"), "ignore").unwrap();
+
+    let mut found = discover_sources(&root).unwrap();
+    found.sort();
+    assert_eq!(
+        found,
+        vec![root.join("a.phc"), root.join("sub").join("b.phc"),]
+    );
+}
+
+#[test]
+fn discover_skips_target_and_dotdirs() {
+    let root = discover_root("skip");
+    std::fs::write(root.join("good.phc"), "pack a;").unwrap();
+    std::fs::create_dir_all(root.join("target")).unwrap();
+    std::fs::write(root.join("target").join("ignored.phc"), "pack a;").unwrap();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::write(root.join(".git").join("ignored.phc"), "pack a;").unwrap();
+
+    let found = discover_sources(&root).unwrap();
+    assert_eq!(found, vec![root.join("good.phc")]);
+}
+
+#[test]
+fn discover_returns_sorted_paths() {
+    let root = discover_root("sorted");
+    std::fs::write(root.join("z.phc"), "pack a;").unwrap();
+    std::fs::write(root.join("a.phc"), "pack a;").unwrap();
+    std::fs::write(root.join("m.phc"), "pack a;").unwrap();
+
+    let found = discover_sources(&root).unwrap();
+    assert_eq!(
+        found,
+        vec![root.join("a.phc"), root.join("m.phc"), root.join("z.phc"),]
+    );
 }
 
 #[test]
