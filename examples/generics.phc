@@ -1,0 +1,12 @@
+pack examples.generics_max;
+
+public function max<T: Ord>(T $a, T $b): T {
+    return match ($a > $b) {
+        true => $a,
+        false => $b,
+    };
+}
+
+public function demo(): int {
+    return max(3, 7);
+}

@@ -1,0 +1,6 @@
+pack examples.hello;
+
+public function main(): void {
+    string $name = "PHC";
+    Logger::info("Hello, {$name}!");
+}

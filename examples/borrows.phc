@@ -1,0 +1,9 @@
+pack examples.borrows;
+
+public function read(&User $user): string {
+    return $user->name;
+}
+
+public function bump(&flip int $counter): void {
+    $counter := $counter + 1;
+}

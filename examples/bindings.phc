@@ -1,0 +1,8 @@
+pack examples.bindings;
+
+public function main(): void {
+    int $count = 42;
+    flip int $score = 0;
+    $score := $score + 1;
+    $score := $score + $count;
+}

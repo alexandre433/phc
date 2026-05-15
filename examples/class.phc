@@ -1,0 +1,25 @@
+pack examples.class_user;
+
+public interface Greet { function greet(): string; }
+
+public trait Loggable {
+    function log(): void { Logger::info($this->greet()); }
+}
+
+public class User implements Greet {
+    use Loggable;
+
+    construct(
+        public string $name,
+        int $age,
+    ) {
+        $this->createdAt = instant::now();
+    }
+
+    instant $createdAt;
+    flip int $loginCount = 0;
+
+    public function greet(): string {
+        return "Hi, {$this->name}";
+    }
+}

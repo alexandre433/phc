@@ -1,0 +1,16 @@
+pack examples.match_expr;
+
+public enum Status: int {
+    Ok = 200,
+    NotFound = 404,
+    Gone = 410,
+}
+
+public function classify(Status $status): int {
+    int $code = match ($status) {
+        Status::Ok => 0,
+        Status::NotFound | Status::Gone => 404,
+        _ => -1,
+    };
+    return $code;
+}

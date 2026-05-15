@@ -1,0 +1,11 @@
+pack examples.async_fetch;
+
+async function fetch(string $url): result<bytes, HttpError> {
+    return Http::get($url)->await;
+}
+
+public async function fetchPair(string $a, string $b): result<bytes, HttpError> {
+    bytes $first = fetch($a)->await?;
+    bytes $second = fetch($b)->await?;
+    return result::ok($first + $second);
+}

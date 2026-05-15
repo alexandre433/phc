@@ -1,0 +1,9 @@
+pack app.auth;
+
+use app.http.Request;
+use app.db.{Connection, Pool};
+
+public function authenticate(Request $request, &Pool $pool): bool {
+    Connection $conn = $pool->checkout();
+    return $conn->verify($request->token());
+}
