@@ -14,6 +14,7 @@
 mod expressions;
 mod functions;
 mod source_file;
+mod statements;
 mod types;
 
 #[cfg(test)]
@@ -69,6 +70,14 @@ fn lex_error(span: Span) -> Diagnostic {
     }
 }
 
+/// Snapshot returned by [`Cursor::checkpoint`] for use with
+/// [`Cursor::restore`].
+#[derive(Copy, Clone)]
+pub(crate) struct Checkpoint {
+    pos: usize,
+    diags_len: usize,
+}
+
 /// Cursor over a slice of [`Spanned`] tokens shared by every parser
 /// production. Tracks position, accumulates diagnostics, and offers
 /// the small set of look-ahead and consume primitives the recursive
@@ -98,6 +107,22 @@ impl<'tok> Cursor<'tok> {
 
     pub(crate) fn pos(&self) -> usize {
         self.pos
+    }
+
+    /// Snapshot the cursor state for a possible rollback. Backtracking
+    /// productions (e.g. local-binding-vs-expression at statement
+    /// start) save a checkpoint, attempt one branch, and call
+    /// [`Self::restore`] if the branch did not match.
+    pub(crate) fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            pos: self.pos,
+            diags_len: self.diagnostics.len(),
+        }
+    }
+
+    pub(crate) fn restore(&mut self, cp: Checkpoint) {
+        self.pos = cp.pos;
+        self.diagnostics.truncate(cp.diags_len);
     }
 
     /// Peek `offset` tokens past the cursor. `peek_at(0) == peek()`.

@@ -17,10 +17,11 @@
 //! `{}` body is accepted in this commit. Anything else surfaces a
 //! diagnostic and the parser recovers to the closing `}`.
 
-use phc_ast::{Block, Borrow, FunctionDecl, Ident, Param, Stmt, Visibility};
+use phc_ast::{Borrow, FunctionDecl, Ident, Param, Visibility};
 use phc_lexer::Token;
 use phc_span::Span;
 
+use crate::statements::parse_block;
 use crate::types::{parse_optional_generic_params, parse_type};
 use crate::Cursor;
 
@@ -111,45 +112,6 @@ pub(crate) fn expect_var_ref(cursor: &mut Cursor<'_>) -> Option<Ident> {
         name: name.name,
         span: Span::new(cursor.file(), dollar.lo, name.span.hi),
     })
-}
-
-fn parse_block(cursor: &mut Cursor<'_>) -> Option<Block> {
-    let open = cursor.expect(&Token::LBrace, "`{`").ok()?;
-    if !matches!(cursor.peek_token(), Some(Token::RBrace)) {
-        let span = cursor.current_span();
-        cursor.error(
-            span,
-            "function body statements are not yet parsed (P5 wires them)",
-        );
-        recover_to_block_close(cursor);
-    }
-    let close = cursor.expect(&Token::RBrace, "`}`").ok()?;
-    Some(Block {
-        statements: Vec::<Stmt>::new(),
-        span: Span::new(cursor.file(), open.lo, close.hi),
-    })
-}
-
-fn recover_to_block_close(cursor: &mut Cursor<'_>) {
-    let mut depth: usize = 1;
-    while let Some(spanned) = cursor.peek() {
-        match &spanned.token {
-            Token::LBrace => {
-                depth += 1;
-                cursor.advance();
-            }
-            Token::RBrace => {
-                depth -= 1;
-                if depth == 0 {
-                    return;
-                }
-                cursor.advance();
-            }
-            _ => {
-                cursor.advance();
-            }
-        }
-    }
 }
 
 fn expect_ident(cursor: &mut Cursor<'_>, label: &str) -> Option<Ident> {
@@ -248,8 +210,10 @@ mod tests {
     }
 
     #[test]
-    fn statements_in_body_emit_todo_diagnostic() {
-        let (_decl, diags) = parse("function f(): void { return; }");
-        assert!(diags.iter().any(|d| d.message.contains("not yet parsed")));
+    fn body_with_statements_parses_cleanly() {
+        let (decl, diags) = parse("function f(): void { return; }");
+        assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+        let f = decl.expect("expected FunctionDecl");
+        assert_eq!(f.body.statements.len(), 1);
     }
 }

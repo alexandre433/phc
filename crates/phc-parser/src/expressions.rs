@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Wired into statements (P5) and class-member parsing (P6); the
-// inline tests below already exercise every production. Drop this
-// allow once parse_expr has a non-test caller.
-#![allow(dead_code)]
-
 //! Expression productions.
 //!
 //! Mirrors the precedence table in `spec/grammar.ebnf` /

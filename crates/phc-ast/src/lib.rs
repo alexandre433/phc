@@ -148,11 +148,79 @@ pub struct Block {
     pub span: Span,
 }
 
-/// Placeholder for the statement enum. Variants land in P5.
+/// A statement inside a [`Block`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
-    // TODO(phase-2): LocalBinding, Reassign, If, While, For, Return,
-    // Break, Continue, ExprStmt.
+    Local(LocalBinding),
+    Reassign(ReassignStmt),
+    If(IfStmt),
+    While(WhileStmt),
+    For(ForStmt),
+    Return(ReturnStmt),
+    Break { span: Span },
+    Continue { span: Span },
+    Expr(ExprStmt),
+}
+
+/// `[flip] <Type> $<name> = <expr>;` (D-005, D-010).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalBinding {
+    pub is_mut: bool,
+    pub ty: TypeRef,
+    pub name: Ident,
+    pub value: Expr,
+    pub span: Span,
+}
+
+/// `<lhs> := <expr>;` (D-005). The parser validates that `lhs` is a
+/// [`Expr::Var`] or a chain of [`Expr::Member`] rooted at one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReassignStmt {
+    pub lhs: Expr,
+    pub value: Expr,
+    pub span: Span,
+}
+
+/// `if (cond) { ... } { else if (cond) { ... } } [ else { ... } ]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfStmt {
+    /// Each entry is one `(condition, block)`. The first is the
+    /// leading `if`; the rest are `else if` clauses in source order.
+    pub branches: Vec<(Expr, Block)>,
+    pub else_block: Option<Block>,
+    pub span: Span,
+}
+
+/// `while (cond) { ... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhileStmt {
+    pub cond: Expr,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// `for (Type $name in iter) { ... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForStmt {
+    pub elem_ty: TypeRef,
+    pub elem_name: Ident,
+    pub iter: Expr,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// `return [<expr>];`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReturnStmt {
+    pub value: Option<Expr>,
+    pub span: Span,
+}
+
+/// `<expr>;` — value discarded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExprStmt {
+    pub expr: Expr,
+    pub span: Span,
 }
 
 /// Expression node. Mirrors every Expression production in the EBNF
