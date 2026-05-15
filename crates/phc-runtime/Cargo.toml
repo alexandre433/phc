@@ -5,7 +5,9 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "PHC runtime — async executor, CoW, panic handler"
+description = "PHC C runtime, bundled as static strings for phc-build to write next to generated C."
 
 [dependencies]
-tokio = { workspace = true }
+# No Rust deps. The crate exposes the C runtime sources through
+# `include_str!` so phc-build can write them alongside emitted C.
+# Tokio + async glue lands when the runtime grows past the C stub.
