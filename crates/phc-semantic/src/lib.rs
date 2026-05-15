@@ -8,6 +8,7 @@
 //! follow-up commit.
 
 mod collect;
+mod resolve;
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +19,7 @@ use phc_span::Span;
 use std::collections::HashMap;
 
 pub use collect::collect_top_level;
+pub use resolve::resolve_bodies;
 
 /// Stable identifier assigned to every named entity the resolver
 /// discovers (top-level item, parameter, local binding, ...).
@@ -65,6 +67,11 @@ pub struct Resolved {
     pub symbols: Vec<Symbol>,
     /// Top-level scope: name → symbol id for every Item in the file.
     pub top_level: HashMap<String, SymbolId>,
+    /// Use-site → symbol id for every resolved `$name` / `$this`
+    /// reference. Keyed by the use-site span; collisions across
+    /// files are not possible while the resolver is single-file
+    /// scoped (see [`resolve`]).
+    pub uses: HashMap<Span, SymbolId>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -81,5 +88,6 @@ impl Resolved {
 pub fn resolve(file: &SourceFile) -> Resolved {
     let mut resolved = Resolved::default();
     collect_top_level(file, &mut resolved);
+    resolve_bodies(file, &mut resolved);
     resolved
 }

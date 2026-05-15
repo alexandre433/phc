@@ -44,7 +44,18 @@ fn each_item_kind_gets_the_right_symbol_kind() {
         test "smoke" { return; }
     "#;
     let r = resolved_for(src);
-    let kinds: Vec<SymbolKind> = r.symbols.iter().map(|s| s.kind).collect();
+    // Top-level kinds — body-introduced Value symbols (e.g. trait
+    // method `$this`) are excluded by filtering on top_level.
+    let mut kinds: Vec<SymbolKind> = r.top_level.values().map(|id| r.symbol(*id).kind).collect();
+    kinds.sort_by_key(|k| match k {
+        SymbolKind::Function => 0,
+        SymbolKind::Class => 1,
+        SymbolKind::Enum => 2,
+        SymbolKind::Interface => 3,
+        SymbolKind::Trait => 4,
+        SymbolKind::Test => 5,
+        SymbolKind::Value => 6,
+    });
     assert_eq!(
         kinds,
         vec![
@@ -82,4 +93,117 @@ fn lookup_round_trips_through_top_level() {
     assert_eq!(r.symbol(add_id).kind, SymbolKind::Function);
     let user_id = r.top_level.get("User").copied().expect("User registered");
     assert_eq!(r.symbol(user_id).kind, SymbolKind::Class);
+}
+
+#[test]
+fn parameter_used_in_body_resolves() {
+    let r = resolved_for(
+        r#"pack a;
+           function add(int $a, int $b): int { return $a + $b; }"#,
+    );
+    assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+    // Two use-sites recorded ($a and $b in the return expr).
+    assert_eq!(r.uses.len(), 2);
+}
+
+#[test]
+fn local_binding_visible_after_declaration() {
+    let r = resolved_for(
+        r#"pack a;
+           function f(): int {
+               int $x = 1;
+               int $y = $x + 2;
+               return $y;
+           }"#,
+    );
+    assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+    // Two distinct use-sites for $x and $y.
+    assert_eq!(r.uses.len(), 2);
+}
+
+#[test]
+fn unresolved_var_emits_diagnostic() {
+    let r = resolved_for(
+        r#"pack a;
+           function f(): int { return $missing; }"#,
+    );
+    assert!(r
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("unresolved name `$missing`")));
+}
+
+#[test]
+fn this_resolves_inside_method_but_not_top_level_function() {
+    let r = resolved_for(
+        r#"pack a;
+           public class Box {
+               public function get(): int { return $this->value; }
+           }"#,
+    );
+    assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+
+    let r2 = resolved_for(
+        r#"pack a;
+           function f(): int { return $this->value; }"#,
+    );
+    assert!(r2
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("unresolved name `$this`")));
+}
+
+#[test]
+fn for_loop_introduces_element_binding() {
+    let r = resolved_for(
+        r#"pack a;
+           function sum(list<int> $xs): int {
+               flip int $total = 0;
+               for (int $n in $xs) { $total := $total + $n; }
+               return $total;
+           }"#,
+    );
+    assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+}
+
+#[test]
+fn match_var_pattern_binds_in_arm_body() {
+    let r = resolved_for(
+        r#"pack a;
+           function classify(int $code): int {
+               return match ($code) {
+                   $n if $n > 500 => 500,
+                   _ => 0,
+               };
+           }"#,
+    );
+    assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+}
+
+#[test]
+fn lambda_param_scoped_to_body() {
+    let r = resolved_for(
+        r#"pack a;
+           function f(): int {
+               int $factor = 2;
+               int $result = doubled((int $n): int => $n * $factor);
+               return $result;
+           }"#,
+    );
+    assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+}
+
+#[test]
+fn local_binding_does_not_leak_out_of_block() {
+    let r = resolved_for(
+        r#"pack a;
+           function f(): int {
+               if (true) { int $temp = 1; }
+               return $temp;
+           }"#,
+    );
+    assert!(r
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("unresolved name `$temp`")));
 }
