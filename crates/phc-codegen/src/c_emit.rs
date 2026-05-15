@@ -13,8 +13,8 @@
 //! returns).
 
 use phc_ast::{
-    BinOp, ClassDecl, ClassMember, ConstructDecl, Expr, FunctionDecl, Item, SourceFile, Stmt,
-    StrPart, TraitDecl, UnaryOp,
+    BinOp, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item, MatchArm,
+    Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
 };
 use phc_errors::{Diagnostic, Severity};
 use phc_semantic::{Resolved, SymbolKind};
@@ -34,6 +34,13 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
         file,
     };
     emitter.emit_prelude();
+    // Phase 0: enum typedefs first — class fields and method
+    // signatures may reference them.
+    for item in &file.items {
+        if let Item::Enum(e) = item {
+            emitter.emit_enum(e);
+        }
+    }
     // Phase 1: forward struct decls so methods can reference each
     // other's instance pointer types in any order.
     for item in &file.items {
@@ -103,11 +110,50 @@ impl<'a> Emitter<'a> {
             _ => {
                 if self.is_class(name) {
                     format!("phc_obj_{name}*")
+                } else if self.is_enum(name) {
+                    format!("phc_enum_{name}")
                 } else {
                     "phc_value".into()
                 }
             }
         }
+    }
+
+    /// Like c_type_for but consumes a typecheck-level Ty so match
+    /// inference can dispatch on the recovered scrutinee / result
+    /// type. Disambiguates Path between class (pointer) and enum
+    /// (value) using the resolver's symbol kinds.
+    fn ty_to_c(&self, ty: &Ty) -> String {
+        match ty {
+            Ty::Primitive(p) => match p {
+                Primitive::Int => "int64_t".into(),
+                Primitive::Float => "double".into(),
+                Primitive::Bool => "bool".into(),
+                Primitive::String => "phc_string".into(),
+                Primitive::Void => "void".into(),
+                Primitive::Byte => "uint8_t".into(),
+                Primitive::Bytes => "phc_string".into(),
+            },
+            Ty::Path { path, .. } if path.len() == 1 => {
+                let name = path[0].as_str();
+                if self.is_class(name) {
+                    format!("phc_obj_{name}*")
+                } else if self.is_enum(name) {
+                    format!("phc_enum_{name}")
+                } else {
+                    "int64_t".into()
+                }
+            }
+            _ => "int64_t".into(),
+        }
+    }
+
+    fn is_enum(&self, name: &str) -> bool {
+        self.resolved
+            .top_level
+            .get(name)
+            .map(|id| self.resolved.symbol(*id).kind == SymbolKind::Enum)
+            .unwrap_or(false)
     }
 
     fn is_class(&self, name: &str) -> bool {
@@ -179,6 +225,18 @@ impl<'a> Emitter<'a> {
             "static phc_obj_{class}* phc_construct_{class}({})",
             params.join(", ")
         )
+    }
+
+    // ===== Enums =====
+
+    fn emit_enum(&mut self, e: &EnumDecl) {
+        let name = &e.name.name;
+        self.buf.push_str("typedef enum {\n");
+        for v in &e.variants {
+            self.buf
+                .push_str(&format!("    phc_enum_{name}_{},\n", v.name.name));
+        }
+        self.buf.push_str(&format!("}} phc_enum_{name};\n\n"));
     }
 
     // ===== Classes =====
@@ -491,12 +549,103 @@ impl<'a> Emitter<'a> {
                 let target = self.c_type_for(ty);
                 format!("(({target})({inner}))")
             }
+            Expr::Static { ty, member, .. } => {
+                if let Expr::TypeName { name, .. } = ty.as_ref() {
+                    if self.is_enum(&name.name) {
+                        return format!("phc_enum_{}_{}", name.name, member.name);
+                    }
+                }
+                self.diag(
+                    span_of_expr(expr),
+                    "static access not yet supported in this context",
+                );
+                "phc_panic(\"codegen TODO static\")".into()
+            }
+            Expr::Match {
+                scrutinee, arms, ..
+            } => self.emit_match(scrutinee, arms, expr),
             other => {
                 self.diag(
                     span_of_expr(other),
                     "expression form not yet supported by the C emitter",
                 );
                 "phc_panic(\"codegen TODO expr\")".into()
+            }
+        }
+    }
+
+    /// Emit a `match` expression as a GCC statement-expression
+    /// `({...; result;})`. Uses `__phc_match_<lo>` for the scrutinee
+    /// and `__phc_result_<lo>` for the captured result; the `<lo>`
+    /// suffix keeps nested matches from colliding.
+    fn emit_match(&mut self, scrutinee: &Expr, arms: &[MatchArm], whole: &Expr) -> String {
+        let host_lo = span_of_expr(whole).lo;
+        // Match result type: typecheck records Match as Unknown (no
+        // unifier yet), so fall back to the first arm body whose
+        // type is concrete.
+        let result_ty = arms
+            .iter()
+            .find_map(|arm| {
+                let t = self.typed.expr_types.get(&span_of_expr(&arm.body))?;
+                if matches!(t, Ty::Unknown) {
+                    None
+                } else {
+                    Some(self.ty_to_c(t))
+                }
+            })
+            .unwrap_or_else(|| "int64_t".into());
+        let scrut_ty = self
+            .typed
+            .expr_types
+            .get(&span_of_expr(scrutinee))
+            .map(|t| self.ty_to_c(t))
+            .unwrap_or_else(|| "int64_t".into());
+        let scrut_c = self.emit_expr(scrutinee);
+        let scrut_var = format!("__phc_match_{host_lo}");
+        let result_var = format!("__phc_result_{host_lo}");
+        let mut body = String::new();
+        body.push_str(&format!("{scrut_ty} {scrut_var} = {scrut_c}; "));
+        body.push_str(&format!("{result_ty} {result_var}; "));
+        body.push_str(&format!("bool __phc_matched_{host_lo} = false; "));
+        // Independent `if`s rather than `else if` chain: a pattern
+        // can match (cond=true) but its guard can fail; the next
+        // arm must still get a chance. The matched flag short-
+        // circuits both pieces.
+        for arm in arms {
+            let cond = self.pattern_condition(&arm.pattern, &scrut_var);
+            let captures = pattern_captures(&arm.pattern, &scrut_ty, &scrut_var);
+            let guard = arm
+                .guard
+                .as_ref()
+                .map(|g| self.emit_expr(g))
+                .unwrap_or_else(|| "true".into());
+            let body_c = self.emit_expr(&arm.body);
+            body.push_str(&format!(
+                "if (!__phc_matched_{host_lo} && ({cond})) {{ {captures} if ({guard}) {{ {result_var} = {body_c}; __phc_matched_{host_lo} = true; }} }} "
+            ));
+        }
+        body.push_str(&format!(
+            "if (!__phc_matched_{host_lo}) {{ phc_panic(\"no match arm\"); }} "
+        ));
+        format!("({{ {body} {result_var}; }})")
+    }
+
+    fn pattern_condition(&mut self, pat: &Pattern, scrut: &str) -> String {
+        match pat {
+            Pattern::Wildcard { .. } | Pattern::Var { .. } => "true".into(),
+            Pattern::Literal(lit) => {
+                let lit_c = self.emit_expr(lit);
+                format!("({scrut}) == ({lit_c})")
+            }
+            Pattern::EnumVariant { ty, variant, .. } => {
+                format!("({scrut}) == phc_enum_{}_{}", ty.name, variant.name)
+            }
+            Pattern::Or { atoms, .. } => {
+                let parts: Vec<String> = atoms
+                    .iter()
+                    .map(|a| self.pattern_condition(a, scrut))
+                    .collect();
+                format!("({})", parts.join(" || "))
             }
         }
     }
@@ -640,6 +789,31 @@ impl<'a> Emitter<'a> {
             message: message.into(),
             span,
         });
+    }
+}
+
+/// Build the C declarations needed for any Var bindings inside a
+/// pattern, given the scrutinee variable name and its C type.
+fn pattern_captures(pat: &Pattern, scrut_ty: &str, scrut: &str) -> String {
+    let mut buf = String::new();
+    collect_captures(pat, scrut_ty, scrut, &mut buf);
+    buf
+}
+
+fn collect_captures(pat: &Pattern, scrut_ty: &str, scrut: &str, buf: &mut String) {
+    match pat {
+        Pattern::Var { name, .. } => {
+            buf.push_str(&format!(
+                "{scrut_ty} phc_var_{} = {scrut}; ",
+                mangle(&name.name)
+            ));
+        }
+        Pattern::Or { atoms, .. } => {
+            for a in atoms {
+                collect_captures(a, scrut_ty, scrut, buf);
+            }
+        }
+        _ => {}
     }
 }
 

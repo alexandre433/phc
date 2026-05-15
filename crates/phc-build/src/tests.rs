@@ -124,6 +124,78 @@ function main(): void {
     );
 }
 
+/// Build + run an enum + match program. Exercises enum decls,
+/// `Type::Variant` static access, match expressions with literal,
+/// EnumVariant, OR, and Var patterns plus a guard.
+#[test]
+fn build_and_run_enum_match_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_enum_match_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+public enum Status { Ok, NotFound, Gone }
+
+function classify(Status $s): int {
+    return match ($s) {
+        Status::Ok => 0,
+        Status::NotFound | Status::Gone => 404,
+        _ => -1,
+    };
+}
+
+function bucket(int $n): string {
+    return match ($n) {
+        $code if $code > 500 => "server",
+        0 => "zero",
+        _ => "other",
+    };
+}
+
+function main(): void {
+    Logger::info("Ok -> {classify(Status::Ok)}");
+    Logger::info("NotFound -> {classify(Status::NotFound)}");
+    Logger::info("Gone -> {classify(Status::Gone)}");
+    Logger::info("750 -> {bucket(750)}");
+    Logger::info("0 -> {bucket(0)}");
+    Logger::info("3 -> {bucket(3)}");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("enum_match.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("enum_match");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec![
+            "Ok -> 0",
+            "NotFound -> 404",
+            "Gone -> 404",
+            "750 -> server",
+            "0 -> zero",
+            "3 -> other",
+        ]
+    );
+}
+
 /// Build + run a class-based program that exercises constructors,
 /// promoted parameters, methods, field reads, member assignment via
 /// `=`, and trait method mixin — the full C3 surface.
