@@ -595,6 +595,45 @@ fn option_some_unwrapped_via_try() {
 }
 
 #[test]
+fn async_function_runs_synchronously() {
+    let out = run_src(
+        r#"pack a;
+           async function compute(): int { return 21 + 21; }
+           function main(): int { return await compute(); }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(42))));
+}
+
+#[test]
+fn await_passes_value_through() {
+    let out = run_src(
+        r#"pack a;
+           function main(): int { return await 7; }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(7))));
+}
+
+#[test]
+fn http_get_stub_returns_result_ok_string() {
+    let out = run_src(
+        r#"pack a;
+           async function fetch(string $url): result<bytes, string> {
+               return await Http::get($url);
+           }
+           function main(): result<bytes, string> {
+               return await fetch("https://example.com");
+           }"#,
+    );
+    match out.result {
+        Some(Value::ResultOk(v)) => match *v {
+            Value::String(s) => assert_eq!(s, "<bytes from https://example.com>"),
+            other => panic!("expected String inside ResultOk, got {other:?}"),
+        },
+        other => panic!("expected ResultOk, got {other:?}"),
+    }
+}
+
+#[test]
 fn hello_phc_example_runs_end_to_end() {
     let src = std::fs::read_to_string("../../examples/hello.phc").expect("read hello.phc");
     let out = run_src(&src);

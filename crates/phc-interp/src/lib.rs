@@ -765,6 +765,20 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::OptionNone))
             }
+            // Stub: `Http::get(url)` always succeeds with a fake
+            // payload built from the URL. Lets the async examples
+            // run end-to-end without a real HTTP client. A faithful
+            // implementation is Phase 5+ runtime work.
+            ("Http", "get") => {
+                let v = single_arg(args, "Http::get", self, env)?;
+                let url = match &v {
+                    Value::String(s) => s.clone(),
+                    other => other.display(),
+                };
+                Ok(Some(Value::ResultOk(Box::new(Value::String(format!(
+                    "<bytes from {url}>"
+                ))))))
+            }
             _ => Ok(None),
         }
     }
