@@ -712,8 +712,8 @@ SourceFile {
                                                                         file: FileId(
                                                                             0,
                                                                         ),
-                                                                        lo: 0,
-                                                                        hi: 5,
+                                                                        lo: 457,
+                                                                        hi: 462,
                                                                     },
                                                                 },
                                                                 field: Ident {
@@ -722,16 +722,16 @@ SourceFile {
                                                                         file: FileId(
                                                                             0,
                                                                         ),
-                                                                        lo: 7,
-                                                                        hi: 11,
+                                                                        lo: 464,
+                                                                        hi: 468,
                                                                     },
                                                                 },
                                                                 span: Span {
                                                                     file: FileId(
                                                                         0,
                                                                     ),
-                                                                    lo: 0,
-                                                                    hi: 11,
+                                                                    lo: 457,
+                                                                    hi: 468,
                                                                 },
                                                             },
                                                         ),

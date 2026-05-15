@@ -22,8 +22,12 @@ pub enum StringPart {
     /// Literal text after escape processing.
     Text(String),
     /// Raw expression text between a matched `{` and `}` inside the
-    /// string (D-017). Re-lexed by the parser when consumed.
-    Interp(String),
+    /// string (D-017). Re-lexed by the parser when consumed; the
+    /// `body_start` field carries the absolute source offset of the
+    /// first body byte (just past the opening `{`) so the parser
+    /// can shift the resulting AST spans back into the host file's
+    /// coordinate system.
+    Interp { body: String, body_start: u32 },
 }
 
 /// Lex a string literal body after the opening `"` has matched.
@@ -101,17 +105,25 @@ fn lex_string(lex: &mut logos::Lexer<Token>) -> Result<Vec<StringPart>, ()> {
                 if !buf.is_empty() {
                     parts.push(StringPart::Text(std::mem::take(&mut buf)));
                 }
-                let body_start = i + 1;
-                let consumed = match scan_interp_body(&remainder[body_start..]) {
+                let body_offset_in_remainder = i + 1;
+                let consumed = match scan_interp_body(&remainder[body_offset_in_remainder..]) {
                     Some(n) => n,
                     None => {
                         lex.bump(remainder.len());
                         return Err(());
                     }
                 };
-                let body = &remainder[body_start..body_start + consumed - 1];
-                parts.push(StringPart::Interp(body.to_string()));
-                i = body_start + consumed;
+                let body =
+                    &remainder[body_offset_in_remainder..body_offset_in_remainder + consumed - 1];
+                // host_start is offset of the opening `"` token; +1
+                // skips past it into the body of the string literal.
+                let host_start = lex.span().start as u32;
+                let body_start = host_start + 1 + body_offset_in_remainder as u32;
+                parts.push(StringPart::Interp {
+                    body: body.to_string(),
+                    body_start,
+                });
+                i = body_offset_in_remainder + consumed;
             }
             b'}' => {
                 lex.bump(i + 1);
@@ -761,12 +773,17 @@ mod tests {
 
     #[test]
     fn single_interpolation_splits_into_three_parts() {
+        // Source: `"hi {$user->name}!"` — outer `"` at byte 0, body
+        // of the only interp starts at byte 5 (just past the `{`).
         let toks = lex(r#""hi {$user->name}!""#);
         assert_eq!(
             parts_of(toks.into_iter().next().unwrap()),
             vec![
                 StringPart::Text("hi ".into()),
-                StringPart::Interp("$user->name".into()),
+                StringPart::Interp {
+                    body: "$user->name".into(),
+                    body_start: 5,
+                },
                 StringPart::Text("!".into()),
             ]
         );
@@ -778,7 +795,10 @@ mod tests {
         assert_eq!(
             parts_of(toks.into_iter().next().unwrap()),
             vec![
-                StringPart::Interp("$x".into()),
+                StringPart::Interp {
+                    body: "$x".into(),
+                    body_start: 2,
+                },
                 StringPart::Text(" trailing".into()),
             ]
         );
@@ -786,25 +806,25 @@ mod tests {
 
     #[test]
     fn interpolation_can_contain_nested_braces() {
-        // The expression body is captured verbatim; the parser will
-        // re-lex it. The lexer only needs to track brace depth so it
-        // finds the right closing `}`.
         let toks = lex(r#""{ match($x) { _ => 1 } }""#);
         assert_eq!(
             parts_of(toks.into_iter().next().unwrap()),
-            vec![StringPart::Interp(" match($x) { _ => 1 } ".into())]
+            vec![StringPart::Interp {
+                body: " match($x) { _ => 1 } ".into(),
+                body_start: 2,
+            }]
         );
     }
 
     #[test]
     fn interpolation_can_contain_a_nested_string() {
-        // The nested `"fallback"` must not terminate the outer string,
-        // and the `}` inside its bytes (there is none here, but the
-        // scanner must not get confused) is irrelevant.
         let toks = lex(r#""{$name ?? "anon"}""#);
         assert_eq!(
             parts_of(toks.into_iter().next().unwrap()),
-            vec![StringPart::Interp(r#"$name ?? "anon""#.into())]
+            vec![StringPart::Interp {
+                body: r#"$name ?? "anon""#.into(),
+                body_start: 2,
+            }]
         );
     }
 

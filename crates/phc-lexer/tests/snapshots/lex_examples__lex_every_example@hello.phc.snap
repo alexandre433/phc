@@ -26,7 +26,7 @@ input_file: examples/hello.phc
   89..91    StaticOp
   91..95    Ident("info")
   95..96    LParen
-  96..113   StrLit[Text("Hello, "), Interp("$name"), Text("!")]
+  96..113   StrLit[Text("Hello, "), Interp(@105 "$name"), Text("!")]
  113..114   RParen
  114..115   Semicolon
  116..117   RBrace

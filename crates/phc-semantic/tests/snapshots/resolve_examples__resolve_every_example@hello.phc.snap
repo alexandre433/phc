@@ -7,4 +7,4 @@ input_file: examples/hello.phc
 SymbolId(0)  Function  main  (38..42)
 
 === uses ===
-   0..5    -> SymbolId(1)  Value  name
+ 105..110  -> SymbolId(1)  Value  name

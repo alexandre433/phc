@@ -514,7 +514,7 @@ fn convert_str_parts(
             // Test names with interpolation are unusual but the
             // grammar allows them; store the raw text so future
             // tooling can decide how to render.
-            StringPart::Interp(body) => StrPart::Text(format!("{{{body}}}")),
+            StringPart::Interp { body, .. } => StrPart::Text(format!("{{{body}}}")),
         })
         .collect()
 }

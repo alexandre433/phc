@@ -40,7 +40,9 @@ fn render_token(token: &Token) -> String {
                 .iter()
                 .map(|p| match p {
                     StringPart::Text(t) => format!("Text({t:?})"),
-                    StringPart::Interp(e) => format!("Interp({e:?})"),
+                    StringPart::Interp { body, body_start } => {
+                        format!("Interp(@{body_start} {body:?})")
+                    }
                 })
                 .collect();
             format!("StrLit[{}]", pieces.join(", "))

@@ -99,7 +99,7 @@ input_file: examples/class.phc
  427..433   Ident("string")
  434..435   LBrace
  444..450   Return
- 451..470   StrLit[Text("Hi, "), Interp("$this->name")]
+ 451..470   StrLit[Text("Hi, "), Interp(@457 "$this->name")]
  470..471   Semicolon
  476..477   RBrace
  478..479   RBrace

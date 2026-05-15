@@ -347,30 +347,46 @@ fn parse_string_literal(parts: Vec<StringPart>, span: Span, cursor: &mut Cursor<
     for part in parts {
         match part {
             StringPart::Text(text) => out.push(StrPart::Text(text)),
-            StringPart::Interp(body) => match parse_interp_body(&body, span, cursor) {
-                Some(expr) => out.push(StrPart::Expr(expr)),
-                None => {
-                    // Diagnostic already emitted; keep going so the
-                    // outer literal still lands in the AST.
-                    out.push(StrPart::Text(String::new()));
+            StringPart::Interp { body, body_start } => {
+                match parse_interp_body(&body, body_start, span, cursor) {
+                    Some(expr) => out.push(StrPart::Expr(expr)),
+                    None => {
+                        // Diagnostic already emitted; keep going so the
+                        // outer literal still lands in the AST.
+                        out.push(StrPart::Text(String::new()));
+                    }
                 }
-            },
+            }
         }
     }
     Expr::StrLit { parts: out, span }
 }
 
-fn parse_interp_body(body: &str, host_span: Span, cursor: &mut Cursor<'_>) -> Option<Expr> {
-    let tokens: Vec<phc_lexer::Spanned> = Lexer::new(body, cursor.file())
+fn parse_interp_body(
+    body: &str,
+    body_start: u32,
+    host_span: Span,
+    cursor: &mut Cursor<'_>,
+) -> Option<Expr> {
+    let file = cursor.file();
+    let tokens: Vec<phc_lexer::Spanned> = Lexer::new(body, file)
         .filter_map(|r| match r {
-            Ok(t) => Some(t),
+            Ok(mut spanned) => {
+                spanned.span = Span::new(
+                    file,
+                    spanned.span.lo + body_start,
+                    spanned.span.hi + body_start,
+                );
+                Some(spanned)
+            }
             Err(_) => {
                 cursor.error(host_span, "lex error inside string interpolation");
                 None
             }
         })
         .collect();
-    let mut sub = Cursor::new(&tokens, cursor.file(), body.len() as u32);
+    // EOF is at body end in original-source coordinates.
+    let mut sub = Cursor::new(&tokens, file, body_start + body.len() as u32);
     let expr = parse_expr(&mut sub);
     for diag in sub.into_diagnostics() {
         cursor.push_diagnostic(diag);
