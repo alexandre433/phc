@@ -1,0 +1,10 @@
+---
+source: crates/phc-interp/tests/run_examples.rs
+expression: rendered
+input_file: examples/hello.phc
+---
+=== stdout ===
+Hello, PHC!
+
+=== result ===
+void

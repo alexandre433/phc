@@ -1,0 +1,8 @@
+---
+source: crates/phc-interp/tests/run_examples.rs
+expression: rendered
+input_file: examples/bindings.phc
+---
+
+=== result ===
+void

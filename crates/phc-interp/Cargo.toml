@@ -17,3 +17,4 @@ phc-typecheck = { path = "../phc-typecheck" }
 [dev-dependencies]
 phc-parser = { path = "../phc-parser" }
 phc-lexer = { path = "../phc-lexer" }
+insta = { version = "1", features = ["glob"] }
