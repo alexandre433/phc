@@ -488,6 +488,113 @@ fn lambda_block_body_with_return() {
 }
 
 #[test]
+fn result_ok_round_trip() {
+    let out = run_src(
+        r#"pack a;
+           function main(): result<int, string> { return result::ok(42); }"#,
+    );
+    match out.result {
+        Some(Value::ResultOk(v)) => assert!(matches!(*v, Value::Int(42))),
+        other => panic!("expected ResultOk(42), got {other:?}"),
+    }
+}
+
+#[test]
+fn option_some_and_none_round_trip() {
+    let out = run_src(
+        r#"pack a;
+           function main(): option<int> { return option::some(7); }"#,
+    );
+    assert!(matches!(out.result, Some(Value::OptionSome(_))));
+
+    let out = run_src(
+        r#"pack a;
+           function main(): option<int> { return option::none; }"#,
+    );
+    assert!(matches!(out.result, Some(Value::OptionNone)));
+}
+
+#[test]
+fn try_propagation_short_circuits_on_err() {
+    let out = run_src(
+        r#"pack a;
+           function inner(): result<int, string> { return result::err("nope"); }
+           function caller(): result<int, string> {
+               int $v = inner()?;
+               return result::ok($v + 1);
+           }
+           function main(): result<int, string> { return caller(); }"#,
+    );
+    match out.result {
+        Some(Value::ResultErr(e)) => match *e {
+            Value::String(s) => assert_eq!(s, "nope"),
+            other => panic!("expected String inside ResultErr, got {other:?}"),
+        },
+        other => panic!("expected ResultErr, got {other:?}"),
+    }
+}
+
+#[test]
+fn try_propagation_unwraps_on_ok() {
+    let out = run_src(
+        r#"pack a;
+           function inner(): result<int, string> { return result::ok(10); }
+           function caller(): result<int, string> {
+               int $v = inner()?;
+               return result::ok($v + 1);
+           }
+           function main(): result<int, string> { return caller(); }"#,
+    );
+    match out.result {
+        Some(Value::ResultOk(v)) => assert!(matches!(*v, Value::Int(11))),
+        other => panic!("expected ResultOk(11), got {other:?}"),
+    }
+}
+
+#[test]
+fn string_to_int_returns_result() {
+    let out = run_src(
+        r#"pack a;
+           function main(): result<int, string> {
+               int $value = "42"->toInt()?;
+               return result::ok($value);
+           }"#,
+    );
+    match out.result {
+        Some(Value::ResultOk(v)) => assert!(matches!(*v, Value::Int(42))),
+        other => panic!("expected ResultOk(42), got {other:?}"),
+    }
+}
+
+#[test]
+fn string_to_int_propagates_err_for_garbage() {
+    let out = run_src(
+        r#"pack a;
+           function main(): result<int, string> {
+               int $value = "not-a-number"->toInt()?;
+               return result::ok($value);
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::ResultErr(_))));
+}
+
+#[test]
+fn option_some_unwrapped_via_try() {
+    let out = run_src(
+        r#"pack a;
+           function get(): option<int> { return option::some(99); }
+           function main(): option<int> {
+               int $v = get()?;
+               return option::some($v);
+           }"#,
+    );
+    match out.result {
+        Some(Value::OptionSome(v)) => assert!(matches!(*v, Value::Int(99))),
+        other => panic!("expected OptionSome(99), got {other:?}"),
+    }
+}
+
+#[test]
 fn hello_phc_example_runs_end_to_end() {
     let src = std::fs::read_to_string("../../examples/hello.phc").expect("read hello.phc");
     let out = run_src(&src);

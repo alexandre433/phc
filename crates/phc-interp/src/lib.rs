@@ -54,6 +54,14 @@ pub enum Value {
     /// `flip` binding from inside the lambda is not yet observable
     /// outside.
     Lambda(Rc<LambdaValue>),
+    /// `result::ok(v)` — success branch carrying `v`.
+    ResultOk(Box<Value>),
+    /// `result::err(e)` — failure branch carrying `e`.
+    ResultErr(Box<Value>),
+    /// `option::some(v)`.
+    OptionSome(Box<Value>),
+    /// `option::none`.
+    OptionNone,
 }
 
 /// Owned lambda payload. Stored behind an Rc so cloning a Value is
@@ -79,6 +87,10 @@ impl Value {
             Value::Instance { class, .. } => format!("<{class} instance>"),
             Value::EnumVariant { enum_name, variant } => format!("{enum_name}::{variant}"),
             Value::Lambda(_) => "<lambda>".to_string(),
+            Value::ResultOk(v) => format!("result::ok({})", v.display()),
+            Value::ResultErr(e) => format!("result::err({})", e.display()),
+            Value::OptionSome(v) => format!("option::some({})", v.display()),
+            Value::OptionNone => "option::none".to_string(),
         }
     }
 }
@@ -109,6 +121,32 @@ pub struct RunOutput {
 #[derive(Debug, Clone)]
 pub struct RuntimeError {
     pub message: String,
+}
+
+/// Internal error type. Real failures are [`EvalError::Runtime`];
+/// `?` propagation surfaces as [`EvalError::Propagate`] carrying the
+/// failure value (`result::err(e)` or `option::none`) so the
+/// enclosing function can short-circuit with the right return.
+#[derive(Debug, Clone)]
+enum EvalError {
+    Runtime(RuntimeError),
+    Propagate(Value),
+}
+
+impl From<RuntimeError> for EvalError {
+    fn from(e: RuntimeError) -> Self {
+        EvalError::Runtime(e)
+    }
+}
+
+type EvalResult<T> = Result<T, EvalError>;
+
+/// Build an `EvalError::Runtime` with the given message. Most call
+/// sites use this rather than spelling the variant by hand.
+fn rt(msg: impl Into<String>) -> EvalError {
+    EvalError::Runtime(RuntimeError {
+        message: msg.into(),
+    })
 }
 
 /// Per-call frame. Keeps a flat name → value map for the
@@ -209,9 +247,14 @@ pub fn run(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> RunOutput {
             });
             Value::Null
         }
-        Err(e) => {
+        Err(EvalError::Runtime(e)) => {
             interp.out.errors.push(e);
             Value::Null
+        }
+        Err(EvalError::Propagate(v)) => {
+            // `?` short-circuited from `main` itself; surface the
+            // propagated value as the program's result.
+            v
         }
     };
     interp.out.result = Some(result_value);
@@ -302,7 +345,7 @@ struct Interp<'a> {
 }
 
 impl<'a> Interp<'a> {
-    fn eval_block_body(&mut self, stmts: &[Stmt], env: &mut Env) -> Result<Flow, RuntimeError> {
+    fn eval_block_body(&mut self, stmts: &[Stmt], env: &mut Env) -> EvalResult<Flow> {
         for stmt in stmts {
             match self.eval_stmt(stmt, env)? {
                 Flow::Normal => {}
@@ -312,14 +355,14 @@ impl<'a> Interp<'a> {
         Ok(Flow::Normal)
     }
 
-    fn eval_block_scoped(&mut self, stmts: &[Stmt], env: &mut Env) -> Result<Flow, RuntimeError> {
+    fn eval_block_scoped(&mut self, stmts: &[Stmt], env: &mut Env) -> EvalResult<Flow> {
         env.enter();
         let flow = self.eval_block_body(stmts, env);
         env.leave();
         flow
     }
 
-    fn eval_stmt(&mut self, stmt: &Stmt, env: &mut Env) -> Result<Flow, RuntimeError> {
+    fn eval_stmt(&mut self, stmt: &Stmt, env: &mut Env) -> EvalResult<Flow> {
         match stmt {
             Stmt::Local(b) => {
                 let value = self.eval_expr(&b.value, env)?;
@@ -374,19 +417,17 @@ impl<'a> Interp<'a> {
                 };
                 Ok(Flow::Return(value))
             }
-            other => Err(RuntimeError {
-                message: format!(
-                    "statement {other:?} is not yet supported by this interpreter \
+            other => Err(rt(format!(
+                "statement {other:?} is not yet supported by this interpreter \
                      (For / MemberAssign land in I3+)"
-                ),
-            }),
+            ))),
         }
     }
 
     /// Reassignment target: either a bare `$name` (env update) or a
     /// `->` chain rooted at one (writes the field directly, same as
     /// MemberAssign with `=`).
-    fn do_assign(&mut self, lhs: &Expr, value: Value, env: &mut Env) -> Result<(), RuntimeError> {
+    fn do_assign(&mut self, lhs: &Expr, value: Value, env: &mut Env) -> EvalResult<()> {
         match lhs {
             Expr::Var { span, .. } => {
                 let id = self
@@ -394,20 +435,16 @@ impl<'a> Interp<'a> {
                     .uses
                     .get(span)
                     .copied()
-                    .ok_or_else(|| RuntimeError {
-                        message: "unresolved variable on `:=` LHS".to_string(),
-                    })?;
+                    .ok_or_else(|| rt("unresolved variable on `:=` LHS".to_string()))?;
                 if !env.assign(id, value) {
-                    return Err(RuntimeError {
-                        message: "tried to reassign a binding that was never declared".to_string(),
-                    });
+                    return Err(rt(
+                        "tried to reassign a binding that was never declared".to_string()
+                    ));
                 }
                 Ok(())
             }
             Expr::Member { .. } => self.do_member_assign(lhs, value, env),
-            other => Err(RuntimeError {
-                message: format!("`:=` LHS shape {other:?} is not supported"),
-            }),
+            other => Err(rt(format!("`:=` LHS shape {other:?} is not supported"))),
         }
     }
 
@@ -415,19 +452,14 @@ impl<'a> Interp<'a> {
     /// owning instance, then mutate that field. The leaf is always
     /// the `field` of the outermost `Member`; the rest of the chain
     /// is read-only navigation.
-    fn do_member_assign(
-        &mut self,
-        lhs: &Expr,
-        value: Value,
-        env: &mut Env,
-    ) -> Result<(), RuntimeError> {
+    fn do_member_assign(&mut self, lhs: &Expr, value: Value, env: &mut Env) -> EvalResult<()> {
         let Expr::Member {
             receiver, field, ..
         } = lhs
         else {
-            return Err(RuntimeError {
-                message: format!("member-assign LHS must be a `->` chain, got {lhs:?}"),
-            });
+            return Err(rt(format!(
+                "member-assign LHS must be a `->` chain, got {lhs:?}"
+            )));
         };
         let recv = self.eval_expr(receiver, env)?;
         match recv {
@@ -435,16 +467,14 @@ impl<'a> Interp<'a> {
                 fields.borrow_mut().insert(field.name.clone(), value);
                 Ok(())
             }
-            other => Err(RuntimeError {
-                message: format!(
-                    "cannot write field `{}` on non-instance value `{:?}`",
-                    field.name, other
-                ),
-            }),
+            other => Err(rt(format!(
+                "cannot write field `{}` on non-instance value `{:?}`",
+                field.name, other
+            ))),
         }
     }
 
-    fn eval_expr(&mut self, expr: &Expr, env: &mut Env) -> Result<Value, RuntimeError> {
+    fn eval_expr(&mut self, expr: &Expr, env: &mut Env) -> EvalResult<Value> {
         match expr {
             Expr::IntLit { text, .. } => parse_int(text),
             Expr::FloatLit { text, .. } => parse_float(text),
@@ -457,12 +487,10 @@ impl<'a> Interp<'a> {
                     .uses
                     .get(span)
                     .copied()
-                    .ok_or_else(|| RuntimeError {
-                        message: "unresolved variable at runtime".to_string(),
-                    })?;
-                env.lookup(id).cloned().ok_or_else(|| RuntimeError {
-                    message: "variable used before initialisation".to_string(),
-                })
+                    .ok_or_else(|| rt("unresolved variable at runtime".to_string()))?;
+                env.lookup(id)
+                    .cloned()
+                    .ok_or_else(|| rt("variable used before initialisation".to_string()))
             }
             Expr::Member {
                 receiver, field, ..
@@ -473,15 +501,11 @@ impl<'a> Interp<'a> {
                         .borrow()
                         .get(&field.name)
                         .cloned()
-                        .ok_or_else(|| RuntimeError {
-                            message: format!("no field `{}` on instance", field.name),
-                        }),
-                    other => Err(RuntimeError {
-                        message: format!(
-                            "cannot read field `{}` on non-instance value `{:?}`",
-                            field.name, other
-                        ),
-                    }),
+                        .ok_or_else(|| rt(format!("no field `{}` on instance", field.name))),
+                    other => Err(rt(format!(
+                        "cannot read field `{}` on non-instance value `{:?}`",
+                        field.name, other
+                    ))),
                 }
             }
             Expr::Call { callee, args, .. } => self.eval_call(callee, args, env),
@@ -494,6 +518,19 @@ impl<'a> Interp<'a> {
                 // The interpreter ignores borrow modifiers; values
                 // are copied at the boundary in tree-walk semantics.
                 self.eval_expr(operand, env)
+            }
+            Expr::Try { value, .. } => {
+                let v = self.eval_expr(value, env)?;
+                match v {
+                    Value::ResultOk(inner) => Ok(*inner),
+                    Value::OptionSome(inner) => Ok(*inner),
+                    fail @ (Value::ResultErr(_) | Value::OptionNone) => {
+                        Err(EvalError::Propagate(fail))
+                    }
+                    other => Err(rt(format!(
+                        "postfix `?` requires a result/option value, got {other:?}"
+                    ))),
+                }
             }
             Expr::Binary { op, lhs, rhs, .. } => {
                 // Short-circuit for && / || before evaluating rhs.
@@ -517,6 +554,9 @@ impl<'a> Interp<'a> {
             }
             Expr::Static { ty, member, .. } => {
                 if let Expr::TypeName { name, .. } = ty.as_ref() {
+                    if name.name == "option" && member.name == "none" {
+                        return Ok(Value::OptionNone);
+                    }
                     if let Some(enum_decl) = find_enum(self.file, &name.name) {
                         if enum_decl
                             .variants
@@ -528,17 +568,16 @@ impl<'a> Interp<'a> {
                                 variant: member.name.clone(),
                             });
                         }
-                        return Err(RuntimeError {
-                            message: format!(
-                                "no variant `{}` on enum `{}`",
-                                member.name, name.name
-                            ),
-                        });
+                        return Err(rt(format!(
+                            "no variant `{}` on enum `{}`",
+                            member.name, name.name
+                        )));
                     }
                 }
-                Err(RuntimeError {
-                    message: format!("static access `{ty:?}::{}` not yet supported", member.name),
-                })
+                Err(rt(format!(
+                    "static access `{ty:?}::{}` not yet supported",
+                    member.name
+                )))
             }
             Expr::Match {
                 scrutinee, arms, ..
@@ -556,24 +595,19 @@ impl<'a> Interp<'a> {
                 // usually it's the head of a Static or Call. Reject
                 // anything that reaches eval_expr standalone so
                 // misuses are loud rather than silent.
-                Err(RuntimeError {
-                    message: format!("type name `{}` cannot be used as a value here", name.name),
-                })
+                Err(rt(format!(
+                    "type name `{}` cannot be used as a value here",
+                    name.name
+                )))
             }
-            other => Err(RuntimeError {
-                message: format!(
+            other => Err(rt(format!(
                     "expression {other:?} is not yet supported by this interpreter \
                      (Member / Static / Index / Try / Match / Lambda / TypeName / This land in I3+)"
-                ),
-            }),
+                ))),
         }
     }
 
-    fn eval_string_literal(
-        &mut self,
-        parts: &[StrPart],
-        env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
+    fn eval_string_literal(&mut self, parts: &[StrPart], env: &mut Env) -> EvalResult<Value> {
         let mut buf = String::new();
         for part in parts {
             match part {
@@ -587,23 +621,13 @@ impl<'a> Interp<'a> {
         Ok(Value::String(buf))
     }
 
-    fn eval_call(
-        &mut self,
-        callee: &Expr,
-        args: &[Expr],
-        env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
-        // Builtin: `Logger::info(string)` — emit one stdout line.
+    fn eval_call(&mut self, callee: &Expr, args: &[Expr], env: &mut Env) -> EvalResult<Value> {
+        // Builtin static calls: Logger::info, result::ok / err,
+        // option::some / none.
         if let Expr::Static { ty, member, .. } = callee {
             if let Expr::TypeName { name, .. } = ty.as_ref() {
-                if name.name == "Logger" && member.name == "info" {
-                    let mut rendered = String::new();
-                    for a in args {
-                        let v = self.eval_expr(a, env)?;
-                        rendered.push_str(&v.display());
-                    }
-                    self.out.stdout.push(rendered);
-                    return Ok(Value::Void);
+                if let Some(value) = self.try_static_builtin(&name.name, &member.name, args, env)? {
+                    return Ok(value);
                 }
             }
         }
@@ -614,6 +638,12 @@ impl<'a> Interp<'a> {
         } = callee
         {
             let recv = self.eval_expr(receiver, env)?;
+            // Builtin method on a string: `$str->toInt()`.
+            if let Value::String(s) = &recv {
+                if field.name == "toInt" && args.is_empty() {
+                    return Ok(string_to_int(s));
+                }
+            }
             return self.invoke_method(recv, &field.name, args, env);
         }
         // Class construction or free function: `name(args)` parses
@@ -636,9 +666,9 @@ impl<'a> Interp<'a> {
         if let Value::Lambda(lam) = callee_value {
             return self.invoke_lambda(&lam, args, env);
         }
-        Err(RuntimeError {
-            message: format!("call form not yet supported by this interpreter: {callee:?}"),
-        })
+        Err(rt(format!(
+            "call form not yet supported by this interpreter: {callee:?}"
+        )))
     }
 
     fn invoke_lambda(
@@ -646,15 +676,13 @@ impl<'a> Interp<'a> {
         lam: &LambdaValue,
         args: &[Expr],
         caller_env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
+    ) -> EvalResult<Value> {
         if args.len() != lam.params.len() {
-            return Err(RuntimeError {
-                message: format!(
-                    "lambda expects {} arguments, got {}",
-                    lam.params.len(),
-                    args.len()
-                ),
-            });
+            return Err(rt(format!(
+                "lambda expects {} arguments, got {}",
+                lam.params.len(),
+                args.len()
+            )));
         }
         let mut arg_values = Vec::with_capacity(args.len());
         for a in args {
@@ -675,20 +703,70 @@ impl<'a> Interp<'a> {
         let result = match &lam.body {
             LambdaBody::Expr(e) => self.eval_expr(e, &mut env),
             LambdaBody::Block(b) => {
-                let flow = self.eval_block_body(&b.statements, &mut env)?;
-                Ok(match flow {
-                    Flow::Return(v) => v,
-                    Flow::Normal => Value::Void,
-                    Flow::Break | Flow::Continue => {
-                        return Err(RuntimeError {
-                            message: "`break`/`continue` escaped a lambda body".to_string(),
-                        });
+                let inner = self.eval_block_body(&b.statements, &mut env);
+                match inner {
+                    Ok(Flow::Return(v)) => Ok(v),
+                    Ok(Flow::Normal) => Ok(Value::Void),
+                    Ok(Flow::Break) | Ok(Flow::Continue) => {
+                        Err(rt("`break`/`continue` escaped a lambda body".to_string()))
                     }
-                })
+                    // Lambdas catch `?` propagation the same way
+                    // free functions do — the propagation value
+                    // becomes the lambda's return.
+                    Err(EvalError::Propagate(v)) => Ok(v),
+                    Err(e) => Err(e),
+                }
             }
         };
         env.leave();
-        result
+        // A `?` inside a single-expression lambda body also winds
+        // back here; convert to the propagation value.
+        match result {
+            Err(EvalError::Propagate(v)) => Ok(v),
+            other => other,
+        }
+    }
+
+    /// Recognise `Type::method(args)` calls that map to interpreter
+    /// builtins. Returns `Some(value)` when the call was handled,
+    /// `None` to let the regular dispatch continue.
+    fn try_static_builtin(
+        &mut self,
+        type_name: &str,
+        method: &str,
+        args: &[Expr],
+        env: &mut Env,
+    ) -> EvalResult<Option<Value>> {
+        match (type_name, method) {
+            ("Logger", "info") => {
+                let mut rendered = String::new();
+                for a in args {
+                    let v = self.eval_expr(a, env)?;
+                    rendered.push_str(&v.display());
+                }
+                self.out.stdout.push(rendered);
+                Ok(Some(Value::Void))
+            }
+            ("result", "ok") => {
+                let v = single_arg(args, "result::ok", self, env)?;
+                Ok(Some(Value::ResultOk(Box::new(v))))
+            }
+            ("result", "err") => {
+                let v = single_arg(args, "result::err", self, env)?;
+                Ok(Some(Value::ResultErr(Box::new(v))))
+            }
+            ("option", "some") => {
+                let v = single_arg(args, "option::some", self, env)?;
+                Ok(Some(Value::OptionSome(Box::new(v))))
+            }
+            ("option", "none") => {
+                if !args.is_empty() {
+                    return Err(rt("option::none takes no arguments".to_string()));
+                }
+                Ok(Some(Value::OptionNone))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn invoke_method(
@@ -697,24 +775,26 @@ impl<'a> Interp<'a> {
         method_name: &str,
         args: &[Expr],
         caller_env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
+    ) -> EvalResult<Value> {
         let class_name = match &receiver {
             Value::Instance { class, .. } => class.clone(),
             other => {
-                return Err(RuntimeError {
-                    message: format!("cannot call method `{method_name}` on `{other:?}`"),
-                });
+                return Err(rt(format!(
+                    "cannot call method `{method_name}` on `{other:?}`"
+                )));
             }
         };
-        let class_decl = find_class(self.file, &class_name).ok_or_else(|| RuntimeError {
-            message: format!("class `{class_name}` not found in this source file"),
+        let class_decl = find_class(self.file, &class_name).ok_or_else(|| {
+            rt(format!(
+                "class `{class_name}` not found in this source file"
+            ))
         })?;
         let method = find_method_in_class(class_decl, method_name)
             .or_else(|| find_method_in_traits(self.file, class_decl, method_name));
         let Some(method) = method else {
-            return Err(RuntimeError {
-                message: format!("no method `{method_name}` on class `{class_name}`"),
-            });
+            return Err(rt(format!(
+                "no method `{method_name}` on class `{class_name}`"
+            )));
         };
         let mut arg_values = Vec::with_capacity(args.len());
         for a in args {
@@ -728,9 +808,11 @@ impl<'a> Interp<'a> {
         class_name: &str,
         args: &[Expr],
         caller_env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
-        let class_decl = find_class(self.file, class_name).ok_or_else(|| RuntimeError {
-            message: format!("class `{class_name}` not found in this source file"),
+    ) -> EvalResult<Value> {
+        let class_decl = find_class(self.file, class_name).ok_or_else(|| {
+            rt(format!(
+                "class `{class_name}` not found in this source file"
+            ))
         })?;
         // Initialise field storage with each field's declared default
         // (or Value::Null for fields with no default).
@@ -759,12 +841,10 @@ impl<'a> Interp<'a> {
             // (not the `construct` keyword), so pass class.name.span.
             self.run_constructor(ctor, arg_values, instance.clone(), class_decl.name.span)?;
         } else if !args.is_empty() {
-            return Err(RuntimeError {
-                message: format!(
-                    "class `{class_name}` has no constructor but received {} arguments",
-                    args.len()
-                ),
-            });
+            return Err(rt(format!(
+                "class `{class_name}` has no constructor but received {} arguments",
+                args.len()
+            )));
         }
         Ok(instance)
     }
@@ -775,15 +855,13 @@ impl<'a> Interp<'a> {
         arg_values: Vec<Value>,
         this: Value,
         this_span: phc_span::Span,
-    ) -> Result<(), RuntimeError> {
+    ) -> EvalResult<()> {
         if arg_values.len() != ctor.params.len() {
-            return Err(RuntimeError {
-                message: format!(
-                    "constructor expects {} arguments, got {}",
-                    ctor.params.len(),
-                    arg_values.len()
-                ),
-            });
+            return Err(rt(format!(
+                "constructor expects {} arguments, got {}",
+                ctor.params.len(),
+                arg_values.len()
+            )));
         }
         let mut env = Env::default();
         env.enter();
@@ -801,13 +879,21 @@ impl<'a> Interp<'a> {
             }
             self.bind_this(&mut env, this.clone(), this_span);
         }
-        let flow = self.eval_block_body(&ctor.body.statements, &mut env)?;
+        let result = self.eval_block_body(&ctor.body.statements, &mut env);
         env.leave();
-        match flow {
-            Flow::Normal | Flow::Return(_) => Ok(()),
-            Flow::Break | Flow::Continue => Err(RuntimeError {
-                message: "`break`/`continue` escaped a constructor body".to_string(),
-            }),
+        match result {
+            Ok(Flow::Normal) | Ok(Flow::Return(_)) => Ok(()),
+            Ok(Flow::Break) | Ok(Flow::Continue) => Err(rt(
+                "`break`/`continue` escaped a constructor body".to_string(),
+            )),
+            // A `?` from a constructor body has nowhere to go; the
+            // constructor must return the instance, not a propagated
+            // value. Surface as a runtime error.
+            Err(EvalError::Propagate(v)) => Err(rt(format!(
+                "`?` propagated `{}` out of a constructor body",
+                v.display()
+            ))),
+            Err(e) => Err(e),
         }
     }
 
@@ -816,16 +902,14 @@ impl<'a> Interp<'a> {
         decl: &FunctionDecl,
         arg_values: Vec<Value>,
         this: Option<Value>,
-    ) -> Result<Value, RuntimeError> {
+    ) -> EvalResult<Value> {
         if arg_values.len() != decl.params.len() {
-            return Err(RuntimeError {
-                message: format!(
-                    "`{}` expects {} arguments, got {}",
-                    decl.name.name,
-                    decl.params.len(),
-                    arg_values.len()
-                ),
-            });
+            return Err(rt(format!(
+                "`{}` expects {} arguments, got {}",
+                decl.name.name,
+                decl.params.len(),
+                arg_values.len()
+            )));
         }
         let mut env = Env::default();
         env.enter();
@@ -837,17 +921,19 @@ impl<'a> Interp<'a> {
         if let Some(this_value) = this {
             self.bind_this(&mut env, this_value, decl.name.span);
         }
-        let flow = self.eval_block_body(&decl.body.statements, &mut env)?;
+        let result = self.eval_block_body(&decl.body.statements, &mut env);
         env.leave();
-        Ok(match flow {
-            Flow::Return(v) => v,
-            Flow::Normal => Value::Void,
-            Flow::Break | Flow::Continue => {
-                return Err(RuntimeError {
-                    message: "`break`/`continue` escaped a function body".to_string(),
-                })
+        match result {
+            Ok(Flow::Return(v)) => Ok(v),
+            Ok(Flow::Normal) => Ok(Value::Void),
+            Ok(Flow::Break) | Ok(Flow::Continue) => {
+                Err(rt("`break`/`continue` escaped a function body".to_string()))
             }
-        })
+            // `?` propagation short-circuits the enclosing function:
+            // the propagation value becomes the function's return.
+            Err(EvalError::Propagate(v)) => Ok(v),
+            Err(e) => Err(e),
+        }
     }
 
     /// Bind `$this` in the given env. The synthetic `$this` symbol
@@ -869,7 +955,7 @@ impl<'a> Interp<'a> {
         decl: &FunctionDecl,
         args: &[Expr],
         caller_env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
+    ) -> EvalResult<Value> {
         let mut arg_values = Vec::with_capacity(args.len());
         for a in args {
             arg_values.push(self.eval_expr(a, caller_env)?);
@@ -882,7 +968,7 @@ impl<'a> Interp<'a> {
         scrutinee: &Value,
         arms: &[MatchArm],
         env: &mut Env,
-    ) -> Result<Value, RuntimeError> {
+    ) -> EvalResult<Value> {
         for arm in arms {
             env.enter();
             let matched = self.try_pattern(&arm.pattern, scrutinee, env)?;
@@ -902,20 +988,13 @@ impl<'a> Interp<'a> {
             }
             env.leave();
         }
-        Err(RuntimeError {
-            message: format!("no match arm for value `{scrutinee:?}`"),
-        })
+        Err(rt(format!("no match arm for value `{scrutinee:?}`")))
     }
 
     /// Returns true when the pattern matches; if matching introduces
     /// a binding (Var pattern), the binding is added to the current
     /// env frame.
-    fn try_pattern(
-        &mut self,
-        pat: &Pattern,
-        value: &Value,
-        env: &mut Env,
-    ) -> Result<bool, RuntimeError> {
+    fn try_pattern(&mut self, pat: &Pattern, value: &Value, env: &mut Env) -> EvalResult<bool> {
         match pat {
             Pattern::Wildcard { .. } => Ok(true),
             Pattern::Literal(expr) => {
@@ -955,33 +1034,27 @@ impl<'a> Interp<'a> {
     }
 }
 
-fn truthy(v: &Value) -> Result<bool, RuntimeError> {
+fn truthy(v: &Value) -> EvalResult<bool> {
     match v {
         Value::Bool(b) => Ok(*b),
-        other => Err(RuntimeError {
-            message: format!("expected bool in condition, got {other:?}"),
-        }),
+        other => Err(rt(format!("expected bool in condition, got {other:?}"))),
     }
 }
 
-fn eval_unary(op: UnaryOp, v: Value) -> Result<Value, RuntimeError> {
+fn eval_unary(op: UnaryOp, v: Value) -> EvalResult<Value> {
     match (op, v) {
         (UnaryOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
         (UnaryOp::Neg, Value::Int(i)) => Ok(Value::Int(-i)),
         (UnaryOp::Neg, Value::Float(f)) => Ok(Value::Float(-f)),
         (UnaryOp::Await, v) => Ok(v),
-        (op, v) => Err(RuntimeError {
-            message: format!("unary {op:?} not defined for {v:?}"),
-        }),
+        (op, v) => Err(rt(format!("unary {op:?} not defined for {v:?}"))),
     }
 }
 
-fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
+fn eval_binary(op: BinOp, l: Value, r: Value) -> EvalResult<Value> {
     use BinOp::*;
     use Value::*;
-    let mismatched = || RuntimeError {
-        message: format!("binary {op:?} not defined for `{l:?}` and `{r:?}`"),
-    };
+    let mismatched = || rt(format!("binary {op:?} not defined for `{l:?}` and `{r:?}`"));
     match op {
         Add => match (l.clone(), r.clone()) {
             (Int(a), Int(b)) => Ok(Int(a + b)),
@@ -1000,17 +1073,13 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
             _ => Err(mismatched()),
         },
         Div => match (l.clone(), r.clone()) {
-            (Int(_), Int(0)) => Err(RuntimeError {
-                message: "integer division by zero".to_string(),
-            }),
+            (Int(_), Int(0)) => Err(rt("integer division by zero".to_string())),
             (Int(a), Int(b)) => Ok(Int(a / b)),
             (Float(a), Float(b)) => Ok(Float(a / b)),
             _ => Err(mismatched()),
         },
         Rem => match (l.clone(), r.clone()) {
-            (Int(_), Int(0)) => Err(RuntimeError {
-                message: "integer remainder by zero".to_string(),
-            }),
+            (Int(_), Int(0)) => Err(rt("integer remainder by zero".to_string())),
             (Int(a), Int(b)) => Ok(Int(a % b)),
             (Float(a), Float(b)) => Ok(Float(a % b)),
             _ => Err(mismatched()),
@@ -1031,23 +1100,15 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
     }
 }
 
-fn bool_cmp(
-    l: &Value,
-    r: &Value,
-    pred: impl Fn(std::cmp::Ordering) -> bool,
-) -> Result<Value, RuntimeError> {
+fn bool_cmp(l: &Value, r: &Value, pred: impl Fn(std::cmp::Ordering) -> bool) -> EvalResult<Value> {
     let ord = match (l, r) {
         (Value::Int(a), Value::Int(b)) => a.cmp(b),
-        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).ok_or_else(|| RuntimeError {
-            message: "NaN comparison".to_string(),
-        })?,
+        (Value::Float(a), Value::Float(b)) => a
+            .partial_cmp(b)
+            .ok_or_else(|| rt("NaN comparison".to_string()))?,
         (Value::String(a), Value::String(b)) => a.cmp(b),
         (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
-        _ => {
-            return Err(RuntimeError {
-                message: format!("cannot order `{l:?}` and `{r:?}`"),
-            })
-        }
+        _ => return Err(rt(format!("cannot order `{l:?}` and `{r:?}`"))),
     };
     Ok(Value::Bool(pred(ord)))
 }
@@ -1074,7 +1135,7 @@ fn values_equal(l: &Value, r: &Value) -> bool {
     }
 }
 
-fn eval_cast(v: Value, ty: &phc_ast::TypeRef) -> Result<Value, RuntimeError> {
+fn eval_cast(v: Value, ty: &phc_ast::TypeRef) -> EvalResult<Value> {
     let target = ty.path.last().map(|i| i.name.as_str()).unwrap_or("");
     match (v.clone(), target) {
         (Value::Int(i), "float") => Ok(Value::Float(i as f64)),
@@ -1085,24 +1146,45 @@ fn eval_cast(v: Value, ty: &phc_ast::TypeRef) -> Result<Value, RuntimeError> {
     }
 }
 
-fn parse_int(text: &str) -> Result<Value, RuntimeError> {
+fn single_arg(
+    args: &[Expr],
+    name: &str,
+    interp: &mut Interp<'_>,
+    env: &mut Env,
+) -> EvalResult<Value> {
+    if args.len() != 1 {
+        return Err(rt(format!(
+            "{name} expects exactly one argument, got {}",
+            args.len()
+        )));
+    }
+    interp.eval_expr(&args[0], env)
+}
+
+fn string_to_int(s: &str) -> Value {
+    let cleaned: String = s.chars().filter(|c| *c != '_').collect();
+    match cleaned.parse::<i64>() {
+        Ok(n) => Value::ResultOk(Box::new(Value::Int(n))),
+        Err(_) => Value::ResultErr(Box::new(Value::String(format!(
+            "could not parse `{s}` as int"
+        )))),
+    }
+}
+
+fn parse_int(text: &str) -> EvalResult<Value> {
     let cleaned: String = text.chars().filter(|c| *c != '_').collect();
     cleaned
         .parse::<i64>()
         .map(Value::Int)
-        .map_err(|e| RuntimeError {
-            message: format!("invalid integer literal `{text}`: {e}"),
-        })
+        .map_err(|e| rt(format!("invalid integer literal `{text}`: {e}")))
 }
 
-fn parse_float(text: &str) -> Result<Value, RuntimeError> {
+fn parse_float(text: &str) -> EvalResult<Value> {
     let cleaned: String = text.chars().filter(|c| *c != '_').collect();
     cleaned
         .parse::<f64>()
         .map(Value::Float)
-        .map_err(|e| RuntimeError {
-            message: format!("invalid float literal `{text}`: {e}"),
-        })
+        .map_err(|e| rt(format!("invalid float literal `{text}`: {e}")))
 }
 
 #[cfg(test)]
