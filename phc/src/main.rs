@@ -6,6 +6,7 @@
 //! The other subcommands are still stubbed.
 
 use clap::Parser;
+use phc_build::build_file;
 use phc_interp::{run as interp_run, RunOutput, Value};
 use phc_parser::parse as parse_source;
 use phc_semantic::resolve;
@@ -27,8 +28,16 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
-    /// Build the current project (codegen — not yet implemented)
-    Build,
+    /// Compile a PHC source file to a native binary via the C-emit
+    /// backend.
+    Build {
+        /// Path to a `.phc` source file containing a `function main()`.
+        file: PathBuf,
+        /// Output binary path. Defaults to the source file's stem
+        /// in the current directory (with `.exe` on Windows).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
     /// Type-check the current project without producing output
     Check,
     /// Run a PHC source file through the tree-walking interpreter
@@ -51,10 +60,7 @@ fn main() -> ExitCode {
 
     match cli.command {
         Some(Command::Run { file }) => run_file(&file),
-        Some(Command::Build) => {
-            eprintln!("phc build: not yet implemented");
-            ExitCode::from(1)
-        }
+        Some(Command::Build { file, output }) => build_cmd(&file, output.as_deref()),
         Some(Command::Check) => {
             eprintln!("phc check: not yet implemented");
             ExitCode::from(1)
@@ -80,6 +86,30 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+fn build_cmd(input: &std::path::Path, output: Option<&std::path::Path>) -> ExitCode {
+    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("a");
+    let default_output: PathBuf = if cfg!(windows) {
+        PathBuf::from(format!("{stem}.exe"))
+    } else {
+        PathBuf::from(stem)
+    };
+    let output_path = output.unwrap_or(default_output.as_path());
+    let result = build_file(input, output_path);
+    for w in &result.warnings {
+        eprintln!("warning at {}..{}: {}", w.span.lo, w.span.hi, w.message);
+    }
+    if !result.errors.is_empty() {
+        for e in &result.errors {
+            eprintln!("error at {}..{}: {}", e.span.lo, e.span.hi, e.message);
+        }
+        return ExitCode::from(1);
+    }
+    if let Some(bin) = &result.binary {
+        eprintln!("phc build: produced `{}`", bin.display());
+    }
+    ExitCode::SUCCESS
 }
 
 fn run_file(path: &PathBuf) -> ExitCode {

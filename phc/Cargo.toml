@@ -18,3 +18,4 @@ phc-parser = { path = "../crates/phc-parser" }
 phc-semantic = { path = "../crates/phc-semantic" }
 phc-typecheck = { path = "../crates/phc-typecheck" }
 phc-span = { path = "../crates/phc-span" }
+phc-build = { path = "../crates/phc-build" }
