@@ -12,9 +12,12 @@
 //! locals + control flow + user function calls with args + non-void
 //! returns).
 
-use phc_ast::{BinOp, Expr, FunctionDecl, Item, SourceFile, Stmt, StrPart, UnaryOp};
+use phc_ast::{
+    BinOp, ClassDecl, ClassMember, ConstructDecl, Expr, FunctionDecl, Item, SourceFile, Stmt,
+    StrPart, TraitDecl, UnaryOp,
+};
 use phc_errors::{Diagnostic, Severity};
-use phc_semantic::Resolved;
+use phc_semantic::{Resolved, SymbolKind};
 use phc_span::Span;
 use phc_typecheck::{Primitive, Ty, Typed};
 
@@ -28,19 +31,39 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
         diagnostics: &mut out.diagnostics,
         resolved,
         typed,
+        file,
     };
     emitter.emit_prelude();
-    // Forward-declare every top-level function so call order does
-    // not depend on declaration order.
+    // Phase 1: forward struct decls so methods can reference each
+    // other's instance pointer types in any order.
     for item in &file.items {
-        if let Item::Function(f) = item {
-            emitter.emit_function_decl(f);
+        if let Item::Class(c) = item {
+            emitter.emit_class_struct_fwd(c);
         }
     }
     emitter.buf.push('\n');
+    // Phase 2: full struct definitions with fields.
     for item in &file.items {
-        if let Item::Function(f) = item {
-            emitter.emit_function(f);
+        if let Item::Class(c) = item {
+            emitter.emit_class_struct(c);
+        }
+    }
+    // Phase 3: forward-decl every free function and method so call
+    // order does not depend on declaration order.
+    for item in &file.items {
+        match item {
+            Item::Function(f) => emitter.emit_function_decl(f),
+            Item::Class(c) => emitter.emit_class_member_decls(c),
+            _ => {}
+        }
+    }
+    emitter.buf.push('\n');
+    // Phase 4: bodies.
+    for item in &file.items {
+        match item {
+            Item::Function(f) => emitter.emit_function(f),
+            Item::Class(c) => emitter.emit_class_bodies(c),
+            _ => {}
         }
     }
     emitter.emit_main_wrapper(file);
@@ -53,6 +76,7 @@ struct Emitter<'a> {
     diagnostics: &'a mut Vec<Diagnostic>,
     resolved: &'a Resolved,
     typed: &'a Typed,
+    file: &'a SourceFile,
 }
 
 impl<'a> Emitter<'a> {
@@ -62,15 +86,47 @@ impl<'a> Emitter<'a> {
         self.buf.push_str("#include \"phc_runtime.h\"\n\n");
     }
 
+    /// Map a phc TypeRef to the C type the emitter will use. Single-
+    /// segment paths recognise stdlib primitives and class names from
+    /// the resolver; everything else falls back to `phc_value`.
+    fn c_type_for(&self, t: &phc_ast::TypeRef) -> String {
+        if t.path.len() != 1 {
+            return "phc_value".into();
+        }
+        let name = t.path[0].name.as_str();
+        match name {
+            "int" => "int64_t".into(),
+            "float" => "double".into(),
+            "bool" => "bool".into(),
+            "string" => "phc_string".into(),
+            "void" => "void".into(),
+            _ => {
+                if self.is_class(name) {
+                    format!("phc_obj_{name}*")
+                } else {
+                    "phc_value".into()
+                }
+            }
+        }
+    }
+
+    fn is_class(&self, name: &str) -> bool {
+        self.resolved
+            .top_level
+            .get(name)
+            .map(|id| self.resolved.symbol(*id).kind == SymbolKind::Class)
+            .unwrap_or(false)
+    }
+
     fn function_signature(&self, f: &FunctionDecl) -> String {
-        let return_c = c_type_for_typeref(&f.return_type);
+        let return_c = self.c_type_for(&f.return_type);
         let params: Vec<String> = f
             .params
             .iter()
             .map(|p| {
                 format!(
                     "{} phc_var_{}",
-                    c_type_for_typeref(&p.ty),
+                    self.c_type_for(&p.ty),
                     mangle(&p.name.name)
                 )
             })
@@ -81,6 +137,201 @@ impl<'a> Emitter<'a> {
             params.join(", ")
         };
         format!("static {} phc_{}({})", return_c, f.name.name, param_list)
+    }
+
+    /// Method signature: `static <ret> phc_method_<Class>_<name>(
+    /// phc_obj_<Class>* phc_var_this, ...)`.
+    fn method_signature(&self, class: &str, m: &FunctionDecl) -> String {
+        let return_c = self.c_type_for(&m.return_type);
+        let mut params = vec![format!("phc_obj_{class}* phc_var_this")];
+        for p in &m.params {
+            params.push(format!(
+                "{} phc_var_{}",
+                self.c_type_for(&p.ty),
+                mangle(&p.name.name)
+            ));
+        }
+        format!(
+            "static {} phc_method_{class}_{}({})",
+            return_c,
+            m.name.name,
+            params.join(", ")
+        )
+    }
+
+    /// Constructor signature: `static phc_obj_<Class>* phc_construct_<Class>(args...)`.
+    fn construct_signature(&self, class: &str, c: &ConstructDecl) -> String {
+        let mut params: Vec<String> = c
+            .params
+            .iter()
+            .map(|p| {
+                format!(
+                    "{} phc_var_{}",
+                    self.c_type_for(&p.ty),
+                    mangle(&p.name.name)
+                )
+            })
+            .collect();
+        if params.is_empty() {
+            params.push("void".into());
+        }
+        format!(
+            "static phc_obj_{class}* phc_construct_{class}({})",
+            params.join(", ")
+        )
+    }
+
+    // ===== Classes =====
+
+    fn emit_class_struct_fwd(&mut self, c: &ClassDecl) {
+        let name = &c.name.name;
+        self.buf
+            .push_str(&format!("typedef struct phc_obj_{name} phc_obj_{name};\n"));
+    }
+
+    fn emit_class_struct(&mut self, c: &ClassDecl) {
+        let name = &c.name.name;
+        self.buf.push_str(&format!("struct phc_obj_{name} {{\n"));
+        // Promoted constructor params first, then explicit fields.
+        if let Some(con) = find_constructor(c) {
+            for p in &con.params {
+                if p.promoted {
+                    self.buf.push_str(&format!(
+                        "    {} {};\n",
+                        self.c_type_for(&p.ty),
+                        mangle(&p.name.name)
+                    ));
+                }
+            }
+        }
+        for member in &c.members {
+            if let ClassMember::Field(f) = member {
+                self.buf.push_str(&format!(
+                    "    {} {};\n",
+                    self.c_type_for(&f.ty),
+                    mangle(&f.name.name)
+                ));
+            }
+        }
+        self.buf.push_str("};\n\n");
+    }
+
+    fn emit_class_member_decls(&mut self, c: &ClassDecl) {
+        let name = &c.name.name;
+        if let Some(con) = find_constructor(c) {
+            let sig = self.construct_signature(name, con);
+            self.buf.push_str(&format!("{sig};\n"));
+        } else {
+            // Always emit a no-arg constructor so calling Box() works
+            // even when the class has no explicit `construct()`.
+            self.buf.push_str(&format!(
+                "static phc_obj_{name}* phc_construct_{name}(void);\n"
+            ));
+        }
+        for member in &c.members {
+            if let ClassMember::Method(m) = member {
+                let sig = self.method_signature(name, m);
+                self.buf.push_str(&format!("{sig};\n"));
+            }
+        }
+        // Trait method mixins: emit one method per `use Trait;` from
+        // the resolver's trait declarations.
+        for member in &c.members {
+            if let ClassMember::TraitUse(tu) = member {
+                if let Some(trait_name) = tu.path.last().map(|i| i.name.as_str()) {
+                    if let Some(t) = find_trait(self.file, trait_name) {
+                        for m in &t.methods {
+                            let sig = self.method_signature(name, m);
+                            self.buf.push_str(&format!("{sig};\n"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_class_bodies(&mut self, c: &ClassDecl) {
+        let name = c.name.name.clone();
+        // Constructor body.
+        if let Some(con) = find_constructor(c) {
+            let sig = self.construct_signature(&name, con);
+            self.buf.push_str(&sig);
+            self.buf.push_str(" {\n");
+            self.buf.push_str(&format!(
+                "    phc_obj_{name}* phc_var_this = phc_alloc(sizeof(*phc_var_this));\n"
+            ));
+            // Promoted params copy into the field.
+            for p in &con.params {
+                if p.promoted {
+                    self.buf.push_str(&format!(
+                        "    phc_var_this->{name_p} = phc_var_{name_p};\n",
+                        name_p = mangle(&p.name.name)
+                    ));
+                }
+            }
+            // Field defaults run before the user body.
+            self.emit_field_defaults(c);
+            for stmt in &con.body.statements {
+                self.emit_stmt(stmt, 1);
+            }
+            self.buf.push_str("    return phc_var_this;\n}\n\n");
+        } else {
+            // Default no-arg constructor.
+            self.buf.push_str(&format!(
+                "static phc_obj_{name}* phc_construct_{name}(void) {{\n"
+            ));
+            self.buf.push_str(&format!(
+                "    phc_obj_{name}* phc_var_this = phc_alloc(sizeof(*phc_var_this));\n"
+            ));
+            self.emit_field_defaults(c);
+            self.buf.push_str("    return phc_var_this;\n}\n\n");
+        }
+        // Method bodies (own).
+        for member in &c.members {
+            if let ClassMember::Method(m) = member {
+                let sig = self.method_signature(&name, m);
+                self.buf.push_str(&sig);
+                self.buf.push_str(" {\n");
+                for stmt in &m.body.statements {
+                    self.emit_stmt(stmt, 1);
+                }
+                self.buf.push_str("}\n\n");
+            }
+        }
+        // Trait-mixin method bodies: emit each trait method as a
+        // class-local function so the dispatch path is uniform.
+        for member in &c.members {
+            if let ClassMember::TraitUse(tu) = member {
+                if let Some(trait_name) = tu.path.last().map(|i| i.name.as_str()) {
+                    if let Some(t) = find_trait(self.file, trait_name) {
+                        for m in &t.methods {
+                            let sig = self.method_signature(&name, m);
+                            self.buf.push_str(&sig);
+                            self.buf.push_str(" {\n");
+                            for stmt in &m.body.statements {
+                                self.emit_stmt(stmt, 1);
+                            }
+                            self.buf.push_str("}\n\n");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_field_defaults(&mut self, c: &ClassDecl) {
+        for member in &c.members {
+            if let ClassMember::Field(f) = member {
+                if let Some(default) = &f.default {
+                    let v = self.emit_expr(default);
+                    self.buf.push_str(&format!(
+                        "    phc_var_this->{} = {};\n",
+                        mangle(&f.name.name),
+                        v
+                    ));
+                }
+            }
+        }
     }
 
     fn emit_function_decl(&mut self, f: &FunctionDecl) {
@@ -124,13 +375,18 @@ impl<'a> Emitter<'a> {
                 let init = self.emit_expr(&b.value);
                 self.buf.push_str(&format!(
                     "{pad}{ty} phc_var_{name} = {init};\n",
-                    ty = c_type_for_typeref(&b.ty),
+                    ty = self.c_type_for(&b.ty),
                     name = mangle(&b.name.name),
                 ));
             }
             Stmt::Reassign(r) => {
                 let lhs = self.emit_expr(&r.lhs);
                 let rhs = self.emit_expr(&r.value);
+                self.buf.push_str(&format!("{pad}{lhs} = {rhs};\n"));
+            }
+            Stmt::MemberAssign(m) => {
+                let lhs = self.emit_expr(&m.lhs);
+                let rhs = self.emit_expr(&m.value);
                 self.buf.push_str(&format!("{pad}{lhs} = {rhs};\n"));
             }
             Stmt::Expr(e) => {
@@ -212,6 +468,13 @@ impl<'a> Emitter<'a> {
             Expr::NullLit { .. } => "phc_null()".into(),
             Expr::StrLit { parts, .. } => self.emit_string_literal(parts),
             Expr::Var { name, .. } => format!("phc_var_{}", mangle(&name.name)),
+            Expr::This { .. } => "phc_var_this".into(),
+            Expr::Member {
+                receiver, field, ..
+            } => {
+                let recv = self.emit_expr(receiver);
+                format!("({recv})->{}", mangle(&field.name))
+            }
             Expr::Call { callee, args, .. } => self.emit_call(callee, args),
             Expr::Paren { inner, .. } => format!("({})", self.emit_expr(inner)),
             Expr::Unary { op, operand, .. } => {
@@ -225,7 +488,7 @@ impl<'a> Emitter<'a> {
             Expr::Binary { op, lhs, rhs, .. } => self.emit_binary(*op, lhs, rhs),
             Expr::Cast { value, ty, .. } => {
                 let inner = self.emit_expr(value);
-                let target = c_type_for_typeref(ty);
+                let target = self.c_type_for(ty);
                 format!("(({target})({inner}))")
             }
             other => {
@@ -315,10 +578,39 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        // User-defined free function call: phc_<name>(arg, ...).
+        // Method call: $obj->method(args).
+        if let Expr::Member {
+            receiver, field, ..
+        } = callee
+        {
+            let recv_c = self.emit_expr(receiver);
+            // Look up class name via the receiver's typed Ty.
+            let class = self.class_of_expr(receiver);
+            let arg_src: Vec<String> = args.iter().map(|a| self.emit_expr(a)).collect();
+            let mut all_args = vec![recv_c];
+            all_args.extend(arg_src);
+            if let Some(cls) = class {
+                return format!("phc_method_{cls}_{}({})", field.name, all_args.join(", "));
+            }
+            self.diag(
+                span_of_expr(callee),
+                "method dispatch needs a known class type at the receiver",
+            );
+            return "phc_panic(\"codegen TODO method receiver\")".into();
+        }
+        // User-defined free function call OR class construction.
         if let Expr::TypeName { name, .. } = callee {
-            if self.resolved.top_level.contains_key(&name.name) {
+            if let Some(id) = self.resolved.top_level.get(&name.name).copied() {
+                let kind = self.resolved.symbol(id).kind;
                 let arg_src: Vec<String> = args.iter().map(|a| self.emit_expr(a)).collect();
+                if kind == SymbolKind::Class {
+                    let args_joined = if arg_src.is_empty() {
+                        "".to_string()
+                    } else {
+                        arg_src.join(", ")
+                    };
+                    return format!("phc_construct_{}({})", name.name, args_joined);
+                }
                 return format!("phc_{}({})", name.name, arg_src.join(", "));
             }
         }
@@ -327,6 +619,19 @@ impl<'a> Emitter<'a> {
             "call form not yet supported by the C emitter",
         );
         "phc_panic(\"codegen TODO call\")".into()
+    }
+
+    /// Best-effort class lookup for a method-call receiver. Reads
+    /// the typecheck pass's expr_types map for `Ty::Path { path }`
+    /// where path[0] names a known class.
+    fn class_of_expr(&self, expr: &Expr) -> Option<String> {
+        let span = span_of_expr(expr);
+        match self.typed.expr_types.get(&span)? {
+            phc_typecheck::Ty::Path { path, .. } if path.len() == 1 && self.is_class(&path[0]) => {
+                Some(path[0].clone())
+            }
+            _ => None,
+        }
     }
 
     fn diag(&mut self, span: Span, message: &str) {
@@ -338,18 +643,18 @@ impl<'a> Emitter<'a> {
     }
 }
 
-fn c_type_for_typeref(t: &phc_ast::TypeRef) -> &'static str {
-    if t.path.len() != 1 {
-        return "phc_value";
-    }
-    match t.path[0].name.as_str() {
-        "int" => "int64_t",
-        "float" => "double",
-        "bool" => "bool",
-        "string" => "phc_string",
-        "void" => "void",
-        _ => "phc_value",
-    }
+fn find_constructor(c: &ClassDecl) -> Option<&ConstructDecl> {
+    c.members.iter().find_map(|m| match m {
+        ClassMember::Construct(c) => Some(c),
+        _ => None,
+    })
+}
+
+fn find_trait<'a>(file: &'a SourceFile, name: &str) -> Option<&'a TraitDecl> {
+    file.items.iter().find_map(|item| match item {
+        Item::Trait(t) if t.name.name == name => Some(t),
+        _ => None,
+    })
 }
 
 fn mangle(name: &str) -> String {

@@ -37,6 +37,11 @@ phc_value  phc_void(void);
 void phc_print(phc_string s);
 void phc_panic(const char* msg);
 
+/* === Allocation === */
+/* Allocate `size` bytes zeroed. Used by class instance constructors
+ * emitted by phc-codegen. Aborts the process on out-of-memory. */
+void* phc_alloc(size_t size);
+
 /* === String ops === */
 phc_string phc_concat2(phc_string a, phc_string b);
 

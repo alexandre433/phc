@@ -14,6 +14,15 @@ static char* phc_xmalloc(size_t n) {
     return p;
 }
 
+void* phc_alloc(size_t size) {
+    void* p = calloc(1, size ? size : 1);
+    if (!p) {
+        fputs("phc runtime: out of memory\n", stderr);
+        abort();
+    }
+    return p;
+}
+
 phc_string phc_string_owned(const char* s, size_t len) {
     char* buf = phc_xmalloc(len + 1);
     if (len > 0) memcpy(buf, s, len);

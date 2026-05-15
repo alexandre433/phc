@@ -123,3 +123,60 @@ function main(): void {
         ]
     );
 }
+
+/// Build + run a class-based program that exercises constructors,
+/// promoted parameters, methods, field reads, member assignment via
+/// `=`, and trait method mixin — the full C3 surface.
+#[test]
+fn build_and_run_class_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_class_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+public trait Doubled {
+    function doubled(): int { return $this->value + $this->value; }
+}
+
+public class Box {
+    use Doubled;
+    construct(public int $value) {}
+
+    public function get(): int { return $this->value; }
+}
+
+function main(): void {
+    Box $b = Box(7);
+    Logger::info("value is {$b->get()}");
+    Logger::info("doubled is {$b->doubled()}");
+    $b->value = 100;
+    Logger::info("after assign: {$b->get()}");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("classes.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("classes");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["value is 7", "doubled is 14", "after assign: 100",]
+    );
+}

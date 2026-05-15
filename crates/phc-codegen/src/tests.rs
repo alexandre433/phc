@@ -139,6 +139,65 @@ fn string_concat_emits_phc_concat2() {
 }
 
 #[test]
+fn class_emits_struct_constructor_method() {
+    let src = r#"pack a;
+        public class Box {
+            construct(public int $value) {}
+            public function get(): int { return $this->value; }
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(c.contains("typedef struct phc_obj_Box phc_obj_Box;"));
+    assert!(c.contains("struct phc_obj_Box {"));
+    assert!(c.contains("int64_t value;"));
+    assert!(c.contains("static phc_obj_Box* phc_construct_Box(int64_t phc_var_value)"));
+    assert!(c.contains("static int64_t phc_method_Box_get(phc_obj_Box* phc_var_this)"));
+    assert!(c.contains("(phc_var_this)->value"));
+}
+
+#[test]
+fn class_construction_call_emits_phc_construct() {
+    let src = r#"pack a;
+        public class Box {
+            construct(public int $value) {}
+        }
+        function main(): void {
+            Box $b = Box(42);
+        }"#;
+    let c = emit_for(src);
+    assert!(c.contains("phc_obj_Box* phc_var_b = phc_construct_Box((int64_t)42);"));
+}
+
+#[test]
+fn member_assign_via_equals_emits_field_write() {
+    let src = r#"pack a;
+        public class Box {
+            flip int $value = 0;
+        }
+        function main(): void {
+            Box $b = Box();
+            $b->value = 99;
+        }"#;
+    let c = emit_for(src);
+    assert!(c.contains("(phc_var_b)->value = (int64_t)99;"));
+}
+
+#[test]
+fn trait_use_emits_method_under_class_name() {
+    let src = r#"pack a;
+        public trait Doubled {
+            function doubled(): int { return $this->value + $this->value; }
+        }
+        public class Box {
+            use Doubled;
+            construct(public int $value) {}
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(c.contains("static int64_t phc_method_Box_doubled(phc_obj_Box* phc_var_this)"));
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }
