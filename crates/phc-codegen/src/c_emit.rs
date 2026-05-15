@@ -1,42 +1,47 @@
 // SPDX-License-Identifier: MIT
 //! AST → C source emitter.
 //!
-//! This is the simplest thing that could possibly work for
-//! `examples/hello.phc`: emit a single C translation unit whose
-//! `main()` calls a translated `user_main()`, route literals through
-//! the runtime's `phc_string` type, and dispatch `Logger::info(x)`
-//! to `phc_print`.
+//! Each expression renders as a C snippet that produces a value of
+//! one of the runtime types (`int64_t`, `double`, `bool`,
+//! `phc_string`). Statements render as straight C statements.
+//! Anything not yet supported emits a `phc_panic("codegen TODO")`
+//! call so the produced binary fails loud at the matching site.
 //!
-//! Each expression is emitted as a snippet of C that produces a
-//! value of one of the runtime types (`int64_t`, `double`, `bool`,
-//! `phc_string`). Statements emit straight C statements. Anything
-//! the emitter does not yet handle generates a `phc_panic` call so
-//! the compiled binary fails loud at the matching call site.
+//! Codegen tracks the interpreter's I1..I7 ladder. Today: I1
+//! (literals + Logger::info + interpolation) plus I2 (arithmetic +
+//! locals + control flow + user function calls with args + non-void
+//! returns).
 
-use phc_ast::{Expr, FunctionDecl, Item, SourceFile, Stmt, StrPart};
+use phc_ast::{BinOp, Expr, FunctionDecl, Item, SourceFile, Stmt, StrPart, UnaryOp};
 use phc_errors::{Diagnostic, Severity};
 use phc_semantic::Resolved;
 use phc_span::Span;
-use phc_typecheck::Typed;
+use phc_typecheck::{Primitive, Ty, Typed};
 
 use crate::CodegenOutput;
 
 /// Emit a complete C translation unit for `file`.
-pub fn emit_c(file: &SourceFile, resolved: &Resolved, _typed: &Typed) -> CodegenOutput {
+pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenOutput {
     let mut out = CodegenOutput::default();
     let mut emitter = Emitter {
         buf: String::new(),
         diagnostics: &mut out.diagnostics,
         resolved,
+        typed,
     };
     emitter.emit_prelude();
+    // Forward-declare every top-level function so call order does
+    // not depend on declaration order.
+    for item in &file.items {
+        if let Item::Function(f) = item {
+            emitter.emit_function_decl(f);
+        }
+    }
+    emitter.buf.push('\n');
     for item in &file.items {
         if let Item::Function(f) = item {
             emitter.emit_function(f);
         }
-        // Other Item kinds (class/enum/...) deferred — the C emitter
-        // tracks the interpreter's feature ladder and grows in
-        // matching slices.
     }
     emitter.emit_main_wrapper(file);
     out.c_source = emitter.buf;
@@ -47,6 +52,7 @@ struct Emitter<'a> {
     buf: String,
     diagnostics: &'a mut Vec<Diagnostic>,
     resolved: &'a Resolved,
+    typed: &'a Typed,
 }
 
 impl<'a> Emitter<'a> {
@@ -56,19 +62,38 @@ impl<'a> Emitter<'a> {
         self.buf.push_str("#include \"phc_runtime.h\"\n\n");
     }
 
+    fn function_signature(&self, f: &FunctionDecl) -> String {
+        let return_c = c_type_for_typeref(&f.return_type);
+        let params: Vec<String> = f
+            .params
+            .iter()
+            .map(|p| {
+                format!(
+                    "{} phc_var_{}",
+                    c_type_for_typeref(&p.ty),
+                    mangle(&p.name.name)
+                )
+            })
+            .collect();
+        let param_list = if params.is_empty() {
+            "void".to_string()
+        } else {
+            params.join(", ")
+        };
+        format!("static {} phc_{}({})", return_c, f.name.name, param_list)
+    }
+
+    fn emit_function_decl(&mut self, f: &FunctionDecl) {
+        let sig = self.function_signature(f);
+        self.buf.push_str(&format!("{sig};\n"));
+    }
+
     fn emit_function(&mut self, f: &FunctionDecl) {
-        // For the hello-world slice we only emit `void`-returning
-        // free functions. Other return types fail loud below.
-        let returns_void = is_void_return(f);
-        let c_return = if returns_void { "void" } else { "int64_t" };
-        self.buf
-            .push_str(&format!("static {} phc_{}(void)", c_return, f.name.name));
+        let sig = self.function_signature(f);
+        self.buf.push_str(&sig);
         self.buf.push_str(" {\n");
         for stmt in &f.body.statements {
             self.emit_stmt(stmt, 1);
-        }
-        if returns_void {
-            // C requires the function to fall through; nothing to do.
         }
         self.buf.push_str("}\n\n");
     }
@@ -99,9 +124,14 @@ impl<'a> Emitter<'a> {
                 let init = self.emit_expr(&b.value);
                 self.buf.push_str(&format!(
                     "{pad}{ty} phc_var_{name} = {init};\n",
-                    ty = c_type_for(&b.ty),
+                    ty = c_type_for_typeref(&b.ty),
                     name = mangle(&b.name.name),
                 ));
+            }
+            Stmt::Reassign(r) => {
+                let lhs = self.emit_expr(&r.lhs);
+                let rhs = self.emit_expr(&r.value);
+                self.buf.push_str(&format!("{pad}{lhs} = {rhs};\n"));
             }
             Stmt::Expr(e) => {
                 let snippet = self.emit_expr(&e.expr);
@@ -115,13 +145,49 @@ impl<'a> Emitter<'a> {
                     self.buf.push_str(&format!("{pad}return;\n"));
                 }
             }
+            Stmt::If(i) => {
+                let mut first = true;
+                for (cond, blk) in &i.branches {
+                    let cond_c = self.emit_expr(cond);
+                    let kw = if first { "if" } else { "else if" };
+                    self.buf.push_str(&format!("{pad}{kw} ({cond_c}) {{\n"));
+                    for inner in &blk.statements {
+                        self.emit_stmt(inner, indent + 1);
+                    }
+                    self.buf.push_str(&format!("{pad}}}"));
+                    first = false;
+                }
+                if let Some(else_blk) = &i.else_block {
+                    self.buf.push_str(" else {\n");
+                    for inner in &else_blk.statements {
+                        self.emit_stmt(inner, indent + 1);
+                    }
+                    self.buf.push_str(&format!("{pad}}}\n"));
+                } else {
+                    self.buf.push('\n');
+                }
+            }
+            Stmt::While(w) => {
+                let cond_c = self.emit_expr(&w.cond);
+                self.buf.push_str(&format!("{pad}while ({cond_c}) {{\n"));
+                for inner in &w.body.statements {
+                    self.emit_stmt(inner, indent + 1);
+                }
+                self.buf.push_str(&format!("{pad}}}\n"));
+            }
+            Stmt::Break { .. } => {
+                self.buf.push_str(&format!("{pad}break;\n"));
+            }
+            Stmt::Continue { .. } => {
+                self.buf.push_str(&format!("{pad}continue;\n"));
+            }
             other => {
                 self.diag(
                     span_of_stmt(other),
                     "statement form not yet supported by the C emitter",
                 );
                 self.buf
-                    .push_str(&format!("{pad}phc_panic(\"codegen TODO\");\n"));
+                    .push_str(&format!("{pad}phc_panic(\"codegen TODO stmt\");\n"));
             }
         }
     }
@@ -145,31 +211,88 @@ impl<'a> Emitter<'a> {
             }
             Expr::NullLit { .. } => "phc_null()".into(),
             Expr::StrLit { parts, .. } => self.emit_string_literal(parts),
-            Expr::Var { name, span } => {
-                let _ = span;
-                format!("phc_var_{}", mangle(&name.name))
-            }
+            Expr::Var { name, .. } => format!("phc_var_{}", mangle(&name.name)),
             Expr::Call { callee, args, .. } => self.emit_call(callee, args),
             Expr::Paren { inner, .. } => format!("({})", self.emit_expr(inner)),
+            Expr::Unary { op, operand, .. } => {
+                let inner = self.emit_expr(operand);
+                match op {
+                    UnaryOp::Not => format!("(!({inner}))"),
+                    UnaryOp::Neg => format!("(-({inner}))"),
+                    UnaryOp::Await => inner, // sync passthrough
+                }
+            }
+            Expr::Binary { op, lhs, rhs, .. } => self.emit_binary(*op, lhs, rhs),
+            Expr::Cast { value, ty, .. } => {
+                let inner = self.emit_expr(value);
+                let target = c_type_for_typeref(ty);
+                format!("(({target})({inner}))")
+            }
             other => {
                 self.diag(
                     span_of_expr(other),
                     "expression form not yet supported by the C emitter",
                 );
-                "phc_panic(\"codegen TODO\")".into()
+                "phc_panic(\"codegen TODO expr\")".into()
             }
         }
     }
 
-    /// Build a `phc_string` from the literal parts, concatenating
-    /// every interpolation as we go via `phc_concat2`.
+    fn emit_binary(&mut self, op: BinOp, lhs: &Expr, rhs: &Expr) -> String {
+        let lhs_c = self.emit_expr(lhs);
+        let rhs_c = self.emit_expr(rhs);
+        let lhs_ty = self.typed.expr_types.get(&span_of_expr(lhs));
+        let rhs_ty = self.typed.expr_types.get(&span_of_expr(rhs));
+        let both_string = matches!(
+            (lhs_ty, rhs_ty),
+            (
+                Some(Ty::Primitive(Primitive::String)),
+                Some(Ty::Primitive(Primitive::String))
+            )
+        );
+        let c_op = match op {
+            BinOp::Add => {
+                if both_string {
+                    return format!("phc_concat2({lhs_c}, {rhs_c})");
+                }
+                "+"
+            }
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::Lt => "<",
+            BinOp::Le => "<=",
+            BinOp::Gt => ">",
+            BinOp::Ge => ">=",
+            BinOp::Eq => "==",
+            BinOp::Neq => "!=",
+            BinOp::And => "&&",
+            BinOp::Or => "||",
+            BinOp::NullCoalesce => {
+                self.diag(span_of_expr(lhs), "`??` codegen not yet implemented");
+                return "phc_panic(\"codegen TODO ??\")".into();
+            }
+        };
+        format!("(({lhs_c}) {c_op} ({rhs_c}))")
+    }
+
+    /// Build a `phc_string` from the literal parts. A leading text
+    /// piece skips the empty-string seed so the C is a touch
+    /// nicer; otherwise concat through `phc_concat2`.
     fn emit_string_literal(&mut self, parts: &[StrPart]) -> String {
-        let mut acc = "phc_string_lit(\"\")".to_string();
-        for part in parts {
-            let piece = match part {
+        if parts.is_empty() {
+            return "phc_string_lit(\"\")".to_string();
+        }
+        let pieces: Vec<String> = parts
+            .iter()
+            .map(|p| match p {
                 StrPart::Text(t) => format!("phc_string_lit({})", c_string_lit(t)),
                 StrPart::Expr(e) => format!("phc_to_string({})", self.emit_expr(e)),
-            };
+            })
+            .collect();
+        let mut acc = pieces[0].clone();
+        for piece in pieces.iter().skip(1) {
             acc = format!("phc_concat2({acc}, {piece})");
         }
         acc
@@ -192,9 +315,9 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        // User-defined free function call: phc_<name>(...).
+        // User-defined free function call: phc_<name>(arg, ...).
         if let Expr::TypeName { name, .. } = callee {
-            if let Some(_id) = self.resolved.top_level.get(&name.name).copied() {
+            if self.resolved.top_level.contains_key(&name.name) {
                 let arg_src: Vec<String> = args.iter().map(|a| self.emit_expr(a)).collect();
                 return format!("phc_{}({})", name.name, arg_src.join(", "));
             }
@@ -215,18 +338,17 @@ impl<'a> Emitter<'a> {
     }
 }
 
-fn is_void_return(f: &FunctionDecl) -> bool {
-    f.return_type.path.len() == 1 && f.return_type.path[0].name == "void"
-}
-
-fn c_type_for(t: &phc_ast::TypeRef) -> &'static str {
-    match t.path.last().map(|i| i.name.as_str()).unwrap_or("") {
+fn c_type_for_typeref(t: &phc_ast::TypeRef) -> &'static str {
+    if t.path.len() != 1 {
+        return "phc_value";
+    }
+    match t.path[0].name.as_str() {
         "int" => "int64_t",
         "float" => "double",
         "bool" => "bool",
         "string" => "phc_string",
         "void" => "void",
-        _ => "phc_value", // catch-all opaque box; defined in runtime
+        _ => "phc_value",
     }
 }
 

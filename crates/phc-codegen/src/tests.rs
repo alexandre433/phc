@@ -83,3 +83,71 @@ fn user_function_call_dispatches_by_name() {
     assert!(c.contains("static void phc_helper(void)"));
     assert!(c.contains("phc_helper()"));
 }
+
+#[test]
+fn function_with_int_args_and_return() {
+    let src = r#"pack a;
+        function add(int $a, int $b): int { return $a + $b; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(c.contains("static int64_t phc_add(int64_t phc_var_a, int64_t phc_var_b)"));
+    assert!(c.contains("return ((phc_var_a) + (phc_var_b));"));
+}
+
+#[test]
+fn if_else_chain_emits_c() {
+    let src = r#"pack a;
+        function main(): void {
+            if (true) { return; } else { return; }
+        }"#;
+    let c = emit_for(src);
+    assert!(c.contains("if (true)"));
+    assert!(c.contains("} else {"));
+}
+
+#[test]
+fn while_loop_emits_c() {
+    let src = r#"pack a;
+        function main(): void {
+            while (true) { break; }
+        }"#;
+    let c = emit_for(src);
+    assert!(c.contains("while (true)"));
+    assert!(c.contains("break;"));
+}
+
+#[test]
+fn reassign_emits_assignment() {
+    let src = r#"pack a;
+        function main(): void {
+            flip int $x = 0;
+            $x := $x + 1;
+        }"#;
+    let c = emit_for(src);
+    assert!(c.contains("phc_var_x = ((phc_var_x) + ((int64_t)1));"));
+}
+
+#[test]
+fn string_concat_emits_phc_concat2() {
+    let src = r#"pack a;
+        function greet(): string { return "hello, " + "world"; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(c.contains("phc_concat2("));
+    assert!(c.contains("phc_string_lit(\"hello, \")"));
+    assert!(c.contains("phc_string_lit(\"world\")"));
+}
+
+#[test]
+fn forward_decls_let_main_call_helper_declared_later() {
+    let src = r#"pack a;
+        function main(): void { helper(); }
+        function helper(): void {}"#;
+    let c = emit_for(src);
+    // Both forward decls present before any body.
+    let main_decl_pos = c.find("static void phc_main(void);").unwrap();
+    let helper_decl_pos = c.find("static void phc_helper(void);").unwrap();
+    let first_body_pos = c.find("static void phc_main(void) {").unwrap();
+    assert!(main_decl_pos < first_body_pos);
+    assert!(helper_decl_pos < first_body_pos);
+}
