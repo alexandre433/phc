@@ -1,0 +1,13 @@
+[package]
+name = "phc-errors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared diagnostic and error types for the PHC compiler"
+
+[dependencies]
+phc-span = { path = "../phc-span" }
+# miette and thiserror are wired in Phase 2 alongside the first
+# concrete error enum (see TODO in src/lib.rs).

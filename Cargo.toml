@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "phc",
+    "crates/phc-span",
+    "crates/phc-errors",
     "crates/phc-ast",
     "crates/phc-lexer",
     "crates/phc-parser",

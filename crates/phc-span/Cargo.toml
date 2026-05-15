@@ -1,0 +1,10 @@
+[package]
+name = "phc-span"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Source-span types shared across the PHC compiler"
+
+[dependencies]
