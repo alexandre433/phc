@@ -1,0 +1,12 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/pack.phc
+---
+=== top level ===
+SymbolId(0)  Function  authenticate  (86..98)
+
+=== uses ===
+ 161..166  -> SymbolId(2)  Value  pool
+ 191..196  -> SymbolId(3)  Value  conn
+ 205..213  -> SymbolId(1)  Value  request

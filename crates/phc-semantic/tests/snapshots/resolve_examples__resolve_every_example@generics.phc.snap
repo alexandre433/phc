@@ -1,0 +1,14 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/generics.phc
+---
+=== top level ===
+SymbolId(1)  Function  demo  (170..174)
+SymbolId(0)  Function  max  (45..48)
+
+=== uses ===
+  92..94   -> SymbolId(2)  Value  a
+  97..99   -> SymbolId(3)  Value  b
+ 119..121  -> SymbolId(2)  Value  a
+ 140..142  -> SymbolId(3)  Value  b

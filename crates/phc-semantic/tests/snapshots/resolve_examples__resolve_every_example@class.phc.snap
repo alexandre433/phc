@@ -1,0 +1,14 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/class.phc
+---
+=== top level ===
+SymbolId(0)  Interface  Greet  (44..49)
+SymbolId(1)  Trait  Loggable  (94..102)
+SymbolId(2)  Class  User  (180..184)
+
+=== uses ===
+   0..5    -> SymbolId(7)  Value  this
+ 145..150  -> SymbolId(3)  Value  this
+ 301..306  -> SymbolId(4)  Value  this

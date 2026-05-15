@@ -1,0 +1,14 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/bindings.phc
+---
+=== top level ===
+SymbolId(0)  Function  main  (41..45)
+
+=== uses ===
+ 106..112  -> SymbolId(2)  Value  score
+ 116..122  -> SymbolId(2)  Value  score
+ 132..138  -> SymbolId(2)  Value  score
+ 142..148  -> SymbolId(2)  Value  score
+ 151..157  -> SymbolId(1)  Value  count

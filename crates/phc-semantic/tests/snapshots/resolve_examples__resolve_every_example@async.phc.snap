@@ -1,0 +1,15 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/async.phc
+---
+=== top level ===
+SymbolId(0)  Function  fetch  (43..48)
+SymbolId(1)  Function  fetchPair  (149..158)
+
+=== uses ===
+ 117..121  -> SymbolId(2)  Value  url
+ 240..242  -> SymbolId(3)  Value  a
+ 277..279  -> SymbolId(4)  Value  b
+ 304..310  -> SymbolId(5)  Value  first
+ 313..320  -> SymbolId(6)  Value  second

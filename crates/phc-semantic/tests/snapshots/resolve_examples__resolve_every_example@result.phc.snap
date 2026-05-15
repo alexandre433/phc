@@ -1,0 +1,11 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/result.phc
+---
+=== top level ===
+SymbolId(0)  Function  parsePort  (39..48)
+
+=== uses ===
+ 106..110  -> SymbolId(1)  Value  raw
+ 144..150  -> SymbolId(2)  Value  value

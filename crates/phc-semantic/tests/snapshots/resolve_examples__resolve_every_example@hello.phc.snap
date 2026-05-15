@@ -1,0 +1,10 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/hello.phc
+---
+=== top level ===
+SymbolId(0)  Function  main  (38..42)
+
+=== uses ===
+   0..5    -> SymbolId(1)  Value  name

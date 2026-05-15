@@ -1,0 +1,12 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/match.phc
+---
+=== top level ===
+SymbolId(0)  Enum  Status  (39..45)
+SymbolId(1)  Function  classify  (122..130)
+
+=== uses ===
+ 177..184  -> SymbolId(2)  Value  status
+ 296..301  -> SymbolId(3)  Value  code
