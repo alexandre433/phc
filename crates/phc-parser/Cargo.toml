@@ -10,4 +10,8 @@ description = "PHC parser — produces a typed AST from tokens"
 [dependencies]
 phc-ast = { path = "../phc-ast" }
 phc-lexer = { path = "../phc-lexer" }
-miette = { workspace = true }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

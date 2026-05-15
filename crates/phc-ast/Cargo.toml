@@ -8,3 +8,4 @@ repository.workspace = true
 description = "PHC Abstract Syntax Tree node definitions"
 
 [dependencies]
+phc-span = { path = "../phc-span" }
