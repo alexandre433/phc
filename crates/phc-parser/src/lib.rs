@@ -11,6 +11,7 @@
 //! [`parse_source_file`] entry point. Productions are split into
 //! sibling modules as they grow.
 
+mod expressions;
 mod functions;
 mod source_file;
 mod types;
@@ -154,6 +155,13 @@ impl<'tok> Cursor<'tok> {
             message: message.into(),
             span,
         });
+    }
+
+    /// Forward a pre-built diagnostic into this cursor's collector.
+    /// Used when a sub-cursor (e.g. for a string-interpolation body)
+    /// needs to bubble its diagnostics back up to the host parse.
+    pub(crate) fn push_diagnostic(&mut self, diag: Diagnostic) {
+        self.diagnostics.push(diag);
     }
 
     pub(crate) fn into_diagnostics(self) -> Vec<Diagnostic> {

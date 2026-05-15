@@ -154,3 +154,140 @@ pub enum Stmt {
     // TODO(phase-2): LocalBinding, Reassign, If, While, For, Return,
     // Break, Continue, ExprStmt.
 }
+
+/// Expression node. Mirrors every Expression production in the EBNF
+/// (precedence is encoded in how the parser nests these, not in the
+/// enum itself). Match expressions and lambdas live here as well
+/// once P7 lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Expr {
+    /// Integer literal text exactly as it appeared in source. The
+    /// parser does not interpret the value; the typechecker does.
+    IntLit {
+        text: String,
+        span: Span,
+    },
+    FloatLit {
+        text: String,
+        span: Span,
+    },
+    BoolLit {
+        value: bool,
+        span: Span,
+    },
+    NullLit {
+        span: Span,
+    },
+    /// Double-quoted string literal split into resolved text chunks
+    /// and parsed interpolation expressions (D-017).
+    StrLit {
+        parts: Vec<StrPart>,
+        span: Span,
+    },
+    /// `$this`.
+    This {
+        span: Span,
+    },
+    /// `$name` (variable / parameter / field reference).
+    Var {
+        name: Ident,
+        span: Span,
+    },
+    /// A bare type name appearing in expression position. Acts as
+    /// the head of a static-access chain (`Status::Ok`).
+    TypeName {
+        name: Ident,
+        span: Span,
+    },
+    /// `(expr)` — parenthesised grouping, kept in the AST so spans
+    /// and pretty-printing round-trip the source.
+    Paren {
+        inner: Box<Expr>,
+        span: Span,
+    },
+    /// `receiver->field` (instance member access, D-023).
+    Member {
+        receiver: Box<Expr>,
+        field: Ident,
+        span: Span,
+    },
+    /// `Type::member` (static / type-level access, D-023).
+    Static {
+        ty: Box<Expr>,
+        member: Ident,
+        span: Span,
+    },
+    /// `callee(arg, ...)`.
+    Call {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+        span: Span,
+    },
+    /// `target[index]`.
+    Index {
+        target: Box<Expr>,
+        index: Box<Expr>,
+        span: Span,
+    },
+    /// Unary prefix operator (`!`, `-`, `await`).
+    Unary {
+        op: UnaryOp,
+        operand: Box<Expr>,
+        span: Span,
+    },
+    /// Borrow prefix on an operand (`&$x`, `&flip $x`).
+    Borrow {
+        kind: Borrow,
+        operand: Box<Expr>,
+        span: Span,
+    },
+    /// `value as Type` (D-019; total casts only).
+    Cast {
+        value: Box<Expr>,
+        ty: TypeRef,
+        span: Span,
+    },
+    /// Binary infix operator (every level from `*` through `??`).
+    Binary {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+        span: Span,
+    },
+}
+
+/// A piece of a string literal (D-017).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StrPart {
+    /// Literal text with all escapes already resolved.
+    Text(String),
+    /// Embedded `{ expr }` interpolation, parsed into an [`Expr`].
+    Expr(Expr),
+}
+
+/// Unary prefix operators that are *not* borrow modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Not,
+    Neg,
+    Await,
+}
+
+/// Binary infix operators, ordered top-of-table → bottom-of-table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Mul,
+    Div,
+    Rem,
+    Add,
+    Sub,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    Neq,
+    And,
+    Or,
+    NullCoalesce,
+}
