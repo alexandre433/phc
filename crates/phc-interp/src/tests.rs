@@ -344,6 +344,88 @@ fn trait_method_mixin_resolves() {
 }
 
 #[test]
+fn enum_static_access_yields_variant_value() {
+    let out = run_src(
+        r#"pack a;
+           public enum Method { Get, Post }
+           function main(): bool {
+               return Method::Get == Method::Get;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Bool(true))));
+}
+
+#[test]
+fn match_dispatch_on_enum_variant() {
+    let out = run_src(
+        r#"pack a;
+           public enum Status { Ok, NotFound, Gone }
+           function classify(Status $s): int {
+               return match ($s) {
+                   Status::Ok => 0,
+                   Status::NotFound | Status::Gone => 404,
+                   _ => -1,
+               };
+           }
+           function main(): int {
+               return classify(Status::NotFound);
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(404))));
+}
+
+#[test]
+fn match_var_pattern_binds_scrutinee() {
+    let out = run_src(
+        r#"pack a;
+           function classify(int $code): int {
+               return match ($code) {
+                   $n if $n > 500 => 500,
+                   _ => 0,
+               };
+           }
+           function main(): int { return classify(750); }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(500))));
+}
+
+#[test]
+fn match_literal_pattern_routes_through_arms() {
+    let out = run_src(
+        r#"pack a;
+           function name(int $n): string {
+               return match ($n) {
+                   1 => "one",
+                   2 => "two",
+                   _ => "many",
+               };
+           }
+           function main(): string { return name(2); }"#,
+    );
+    let Some(Value::String(s)) = out.result else {
+        panic!("expected String");
+    };
+    assert_eq!(s, "two");
+}
+
+#[test]
+fn no_match_arm_is_a_runtime_error() {
+    let out = run_src(
+        r#"pack a;
+           function f(int $n): int {
+               return match ($n) {
+                   1 => 100,
+               };
+           }
+           function main(): int { return f(99); }"#,
+    );
+    assert!(out
+        .errors
+        .iter()
+        .any(|e| e.message.contains("no match arm")));
+}
+
+#[test]
 fn hello_phc_example_runs_end_to_end() {
     let src = std::fs::read_to_string("../../examples/hello.phc").expect("read hello.phc");
     let out = run_src(&src);

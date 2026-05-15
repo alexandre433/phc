@@ -16,8 +16,8 @@
 //! alongside the matching language feature.
 
 use phc_ast::{
-    BinOp, ClassDecl, ClassMember, ConstructDecl, Expr, FunctionDecl, Item, SourceFile, Stmt,
-    StrPart, TraitDecl, UnaryOp,
+    BinOp, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item, MatchArm,
+    Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
 };
 use phc_semantic::{Resolved, Symbol, SymbolId, SymbolKind};
 use phc_typecheck::Typed;
@@ -41,6 +41,12 @@ pub enum Value {
         class: String,
         fields: Rc<RefCell<HashMap<String, Value>>>,
     },
+    /// `Type::Variant` value. Carries both the enum name and the
+    /// variant name so equality only matches when both agree.
+    EnumVariant {
+        enum_name: String,
+        variant: String,
+    },
 }
 
 impl Value {
@@ -53,6 +59,7 @@ impl Value {
             Value::Bool(b) => b.to_string(),
             Value::String(s) => s.clone(),
             Value::Instance { class, .. } => format!("<{class} instance>"),
+            Value::EnumVariant { enum_name, variant } => format!("{enum_name}::{variant}"),
         }
     }
 }
@@ -197,6 +204,13 @@ fn find_function<'a>(
 fn find_class<'a>(file: &'a SourceFile, name: &str) -> Option<&'a ClassDecl> {
     file.items.iter().find_map(|item| match item {
         Item::Class(c) if c.name.name == name => Some(c),
+        _ => None,
+    })
+}
+
+fn find_enum<'a>(file: &'a SourceFile, name: &str) -> Option<&'a EnumDecl> {
+    file.items.iter().find_map(|item| match item {
+        Item::Enum(e) if e.name.name == name => Some(e),
         _ => None,
     })
 }
@@ -469,6 +483,46 @@ impl<'a> Interp<'a> {
                 let v = self.eval_expr(value, env)?;
                 eval_cast(v, ty)
             }
+            Expr::Static { ty, member, .. } => {
+                if let Expr::TypeName { name, .. } = ty.as_ref() {
+                    if let Some(enum_decl) = find_enum(self.file, &name.name) {
+                        if enum_decl
+                            .variants
+                            .iter()
+                            .any(|v| v.name.name == member.name)
+                        {
+                            return Ok(Value::EnumVariant {
+                                enum_name: name.name.clone(),
+                                variant: member.name.clone(),
+                            });
+                        }
+                        return Err(RuntimeError {
+                            message: format!(
+                                "no variant `{}` on enum `{}`",
+                                member.name, name.name
+                            ),
+                        });
+                    }
+                }
+                Err(RuntimeError {
+                    message: format!("static access `{ty:?}::{}` not yet supported", member.name),
+                })
+            }
+            Expr::Match {
+                scrutinee, arms, ..
+            } => {
+                let value = self.eval_expr(scrutinee, env)?;
+                self.eval_match(&value, arms, env)
+            }
+            Expr::TypeName { name, .. } => {
+                // A bare type name in expression position is rare —
+                // usually it's the head of a Static or Call. Reject
+                // anything that reaches eval_expr standalone so
+                // misuses are loud rather than silent.
+                Err(RuntimeError {
+                    message: format!("type name `{}` cannot be used as a value here", name.name),
+                })
+            }
             other => Err(RuntimeError {
                 message: format!(
                     "expression {other:?} is not yet supported by this interpreter \
@@ -729,6 +783,75 @@ impl<'a> Interp<'a> {
         self.run_function_with_this(decl, arg_values, None)
     }
 
+    fn eval_match(
+        &mut self,
+        scrutinee: &Value,
+        arms: &[MatchArm],
+        env: &mut Env,
+    ) -> Result<Value, RuntimeError> {
+        for arm in arms {
+            env.enter();
+            let matched = self.try_pattern(&arm.pattern, scrutinee, env)?;
+            if matched {
+                let guard_pass = match &arm.guard {
+                    Some(g) => {
+                        let v = self.eval_expr(g, env)?;
+                        truthy(&v)?
+                    }
+                    None => true,
+                };
+                if guard_pass {
+                    let result = self.eval_expr(&arm.body, env);
+                    env.leave();
+                    return result;
+                }
+            }
+            env.leave();
+        }
+        Err(RuntimeError {
+            message: format!("no match arm for value `{scrutinee:?}`"),
+        })
+    }
+
+    /// Returns true when the pattern matches; if matching introduces
+    /// a binding (Var pattern), the binding is added to the current
+    /// env frame.
+    fn try_pattern(
+        &mut self,
+        pat: &Pattern,
+        value: &Value,
+        env: &mut Env,
+    ) -> Result<bool, RuntimeError> {
+        match pat {
+            Pattern::Wildcard { .. } => Ok(true),
+            Pattern::Literal(expr) => {
+                let lit = self.eval_expr(expr, env)?;
+                Ok(values_equal(&lit, value))
+            }
+            Pattern::Var { name, .. } => {
+                if let Some(sid) = self.symbol_at_def(name.span) {
+                    env.bind(sid, value.clone());
+                }
+                Ok(true)
+            }
+            Pattern::EnumVariant { ty, variant, .. } => match value {
+                Value::EnumVariant {
+                    enum_name,
+                    variant: vname,
+                } => Ok(enum_name == &ty.name && vname == &variant.name),
+                _ => Ok(false),
+            },
+            Pattern::Or { atoms, .. } => {
+                for atom in atoms {
+                    if self.try_pattern(atom, value, env)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+        }
+    }
+
     fn symbol_at_def(&self, span: phc_span::Span) -> Option<SymbolId> {
         self.resolved
             .symbols
@@ -843,6 +966,16 @@ fn values_equal(l: &Value, r: &Value) -> bool {
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Null, Value::Null) => true,
         (Value::Void, Value::Void) => true,
+        (
+            Value::EnumVariant {
+                enum_name: en_l,
+                variant: v_l,
+            },
+            Value::EnumVariant {
+                enum_name: en_r,
+                variant: v_r,
+            },
+        ) => en_l == en_r && v_l == v_r,
         _ => false,
     }
 }
