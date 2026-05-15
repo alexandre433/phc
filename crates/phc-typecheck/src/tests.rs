@@ -148,6 +148,92 @@ fn nullable_and_generic_return_types_round_trip() {
     assert_eq!(sig.return_ty.display(), "result<int, string?>");
 }
 
+fn first_function_body_types(typed: &Typed) -> Vec<String> {
+    let mut entries: Vec<(_, _)> = typed
+        .expr_types
+        .iter()
+        .map(|(span, ty)| (span.lo, ty.display()))
+        .collect();
+    entries.sort_by_key(|(lo, _)| *lo);
+    entries.into_iter().map(|(_, t)| t).collect()
+}
+
+#[test]
+fn literal_expression_types_are_inferred() {
+    let typed = typed_for(
+        r#"pack a;
+           function f(): int {
+               int $x = 1;
+               float $y = 1.5;
+               bool $b = true;
+               string $s = "hi";
+               return $x;
+           }"#,
+    );
+    let types: std::collections::HashSet<String> =
+        typed.expr_types.values().map(|t| t.display()).collect();
+    assert!(types.contains("int"));
+    assert!(types.contains("float"));
+    assert!(types.contains("bool"));
+    assert!(types.contains("string"));
+}
+
+#[test]
+fn variable_use_resolves_to_binding_type() {
+    let typed = typed_for(
+        r#"pack a;
+           function add(int $a, int $b): int { return $a + $b; }"#,
+    );
+    let types = first_function_body_types(&typed);
+    // Expect: $a (int), $b (int), Add binary (int).
+    assert!(types.contains(&"int".to_string()));
+    let int_count = types.iter().filter(|t| t.as_str() == "int").count();
+    assert!(
+        int_count >= 3,
+        "expected ≥3 int types (params + binary), got {types:?}"
+    );
+}
+
+#[test]
+fn binary_arithmetic_int_plus_int_yields_int() {
+    let typed = typed_for(
+        r#"pack a;
+           function f(): int { return 1 + 2 * 3; }"#,
+    );
+    let types = first_function_body_types(&typed);
+    // Three int literals + two int Binary nodes = 5 ints.
+    let int_count = types.iter().filter(|t| t.as_str() == "int").count();
+    assert_eq!(int_count, 5, "got {types:?}");
+}
+
+#[test]
+fn comparison_yields_bool() {
+    let typed = typed_for(
+        r#"pack a;
+           function lt(int $a, int $b): bool { return $a < $b; }"#,
+    );
+    let types: Vec<String> = typed.expr_types.values().map(|t| t.display()).collect();
+    assert!(types.contains(&"bool".to_string()));
+}
+
+#[test]
+fn unknown_type_for_call_and_member() {
+    let typed = typed_for(
+        r#"pack a;
+           function f(): int {
+               int $x = doStuff();
+               return $x;
+           }"#,
+    );
+    // The Call site is Unknown today; the binding $x is still int.
+    let unknowns = typed
+        .expr_types
+        .values()
+        .filter(|t| matches!(t, Ty::Unknown))
+        .count();
+    assert!(unknowns >= 1, "expected at least one Unknown for the call");
+}
+
 #[test]
 fn class_methods_are_skipped_for_now() {
     // Classes do not yet have SymbolIds for their methods, so the

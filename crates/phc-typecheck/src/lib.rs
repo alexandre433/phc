@@ -6,12 +6,14 @@
 //! Function signatures, expression inference, and statement checks
 //! land in follow-up commits.
 
+mod infer;
 mod lower;
 mod sigs;
 
 #[cfg(test)]
 mod tests;
 
+pub use infer::infer_function_bodies;
 pub use lower::lower_type_ref;
 pub use sigs::{collect_function_sigs, FunctionSig, ParamSig};
 
@@ -180,6 +182,10 @@ pub struct Typed {
     /// resolver assigned. Class / trait method signatures land
     /// once those items get SymbolIds.
     pub function_sigs: HashMap<SymbolId, FunctionSig>,
+    /// Inferred type for every expression node, keyed by the
+    /// expression's span. `Ty::Unknown` is used wherever the
+    /// inferer could not commit to a concrete type yet.
+    pub expr_types: HashMap<Span, Ty>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -188,5 +194,6 @@ pub struct Typed {
 pub fn typecheck(file: &SourceFile, resolved: &Resolved) -> Typed {
     let mut typed = Typed::default();
     collect_function_sigs(file, resolved, &mut typed);
+    infer_function_bodies(file, resolved, &mut typed);
     typed
 }
