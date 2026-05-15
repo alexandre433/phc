@@ -1,0 +1,18 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/pack.phc
+---
+=== function sigs ===
+SymbolId(0)(Request $request, &Pool $pool) -> bool
+
+=== expr types ===
+ 161..166  : Pool
+ 161..176  : <unknown>
+ 161..178  : <unknown>
+ 191..196  : Connection
+ 191..204  : <unknown>
+ 191..223  : <unknown>
+ 205..213  : Request
+ 205..220  : <unknown>
+ 205..222  : <unknown>

@@ -1,0 +1,8 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/class.phc
+---
+=== function sigs ===
+
+=== expr types ===

@@ -1,0 +1,17 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/result.phc
+---
+=== function sigs ===
+SymbolId(0)(string $raw) -> result<int, ParseError>
+
+=== expr types ===
+ 106..110  : string
+ 106..117  : <unknown>
+ 106..119  : <unknown>
+ 106..120  : <unknown>
+ 133..139  : <unknown>
+ 133..143  : <unknown>
+ 133..151  : <unknown>
+ 144..150  : int

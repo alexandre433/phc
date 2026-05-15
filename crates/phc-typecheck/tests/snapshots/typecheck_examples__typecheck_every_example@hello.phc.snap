@@ -1,0 +1,15 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/hello.phc
+---
+=== function sigs ===
+SymbolId(0)() -> void
+
+=== expr types ===
+  72..77   : string
+  83..89   : <unknown>
+  83..95   : <unknown>
+  83..114  : <unknown>
+  96..113  : string
+ 105..110  : string

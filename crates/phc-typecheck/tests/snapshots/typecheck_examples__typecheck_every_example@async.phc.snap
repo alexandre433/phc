@@ -1,0 +1,29 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/async.phc
+---
+=== function sigs ===
+SymbolId(0)(string $url) -> result<bytes, HttpError>
+SymbolId(1)(string $a, string $b) -> result<bytes, HttpError>
+
+=== expr types ===
+ 101..122  : <unknown>
+ 107..111  : <unknown>
+ 107..116  : <unknown>
+ 107..122  : <unknown>
+ 117..121  : string
+ 228..243  : <unknown>
+ 234..239  : <unknown>
+ 234..243  : <unknown>
+ 240..242  : string
+ 265..280  : <unknown>
+ 271..276  : <unknown>
+ 271..280  : <unknown>
+ 277..279  : string
+ 293..299  : <unknown>
+ 293..303  : <unknown>
+ 293..321  : <unknown>
+ 304..310  : bytes
+ 304..320  : <unknown>
+ 313..320  : bytes

@@ -1,0 +1,16 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/borrows.phc
+---
+=== function sigs ===
+SymbolId(0)(&User $user) -> string
+SymbolId(1)(&flip int $counter) -> void
+
+=== expr types ===
+  79..84   : User
+  79..90   : <unknown>
+ 148..156  : int
+ 160..168  : int
+ 160..172  : int
+ 171..172  : int

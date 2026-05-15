@@ -1,0 +1,16 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/match.phc
+---
+=== function sigs ===
+SymbolId(1)(Status $status) -> int
+
+=== expr types ===
+ 170..283  : <unknown>
+ 177..184  : Status
+ 210..211  : int
+ 256..259  : int
+ 274..276  : int
+ 275..276  : int
+ 296..301  : int

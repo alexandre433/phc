@@ -1,0 +1,20 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/generics.phc
+---
+=== function sigs ===
+SymbolId(0)<T>(T $a, T $b) -> T
+SymbolId(1)() -> int
+
+=== expr types ===
+  85..149  : <unknown>
+  92..94   : T
+  92..99   : bool
+  97..99   : T
+ 119..121  : T
+ 140..142  : T
+ 195..198  : <unknown>
+ 195..204  : <unknown>
+ 199..200  : int
+ 202..203  : int
