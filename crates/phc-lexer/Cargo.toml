@@ -9,4 +9,7 @@ description = "PHC lexer — tokenises PHC source files"
 
 [dependencies]
 logos = { workspace = true }
-phc-ast = { path = "../phc-ast" }
+phc-span = { path = "../phc-span" }
+
+[dev-dependencies]
+insta = "1"
