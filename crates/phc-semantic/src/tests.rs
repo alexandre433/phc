@@ -54,7 +54,9 @@ fn each_item_kind_gets_the_right_symbol_kind() {
         SymbolKind::Interface => 3,
         SymbolKind::Trait => 4,
         SymbolKind::Test => 5,
-        SymbolKind::Value => 6,
+        SymbolKind::Method => 6,
+        SymbolKind::Field => 7,
+        SymbolKind::Value => 8,
     });
     assert_eq!(
         kinds,
@@ -191,6 +193,59 @@ fn lambda_param_scoped_to_body() {
            }"#,
     );
     assert!(r.diagnostics.is_empty(), "got diags: {:?}", r.diagnostics);
+}
+
+#[test]
+fn class_members_register_under_members_of() {
+    let r = resolved_for(
+        r#"pack a;
+           public class User {
+               construct(public string $name) {}
+               int $age = 0;
+               public function greet(): string { return "hi"; }
+           }"#,
+    );
+    let class_id = r.top_level.get("User").copied().expect("User registered");
+    let members = r.members_of.get(&class_id).expect("members recorded");
+    assert_eq!(members.len(), 3, "construct + field + method");
+    let kinds: Vec<SymbolKind> = members.iter().map(|id| r.symbol(*id).kind).collect();
+    assert_eq!(
+        kinds,
+        vec![SymbolKind::Method, SymbolKind::Field, SymbolKind::Method]
+    );
+    let names: Vec<&str> = members
+        .iter()
+        .map(|id| r.symbol(*id).name.as_str())
+        .collect();
+    assert_eq!(names, vec!["construct", "age", "greet"]);
+}
+
+#[test]
+fn trait_methods_register_under_members_of() {
+    let r = resolved_for(
+        r#"pack a;
+           public trait Loggable { function log(): void {} }"#,
+    );
+    let trait_id = r
+        .top_level
+        .get("Loggable")
+        .copied()
+        .expect("Loggable registered");
+    let members = r.members_of.get(&trait_id).expect("methods recorded");
+    assert_eq!(members.len(), 1);
+    assert_eq!(r.symbol(members[0]).name, "log");
+    assert_eq!(r.symbol(members[0]).kind, SymbolKind::Method);
+}
+
+#[test]
+fn interface_method_sigs_register_under_members_of() {
+    let r = resolved_for(
+        r#"pack a;
+           public interface Greet { function greet(): string; function bye(): void; }"#,
+    );
+    let iface_id = r.top_level.get("Greet").copied().expect("Greet registered");
+    let members = r.members_of.get(&iface_id).expect("methods recorded");
+    assert_eq!(members.len(), 2);
 }
 
 #[test]

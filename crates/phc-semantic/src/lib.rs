@@ -39,9 +39,15 @@ pub enum SymbolKind {
     Interface,
     Trait,
     Test,
-    /// Field, parameter, local binding, lambda param, for-elem.
-    /// Variable-shaped symbols share one variant for now; the
-    /// finer breakdown lands when typecheck (S3) needs it.
+    /// Class / trait method, including the `construct` constructor
+    /// (which is recorded as a method named `construct`).
+    Method,
+    /// Class field — declared inside a class body with the
+    /// local-binding shape.
+    Field,
+    /// Parameter, local binding, lambda param, for-elem, match
+    /// pattern Var. The finer breakdown lands when typecheck needs
+    /// it.
     Value,
 }
 
@@ -67,6 +73,10 @@ pub struct Resolved {
     pub symbols: Vec<Symbol>,
     /// Top-level scope: name → symbol id for every Item in the file.
     pub top_level: HashMap<String, SymbolId>,
+    /// For each Class / Trait / Interface symbol id, the ordered
+    /// list of its member symbol ids (methods, fields, constructor).
+    /// Empty for non-container symbols.
+    pub members_of: HashMap<SymbolId, Vec<SymbolId>>,
     /// Use-site → symbol id for every resolved `$name` / `$this`
     /// reference. Keyed by the use-site span; collisions across
     /// files are not possible while the resolver is single-file
