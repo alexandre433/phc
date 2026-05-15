@@ -5,7 +5,15 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "PHC LLVM code generation backend"
+description = "PHC code generation. C-emit backend today; LLVM (via phc-ir) lands in the v1 work."
 
 [dependencies]
-phc-ir = { path = "../phc-ir" }
+phc-ast = { path = "../phc-ast" }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
+phc-semantic = { path = "../phc-semantic" }
+phc-typecheck = { path = "../phc-typecheck" }
+
+[dev-dependencies]
+phc-parser = { path = "../phc-parser" }
+phc-lexer = { path = "../phc-lexer" }
