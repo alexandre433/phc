@@ -1,2 +1,4 @@
-// phc-lower: lowers the typed AST into PHC IR
-// TODO: Phase 4 — IR & Lowering
+// SPDX-License-Identifier: MIT
+//! Typed AST to PHC IR lowering.
+
+// TODO(phase-4): real lowering lands alongside the IR and optimisation passes.

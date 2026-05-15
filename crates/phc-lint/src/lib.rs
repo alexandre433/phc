@@ -1,2 +1,4 @@
-// phc-lint: static analysis and linting
-// TODO: Phase 8 — Tooling: Formatter, Linter & LSP
+// SPDX-License-Identifier: MIT
+//! Static analysis and linting for PHC source.
+
+// TODO(phase-8): real linter lands alongside the formatter and LSP.

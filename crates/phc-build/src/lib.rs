@@ -1,2 +1,4 @@
-// phc-build: build system, incremental compilation, parallel pack builds
-// TODO: Phase 7 — Package Manager & Build System
+// SPDX-License-Identifier: MIT
+//! Incremental, parallel pack-aware build system for PHC.
+
+// TODO(phase-7): real build orchestration lands alongside the package manager.

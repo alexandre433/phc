@@ -1,2 +1,4 @@
-// phc-typecheck: type inference and type checking
-// TODO: Phase 3 — Type Checker & Semantic Analysis
+// SPDX-License-Identifier: MIT
+//! Type inference and type checking for PHC.
+
+// TODO(phase-3): real checker lands alongside semantic analysis.

@@ -1,10 +1,16 @@
-// PHC compiler CLI entry point
-// TODO: Phase 7 — Package Manager & Build System
+// SPDX-License-Identifier: MIT
+//! PHC compiler CLI entry point.
+
+// TODO(phase-7): wire real subcommands as the build system lands.
 
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "phc", about = "The PHC language compiler and toolchain", version)]
+#[command(
+    name = "phc",
+    about = "The PHC language compiler and toolchain",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

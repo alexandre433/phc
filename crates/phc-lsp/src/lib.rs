@@ -1,2 +1,4 @@
-// phc-lsp: Language Server Protocol server
-// TODO: Phase 8 — Tooling: Formatter, Linter & LSP
+// SPDX-License-Identifier: MIT
+//! Language Server Protocol server for PHC.
+
+// TODO(phase-8): real LSP lands alongside the formatter and linter.

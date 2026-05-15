@@ -1,2 +1,4 @@
-// phc-borrowcheck: ownership, borrow checking, and lifetime inference
-// TODO: Phase 3 — Type Checker & Semantic Analysis
+// SPDX-License-Identifier: MIT
+//! Ownership, borrow checking, and lifetime inference for PHC.
+
+// TODO(phase-3): real checker lands alongside type checker and semantic analysis.

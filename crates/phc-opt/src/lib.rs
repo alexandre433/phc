@@ -1,2 +1,4 @@
-// phc-opt: optimisation passes over PHC IR
-// TODO: Phase 4 — IR & Lowering
+// SPDX-License-Identifier: MIT
+//! Optimisation passes over PHC IR.
+
+// TODO(phase-4): real passes land alongside the IR and lowering.

@@ -1,2 +1,4 @@
-// phc-pkg: package manager, semver dependency resolution, lock file
-// TODO: Phase 7 — Package Manager & Build System
+// SPDX-License-Identifier: MIT
+//! Package manager: semver dependency resolution and lock file.
+
+// TODO(phase-7): real package manager lands alongside the build system.

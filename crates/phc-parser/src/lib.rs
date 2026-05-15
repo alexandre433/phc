@@ -1,2 +1,4 @@
-// phc-parser: recursive descent parser producing a typed AST
-// TODO: Phase 2 — Lexer & Parser
+// SPDX-License-Identifier: MIT
+//! Recursive-descent parser producing a typed PHC AST.
+
+// TODO(phase-2): real parser lands alongside the lexer.

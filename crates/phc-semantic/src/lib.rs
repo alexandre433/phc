@@ -1,2 +1,4 @@
-// phc-semantic: semantic validation (pack acyclicity, visibility, etc.)
-// TODO: Phase 3 — Type Checker & Semantic Analysis
+// SPDX-License-Identifier: MIT
+//! Semantic validation: name resolution, pack acyclicity, visibility.
+
+// TODO(phase-3): real semantic pass lands alongside the type checker.

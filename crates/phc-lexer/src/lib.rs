@@ -1,2 +1,4 @@
-// phc-lexer: tokenises PHC source files
-// TODO: Phase 2 — Lexer & Parser
+// SPDX-License-Identifier: MIT
+//! Tokeniser for PHC source files.
+
+// TODO(phase-2): real lexer lands alongside the parser.
