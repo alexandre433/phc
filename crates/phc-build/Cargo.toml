@@ -8,5 +8,10 @@ repository.workspace = true
 description = "PHC build system and incremental compilation"
 
 [dependencies]
-toml = { workspace = true }
-serde = { workspace = true }
+phc-parser = { path = "../phc-parser" }
+phc-semantic = { path = "../phc-semantic" }
+phc-typecheck = { path = "../phc-typecheck" }
+phc-codegen = { path = "../phc-codegen" }
+phc-runtime = { path = "../phc-runtime" }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
