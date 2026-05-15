@@ -223,9 +223,10 @@ Crates form a directed acyclic graph that mirrors the compiler pipeline. Allowed
 phc-span     ← phc-ast ← phc-lexer ← phc-parser ← phc-semantic ← phc-typecheck ← phc-borrowcheck ← phc-ir ← phc-lower ← phc-opt ← phc-codegen
 phc-errors   ← every crate
 phc-runtime  ← phc-codegen, phc-build
+phc-interp   ← phc-typecheck (interim tree-walking interpreter; runs typed AST until codegen lands)
 phc-build    ← phc-pkg, phc-codegen, phc-typecheck (and earlier stages it orchestrates)
 phc-fmt, phc-lint, phc-lsp, phc-test ← phc-parser (and later stages they consume)
-phc          (CLI binary) ← phc-build, phc-pkg, phc-fmt, phc-lint, phc-test
+phc          (CLI binary) ← phc-build, phc-pkg, phc-fmt, phc-lint, phc-test, phc-interp
 ```
 
 - A crate must not depend on any crate to its right in the pipeline. PRs that introduce a back-edge are rejected

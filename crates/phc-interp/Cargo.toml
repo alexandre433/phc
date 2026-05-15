@@ -1,0 +1,19 @@
+[package]
+name = "phc-interp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PHC tree-walking interpreter — runs typed AST directly. Interim until codegen lands."
+
+[dependencies]
+phc-ast = { path = "../phc-ast" }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
+phc-semantic = { path = "../phc-semantic" }
+phc-typecheck = { path = "../phc-typecheck" }
+
+[dev-dependencies]
+phc-parser = { path = "../phc-parser" }
+phc-lexer = { path = "../phc-lexer" }

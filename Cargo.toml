@@ -15,6 +15,7 @@ members = [
     "crates/phc-opt",
     "crates/phc-codegen",
     "crates/phc-runtime",
+    "crates/phc-interp",
     "crates/phc-fmt",
     "crates/phc-lint",
     "crates/phc-lsp",
