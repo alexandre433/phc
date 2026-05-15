@@ -67,39 +67,24 @@ input_file: examples/class.phc
  283..284   Comma
  289..290   RParen
  291..292   LBrace
- 301..302   Dollar
- 302..306   Ident("this")
- 306..308   Arrow
- 308..317   Ident("createdAt")
- 318..319   Eq
- 320..327   Ident("instant")
- 327..329   StaticOp
- 329..332   Ident("now")
- 332..333   LParen
- 333..334   RParen
- 334..335   Semicolon
- 340..341   RBrace
- 347..354   Ident("instant")
- 355..356   Dollar
- 356..365   Ident("createdAt")
- 365..366   Semicolon
- 371..375   Flip
- 376..379   Ident("int")
- 380..381   Dollar
- 381..391   Ident("loginCount")
- 392..393   Eq
- 394..395   IntLit("0")
- 395..396   Semicolon
- 402..408   Public
- 409..417   Function
- 418..423   Ident("greet")
- 423..424   LParen
- 424..425   RParen
- 425..426   Colon
- 427..433   Ident("string")
- 434..435   LBrace
- 444..450   Return
- 451..470   StrLit[Text("Hi, "), Interp("$this->name")]
- 470..471   Semicolon
- 476..477   RBrace
- 478..479   RBrace
+ 297..298   RBrace
+ 304..308   Flip
+ 309..312   Ident("int")
+ 313..314   Dollar
+ 314..324   Ident("loginCount")
+ 325..326   Eq
+ 327..328   IntLit("0")
+ 328..329   Semicolon
+ 335..341   Public
+ 342..350   Function
+ 351..356   Ident("greet")
+ 356..357   LParen
+ 357..358   RParen
+ 358..359   Colon
+ 360..366   Ident("string")
+ 367..368   LBrace
+ 377..383   Return
+ 384..403   StrLit[Text("Hi, "), Interp("$this->name")]
+ 403..404   Semicolon
+ 409..410   RBrace
+ 411..412   RBrace

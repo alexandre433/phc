@@ -1,0 +1,374 @@
+---
+source: crates/phc-parser/tests/parse_examples.rs
+expression: rendered
+input_file: examples/bindings.phc
+---
+=== ast ===
+SourceFile {
+    pack: PackDecl {
+        path: PackPath {
+            segments: [
+                Ident {
+                    name: "examples",
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 5,
+                        hi: 13,
+                    },
+                },
+                Ident {
+                    name: "bindings",
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 14,
+                        hi: 22,
+                    },
+                },
+            ],
+            span: Span {
+                file: FileId(
+                    0,
+                ),
+                lo: 5,
+                hi: 22,
+            },
+        },
+        span: Span {
+            file: FileId(
+                0,
+            ),
+            lo: 0,
+            hi: 23,
+        },
+    },
+    uses: [],
+    items: [
+        Function(
+            FunctionDecl {
+                visibility: Public,
+                is_async: false,
+                name: Ident {
+                    name: "main",
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 41,
+                        hi: 45,
+                    },
+                },
+                generic_params: [],
+                params: [],
+                return_type: TypeRef {
+                    path: [
+                        Ident {
+                            name: "void",
+                            span: Span {
+                                file: FileId(
+                                    0,
+                                ),
+                                lo: 49,
+                                hi: 53,
+                            },
+                        },
+                    ],
+                    args: [],
+                    nullable: false,
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 49,
+                        hi: 53,
+                    },
+                },
+                body: Block {
+                    statements: [
+                        Local(
+                            LocalBinding {
+                                is_mut: false,
+                                ty: TypeRef {
+                                    path: [
+                                        Ident {
+                                            name: "int",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 60,
+                                                hi: 63,
+                                            },
+                                        },
+                                    ],
+                                    args: [],
+                                    nullable: false,
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 60,
+                                        hi: 63,
+                                    },
+                                },
+                                name: Ident {
+                                    name: "count",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 64,
+                                        hi: 70,
+                                    },
+                                },
+                                value: IntLit {
+                                    text: "42",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 73,
+                                        hi: 75,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 60,
+                                    hi: 76,
+                                },
+                            },
+                        ),
+                        Local(
+                            LocalBinding {
+                                is_mut: true,
+                                ty: TypeRef {
+                                    path: [
+                                        Ident {
+                                            name: "int",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 86,
+                                                hi: 89,
+                                            },
+                                        },
+                                    ],
+                                    args: [],
+                                    nullable: false,
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 86,
+                                        hi: 89,
+                                    },
+                                },
+                                name: Ident {
+                                    name: "score",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 90,
+                                        hi: 96,
+                                    },
+                                },
+                                value: IntLit {
+                                    text: "0",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 99,
+                                        hi: 100,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 81,
+                                    hi: 101,
+                                },
+                            },
+                        ),
+                        Reassign(
+                            ReassignStmt {
+                                lhs: Var {
+                                    name: Ident {
+                                        name: "score",
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 107,
+                                            hi: 112,
+                                        },
+                                    },
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 106,
+                                        hi: 112,
+                                    },
+                                },
+                                value: Binary {
+                                    op: Add,
+                                    lhs: Var {
+                                        name: Ident {
+                                            name: "score",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 117,
+                                                hi: 122,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 116,
+                                            hi: 122,
+                                        },
+                                    },
+                                    rhs: IntLit {
+                                        text: "1",
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 125,
+                                            hi: 126,
+                                        },
+                                    },
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 116,
+                                        hi: 126,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 106,
+                                    hi: 127,
+                                },
+                            },
+                        ),
+                        Reassign(
+                            ReassignStmt {
+                                lhs: Var {
+                                    name: Ident {
+                                        name: "score",
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 133,
+                                            hi: 138,
+                                        },
+                                    },
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 132,
+                                        hi: 138,
+                                    },
+                                },
+                                value: Binary {
+                                    op: Add,
+                                    lhs: Var {
+                                        name: Ident {
+                                            name: "score",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 143,
+                                                hi: 148,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 142,
+                                            hi: 148,
+                                        },
+                                    },
+                                    rhs: Var {
+                                        name: Ident {
+                                            name: "count",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 152,
+                                                hi: 157,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 151,
+                                            hi: 157,
+                                        },
+                                    },
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 142,
+                                        hi: 157,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 132,
+                                    hi: 158,
+                                },
+                            },
+                        ),
+                    ],
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 54,
+                        hi: 160,
+                    },
+                },
+                span: Span {
+                    file: FileId(
+                        0,
+                    ),
+                    lo: 25,
+                    hi: 160,
+                },
+            },
+        ),
+    ],
+    span: Span {
+        file: FileId(
+            0,
+        ),
+        lo: 0,
+        hi: 161,
+    },
+}

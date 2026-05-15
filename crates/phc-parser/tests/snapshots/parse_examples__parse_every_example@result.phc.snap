@@ -1,0 +1,269 @@
+---
+source: crates/phc-parser/tests/parse_examples.rs
+expression: rendered
+input_file: examples/result.phc
+---
+=== ast ===
+SourceFile {
+    pack: PackDecl {
+        path: PackPath {
+            segments: [
+                Ident {
+                    name: "examples",
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 5,
+                        hi: 13,
+                    },
+                },
+                Ident {
+                    name: "result",
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 14,
+                        hi: 20,
+                    },
+                },
+            ],
+            span: Span {
+                file: FileId(
+                    0,
+                ),
+                lo: 5,
+                hi: 20,
+            },
+        },
+        span: Span {
+            file: FileId(
+                0,
+            ),
+            lo: 0,
+            hi: 21,
+        },
+    },
+    uses: [],
+    items: [
+        Function(
+            FunctionDecl {
+                visibility: Public,
+                is_async: false,
+                name: Ident {
+                    name: "parsePort",
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 39,
+                        hi: 48,
+                    },
+                },
+                generic_params: [],
+                params: [
+                    Param {
+                        borrow: None,
+                        ty: TypeRef {
+                            path: [
+                                Ident {
+                                    name: "string",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 49,
+                                        hi: 55,
+                                    },
+                                },
+                            ],
+                            args: [],
+                            nullable: false,
+                            span: Span {
+                                file: FileId(
+                                    0,
+                                ),
+                                lo: 49,
+                                hi: 55,
+                            },
+                        },
+                        name: Ident {
+                            name: "raw",
+                            span: Span {
+                                file: FileId(
+                                    0,
+                                ),
+                                lo: 56,
+                                hi: 60,
+                            },
+                        },
+                        span: Span {
+                            file: FileId(
+                                0,
+                            ),
+                            lo: 49,
+                            hi: 60,
+                        },
+                    },
+                ],
+                return_type: TypeRef {
+                    path: [
+                        Ident {
+                            name: "result",
+                            span: Span {
+                                file: FileId(
+                                    0,
+                                ),
+                                lo: 63,
+                                hi: 69,
+                            },
+                        },
+                    ],
+                    args: [
+                        TypeRef {
+                            path: [
+                                Ident {
+                                    name: "int",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 70,
+                                        hi: 73,
+                                    },
+                                },
+                            ],
+                            args: [],
+                            nullable: false,
+                            span: Span {
+                                file: FileId(
+                                    0,
+                                ),
+                                lo: 70,
+                                hi: 73,
+                            },
+                        },
+                        TypeRef {
+                            path: [
+                                Ident {
+                                    name: "ParseError",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 75,
+                                        hi: 85,
+                                    },
+                                },
+                            ],
+                            args: [],
+                            nullable: false,
+                            span: Span {
+                                file: FileId(
+                                    0,
+                                ),
+                                lo: 75,
+                                hi: 85,
+                            },
+                        },
+                    ],
+                    nullable: false,
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 63,
+                        hi: 86,
+                    },
+                },
+                body: Block {
+                    statements: [
+                        Return(
+                            ReturnStmt {
+                                value: Some(
+                                    Call {
+                                        callee: Member {
+                                            receiver: Var {
+                                                name: Ident {
+                                                    name: "raw",
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 101,
+                                                        hi: 104,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 100,
+                                                    hi: 104,
+                                                },
+                                            },
+                                            field: Ident {
+                                                name: "toInt",
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 106,
+                                                    hi: 111,
+                                                },
+                                            },
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 100,
+                                                hi: 111,
+                                            },
+                                        },
+                                        args: [],
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 100,
+                                            hi: 113,
+                                        },
+                                    },
+                                ),
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 93,
+                                    hi: 114,
+                                },
+                            },
+                        ),
+                    ],
+                    span: Span {
+                        file: FileId(
+                            0,
+                        ),
+                        lo: 87,
+                        hi: 116,
+                    },
+                },
+                span: Span {
+                    file: FileId(
+                        0,
+                    ),
+                    lo: 23,
+                    hi: 116,
+                },
+            },
+        ),
+    ],
+    span: Span {
+        file: FileId(
+            0,
+        ),
+        lo: 0,
+        hi: 117,
+    },
+}

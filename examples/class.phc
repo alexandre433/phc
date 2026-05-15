@@ -13,10 +13,8 @@ public class User implements Greet {
         public string $name,
         int $age,
     ) {
-        $this->createdAt = instant::now();
     }
 
-    instant $createdAt;
     flip int $loginCount = 0;
 
     public function greet(): string {

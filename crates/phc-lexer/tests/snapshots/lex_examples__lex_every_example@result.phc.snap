@@ -24,25 +24,12 @@ input_file: examples/result.phc
   75..85    Ident("ParseError")
   85..86    Gt
   87..88    LBrace
-  93..96    Ident("int")
-  97..98    Dollar
-  98..103   Ident("value")
- 104..105   Eq
- 106..107   Dollar
- 107..110   Ident("raw")
- 110..112   Arrow
- 112..117   Ident("toInt")
- 117..118   LParen
- 118..119   RParen
- 119..120   Question
- 120..121   Semicolon
- 126..132   Return
- 133..139   Ident("result")
- 139..141   StaticOp
- 141..143   Ident("ok")
- 143..144   LParen
- 144..145   Dollar
- 145..150   Ident("value")
- 150..151   RParen
- 151..152   Semicolon
- 153..154   RBrace
+  93..99    Return
+ 100..101   Dollar
+ 101..104   Ident("raw")
+ 104..106   Arrow
+ 106..111   Ident("toInt")
+ 111..112   LParen
+ 112..113   RParen
+ 113..114   Semicolon
+ 115..116   RBrace
