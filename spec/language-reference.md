@@ -87,6 +87,9 @@ $score := $score + 1;
 ### 3.2 Reassignment
 A `flip` binding is reassigned with `:=`. Reassigning an immutable binding is a compile error.
 
+### 3.2a Member assignment (D-005a)
+Object-field write uses `=`: `$this->createdAt = instant::now();`, `$user->profile->bio = "...";`. The LHS must be a `->` chain rooted at a `$name` or `$this`. The form writes the target field directly without recursing through any setter hook (which is what makes `$this->field = expr;` inside a `set` hook safe). Bare variable reassignment (`$x = expr;` with no `->`) is **not** a member assignment and remains a compile error — use `:=` per §3.2.
+
 ### 3.3 Borrows
 - `&$name` — shared borrow (read).
 - `&flip $name` — mutable (exclusive) borrow.
@@ -369,6 +372,7 @@ PHC v0 has two visibility levels:
 - Domain failures return `result<T, E>` (exact shape part of D-022).
 - Panics are reserved for unrecoverable faults.
 - Conversion failures follow D-019: `as` is for proven-total casts only; fallible conversions return `result<T, E>` or `T?` via methods.
+- **Postfix `?` propagation (D-006a', 2026-05-15)**: a trailing `?` after any expression of type `result<T, E>` or `option<T>` short-circuits the enclosing function with the failure case (`return result::err(e);` / `return option::none;`) and otherwise yields the success payload. Sits at the tightest precedence level alongside `->`, `::`, `()`, `[]`. The enclosing function's return type must be compatible.
 
 ## 13. Standard prelude (provisional, D-022)
 The complete prelude is owned by Phase 6. Names referenced elsewhere in this document:

@@ -60,7 +60,7 @@ BoundList       = TypePath { "+" TypePath } ;
 
 (* ===== Expressions =====
    Precedence table (highest → lowest), C-family conventional:
-     1. PrimaryExpr / call / index / instance member access `->` / static access `::`
+     1. PrimaryExpr / call / index / instance member access `->` / static access `::` / postfix `?` propagation
      2. unary `!`, unary `-`, borrow `&` / `&flip`, `await`
      3. `as` cast
      4. `*` `/` `%`
@@ -90,7 +90,8 @@ PostfixExpr     = PrimaryExpr { Postfix } ;
 Postfix         = "->" Identifier               (* instance member, D-023 *)
                 | "::" Identifier               (* static member, D-023 *)
                 | "(" [ ArgList ] ")"
-                | "[" Expression "]" ;
+                | "[" Expression "]"
+                | "?" ;                         (* Result/Option propagation, D-006 amendment *)
 ArgList         = Expression { "," Expression } [ "," ] ;
 
 PrimaryExpr     = Literal
@@ -119,6 +120,7 @@ Literal         = IntLiteral
 
 Statement       = LocalBinding
                 | Reassign
+                | MemberAssign
                 | IfStmt
                 | WhileStmt
                 | ForStmt
@@ -139,6 +141,16 @@ ExprStmt        = Expression ";" ;
 LocalBinding    = [ "flip" ] Type VarRef "=" Expression ";" ;
 Reassign        = ReassignLhs ":=" Expression ";" ;
 ReassignLhs     = VarRef { Arrow Identifier } ;   (* e.g. $u, $u->loginCount *)
+
+(* Member assignment (D-005 amendment, 2026-05-15).
+   `$obj->field = expr;` writes the field directly without recursing
+   through any setter hook. The LHS must be a `->` chain rooted at a
+   VarRef (or `$this`); a bare `$x = expr;` is NOT a MemberAssign and
+   remains illegal — use `:=` after declaring `$x` as `flip`. This
+   subsumes the old D-018 hook-setter exception: the same form works
+   in any block, not just SetHook bodies. *)
+MemberAssign    = MemberAssignLhs "=" Expression ";" ;
+MemberAssignLhs = VarRef Arrow Identifier { Arrow Identifier } ;
 
 (* ===== Declarations ===== *)
 
@@ -181,8 +193,9 @@ Hook            = GetHook | SetHook ;
 GetHook         = "get" "=>" Expression ";"
                 | "get" Block ;
 SetHook         = "set" "(" Type VarRef ")" Block ;
-(* Inside a SetHook body, `$this->field = expr;` is a hook-local exception to D-005:
-   it writes the backing field directly without recursing through the setter. *)
+(* `$this->field = expr;` inside a SetHook body uses the general
+   MemberAssign form (D-005a, 2026-05-15) and writes the backing
+   field directly without recursing through the setter. *)
 
 (* Enum declaration (D-012 + D-023) *)
 EnumDecl        = Visibility "enum" Identifier [ ":" Type ] "{" EnumVariants "}" ;

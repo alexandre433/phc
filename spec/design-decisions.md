@@ -42,6 +42,16 @@ Once Phase 1 is accepted this file supersedes GitHub issue #1 as the source of t
 - **Rationale**: `flip` is distinctive and matches the playful identity; `:=` visually separates initialisation from reassignment.
 - **Date**: pre-2026-05-11 (issue #1).
 - **Status**: locked.
+- **Amended by D-005a (2026-05-15)**: see below.
+
+### D-005a — Member assignment with `=`
+- **Decision**: `<lhs> = <expr>;` is a real Statement when `<lhs>` is a `->` chain rooted at a `$name` or `$this` (e.g. `$this->createdAt = instant::now();`, `$user->profile->bio = "...";`). The form writes the target field directly without recursing through any setter hook, matching the D-018 hook-setter exception text and extending it to every block.
+- **Out of scope**: bare `$x = expr;` (no `->`) stays illegal. To overwrite a variable use `:=` after declaring `$x` as `flip` per D-005.
+- **Alternatives considered**: keep `:=` everywhere (forces `flip` on write-once fields, awkward for constructors); add an `init` block (extra syntax for one-time init); restrict `=` to constructor body only (special case).
+- **Rationale**: PHP-like ergonomics for object initialisation in constructors and arbitrary write paths, while D-005's `:=` discipline still applies to plain variables.
+- **Date**: 2026-05-15.
+- **Status**: locked.
+- **Subsumes**: the D-018 hook-setter sentence about `$this->field = expr;`.
 
 ### D-006 — Type system: static by default, non-nullable by default
 - **Decision**: Static typing by default. `dyn` keyword for dynamic opt-in. All types non-nullable unless suffixed `?`.
@@ -49,6 +59,14 @@ Once Phase 1 is accepted this file supersedes GitHub issue #1 as the source of t
 - **Rationale**: Compile-time safety; explicit nullability prevents null-pointer bugs.
 - **Date**: pre-2026-05-11 (issue #1).
 - **Status**: locked.
+
+### D-006a' — Postfix `?` for Result/Option propagation
+- **Decision**: A trailing `?` after any expression of type `result<T, E>` or `option<T>` is a postfix operator at the tightest precedence level (alongside `->`, `::`, `()`, `[]`). On `result::ok(v)` / `option::some(v)` it yields `v`; on `result::err(e)` / `option::none` it short-circuits the enclosing function with the equivalent failure value (`return result::err(e);` or `return option::none;`). The enclosing function's return type must be compatible.
+- **Alternatives considered**: keep deferred until Phase 6 stdlib lock; require explicit `match`; macro-style `try!`.
+- **Rationale**: Result-style error handling (D-007) is heavily used; without `?` even simple chained calls require nested matches. Lifting the deferral now keeps Phase 2 examples readable and matches Rust's well-trodden ergonomics.
+- **Date**: 2026-05-15 (lifts the deferral originally noted in D-006 / spec/operators.md).
+- **Status**: locked.
+- **Follow-ups**: exact `result` / `option` shapes still owned by D-022 (Phase 6); the `?` token is reused in type-position for `T?` nullable, with no ambiguity because postfix `?` only appears in expression context.
 
 ### D-006a — Type name casing convention
 - **Decision**: **Anything supplied by the language or its standard library is spelled lowercase**: primitives (`int`, `float`, `bool`, `string`, `byte`, `bytes`, `void`), containers (`list`, `map`, `set`, `array`), stdlib traits (`display`, `from`, `into`), stdlib error/result types (`result`, `option`, `parseError`, `overflowError`). **User-defined types stay PascalCase** (e.g. `User`, `HttpError`, `Greet`, `Loggable`). The visual distinction is the rule: "is this name shipping with the compiler?" → lowercase. "Did I author this in my own pack?" → PascalCase.
@@ -91,6 +109,11 @@ All items below are resolved. See "Resolved this phase" for the entries.
 Amendment added after the first-pass Phase 1 commit `3df7de5`:
 
 16. D-023 — Identifier sigils and member access (`$`, `->`, `::`, `.`) — amends D-009/D-010/D-012/D-013/D-016/D-017/D-018
+
+Amendments surfaced during Phase 2 parser work (locked 2026-05-15):
+
+17. D-005a — Member assignment `$obj->field = expr;` is a real Statement on any `->` chain rooted at a `$name` or `$this`, not only inside SetHook bodies. Subsumes the D-018 hook-setter exception and resolves a Phase 2 grammar gap. Bare `$x = expr;` remains illegal — `:=` (with `flip`) is still required for variable reassignment.
+18. D-006a' — Expression-position `?` is no longer deferred. Postfix `?` on a `result<T, E>` or `option<T>` value short-circuits the enclosing function with the failure / `null` case (Rust-style propagation). Type-position `T?` is unchanged.
 
 ---
 
@@ -459,7 +482,7 @@ Amendment added after the first-pass Phase 1 commit `3df7de5`:
 - **Implied sub-decisions**:
   - **`get` and `set` are contextual keywords** inside hook blocks (still usable as identifiers elsewhere, parser disambiguates by position).
   - **No private/internal hooks in v0** — hooks share the field's outward visibility.
-  - **`=` inside a `set` hook is a hook-local exception to D-005.** Normally `=` is the initialisation form and `:=` is reassignment. Inside the body of a `set` hook, `this.<field> = expr;` is the direct backing-field write that bypasses the hook (preventing infinite recursion). This is the only place in PHC where `=` reassigns. Outside the hook, `obj.field := expr;` still calls the setter as usual.
+  - **`$this->field = expr;` inside a `set` hook bypasses the setter and writes the backing field directly** (preventing infinite recursion). This is a *use* of the general member-assignment form formalised by D-005a (2026-05-15); it is no longer a hook-local exception. Anywhere else in code, `$obj->field = expr;` is also a direct field write — the hook-call semantics in v0 only apply when the user explicitly writes `:=` for variable reassignment, never as an implicit setter trampoline.
   - **Pure data fields stay zero-cost** — only fields with hooks generate accessor calls.
 - **Follow-ups**:
   - Asymmetric visibility (e.g. `public get`, `private set`): deferred.
