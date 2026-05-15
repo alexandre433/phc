@@ -7,14 +7,19 @@
 //! land in follow-up commits.
 
 mod lower;
+mod sigs;
 
 #[cfg(test)]
 mod tests;
 
 pub use lower::lower_type_ref;
+pub use sigs::{collect_function_sigs, FunctionSig, ParamSig};
 
-use phc_ast::Ident;
+use phc_ast::{Ident, SourceFile};
+use phc_errors::Diagnostic;
+use phc_semantic::{Resolved, SymbolId};
 use phc_span::Span;
+use std::collections::HashMap;
 
 /// One canonical primitive type from spec D-022 (provisional list).
 ///
@@ -165,4 +170,23 @@ pub struct NamedTy {
     pub name: Ident,
     pub ty: Ty,
     pub span: Span,
+}
+
+/// Result of running every implemented typecheck pass on one
+/// [`SourceFile`].
+#[derive(Debug, Default)]
+pub struct Typed {
+    /// Free-function signatures keyed by the [`SymbolId`] the
+    /// resolver assigned. Class / trait method signatures land
+    /// once those items get SymbolIds.
+    pub function_sigs: HashMap<SymbolId, FunctionSig>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Top-level entry point. Runs every implemented typecheck pass on
+/// `file` against the resolver's `resolved` output.
+pub fn typecheck(file: &SourceFile, resolved: &Resolved) -> Typed {
+    let mut typed = Typed::default();
+    collect_function_sigs(file, resolved, &mut typed);
+    typed
 }

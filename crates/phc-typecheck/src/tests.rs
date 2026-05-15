@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-//! Inline tests for type lowering.
+//! Inline tests for type lowering and signature collection.
 
-use crate::{lower_type_ref, Primitive, Ty};
-use phc_ast::{Ident, TypeRef};
+use crate::{lower_type_ref, typecheck, Primitive, Ty, Typed};
+use phc_ast::{Borrow, Ident, TypeRef};
+use phc_parser::parse;
 use phc_span::{FileId, Span};
 
 fn ident(name: &str) -> Ident {
@@ -88,6 +89,76 @@ fn nullable_outermost_for_user_path() {
         }
         other => panic!("expected Path, got {other:?}"),
     }
+}
+
+fn typed_for(src: &str) -> Typed {
+    let parsed = parse(src, FileId(0));
+    assert!(
+        parsed.diagnostics.is_empty(),
+        "parser diagnostics: {:?}",
+        parsed.diagnostics
+    );
+    let file = parsed.file.expect("expected SourceFile");
+    let resolved = phc_semantic::resolve(&file);
+    assert!(
+        resolved.diagnostics.is_empty(),
+        "resolver diagnostics: {:?}",
+        resolved.diagnostics
+    );
+    typecheck(&file, &resolved)
+}
+
+#[test]
+fn function_sig_records_param_and_return_types() {
+    let typed = typed_for("pack a;\nfunction add(int $a, int $b): int { return $a; }");
+    assert_eq!(typed.function_sigs.len(), 1);
+    let sig = typed.function_sigs.values().next().unwrap();
+    assert_eq!(sig.params.len(), 2);
+    assert_eq!(sig.params[0].name, "a");
+    assert_eq!(sig.params[0].ty.display(), "int");
+    assert_eq!(sig.params[0].borrow, Borrow::None);
+    assert_eq!(sig.return_ty.display(), "int");
+    assert!(sig.generic_params.is_empty());
+}
+
+#[test]
+fn function_sig_preserves_borrow_modifiers() {
+    let typed = typed_for("pack a;\nfunction touch(&flip int $c, &string $s): void { return; }");
+    let sig = typed.function_sigs.values().next().unwrap();
+    assert_eq!(sig.params[0].borrow, Borrow::Mutable);
+    assert_eq!(sig.params[1].borrow, Borrow::Shared);
+}
+
+#[test]
+fn generic_function_records_param_names() {
+    let typed = typed_for("pack a;\nfunction max<T: Ord, U>(T $a, T $b): T { return $a; }");
+    let sig = typed.function_sigs.values().next().unwrap();
+    assert_eq!(sig.generic_params, vec!["T".to_string(), "U".to_string()]);
+    // Generic-typed param lowers to a Path (T is unknown until
+    // generic resolution) — recorded verbatim today.
+    assert_eq!(sig.params[0].ty.display(), "T");
+    assert_eq!(sig.return_ty.display(), "T");
+}
+
+#[test]
+fn nullable_and_generic_return_types_round_trip() {
+    let typed =
+        typed_for("pack a;\nfunction lookup(string $key): result<int, string?> { return key; }");
+    let sig = typed.function_sigs.values().next().unwrap();
+    assert_eq!(sig.return_ty.display(), "result<int, string?>");
+}
+
+#[test]
+fn class_methods_are_skipped_for_now() {
+    // Classes do not yet have SymbolIds for their methods, so the
+    // collector silently skips them. Future work fills this in.
+    let typed = typed_for(
+        r#"pack a;
+           public class Box {
+               public function get(): int { return 1; }
+           }"#,
+    );
+    assert!(typed.function_sigs.is_empty());
 }
 
 #[test]
