@@ -2,3 +2,8 @@
 Cargo.lock
 *.swp
 .DS_Store
+
+# insta writes pending snapshots here when assertions drift; the
+# accepted snapshot is the `.snap` next to it. Never commit the
+# `.snap.new` placeholder.
+*.snap.new
