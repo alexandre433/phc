@@ -12,6 +12,7 @@
 //! sibling modules as they grow.
 
 mod source_file;
+mod types;
 
 #[cfg(test)]
 mod tests;

@@ -54,6 +54,33 @@ pub struct Ident {
     pub span: Span,
 }
 
+/// A type reference appearing in source (parameter type, return
+/// type, field type, generic argument, ...).
+///
+/// Grammar: `Type = TypePath [ TypeArgs ] [ Nullable ]`. The path
+/// segments are dot-separated identifiers (`int`, `app.User`). Type
+/// arguments are themselves `TypeRef`s, forming a tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeRef {
+    pub path: Vec<Ident>,
+    pub args: Vec<TypeRef>,
+    pub nullable: bool,
+    pub span: Span,
+}
+
+/// A generic parameter on a function, class, interface, or trait.
+///
+/// Grammar: `GenericParam = Identifier [ ":" BoundList ]` where
+/// `BoundList = TypePath { "+" TypePath }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenericParam {
+    pub name: Ident,
+    /// Each bound is a `TypePath`; reusing `Vec<Ident>` keeps the
+    /// shape uniform with [`TypeRef::path`].
+    pub bounds: Vec<Vec<Ident>>,
+    pub span: Span,
+}
+
 /// Top-level item: function, class, enum, interface, trait, or test.
 ///
 /// Only the variants that the parser handles today are present.

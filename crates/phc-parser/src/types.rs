@@ -1,0 +1,255 @@
+// SPDX-License-Identifier: MIT
+// Wired into source_file.rs by P3 (function declarations); the
+// inline tests below already exercise every path. Drop this allow
+// once parse_type is referenced from a non-test caller.
+#![allow(dead_code)]
+
+//! Type and generic-parameter productions.
+//!
+//! Grammar (`spec/grammar.ebnf`):
+//!
+//! ```text
+//! Type          = TypePath [ TypeArgs ] [ Nullable ]
+//! TypePath      = Identifier { "." Identifier }
+//! TypeArgs      = "<" Type { "," Type } ">"
+//! GenericParams = "<" GenericParam { "," GenericParam } ">"
+//! GenericParam  = Identifier [ ":" BoundList ]
+//! BoundList     = TypePath { "+" TypePath }
+//! ```
+
+use phc_ast::{GenericParam, Ident, TypeRef};
+use phc_lexer::Token;
+use phc_span::Span;
+
+use crate::Cursor;
+
+/// Parse a `Type`. Returns `None` and leaves a diagnostic on a
+/// missing leading identifier; partial recovery on the inner
+/// `TypeArgs` still surfaces a usable `TypeRef`.
+pub(crate) fn parse_type(cursor: &mut Cursor<'_>) -> Option<TypeRef> {
+    let path = parse_type_path(cursor)?;
+    let lo = path.first().map(|s| s.span.lo).expect("non-empty path");
+    let mut hi = path.last().map(|s| s.span.hi).expect("non-empty path");
+
+    let args = if matches!(cursor.peek_token(), Some(Token::Lt)) {
+        cursor.advance();
+        let inner = parse_type_arg_list(cursor)?;
+        let close = cursor.expect(&Token::Gt, "`>`").ok()?;
+        hi = close.hi;
+        inner
+    } else {
+        Vec::new()
+    };
+
+    let nullable = if matches!(cursor.peek_token(), Some(Token::Question)) {
+        let q = cursor.advance().expect("question was peeked").span;
+        hi = q.hi;
+        true
+    } else {
+        false
+    };
+
+    Some(TypeRef {
+        path,
+        args,
+        nullable,
+        span: Span::new(cursor.file(), lo, hi),
+    })
+}
+
+fn parse_type_arg_list(cursor: &mut Cursor<'_>) -> Option<Vec<TypeRef>> {
+    let first = parse_type(cursor)?;
+    let mut args = vec![first];
+    while matches!(cursor.peek_token(), Some(Token::Comma)) {
+        cursor.advance();
+        if matches!(cursor.peek_token(), Some(Token::Gt)) {
+            break; // allow trailing comma
+        }
+        let next = parse_type(cursor)?;
+        args.push(next);
+    }
+    Some(args)
+}
+
+/// Parse a `TypePath` (dot-separated identifier sequence).
+pub(crate) fn parse_type_path(cursor: &mut Cursor<'_>) -> Option<Vec<Ident>> {
+    let first = expect_ident(cursor, "type identifier")?;
+    let mut segments = vec![first];
+    while matches!(cursor.peek_token(), Some(Token::Dot)) {
+        cursor.advance();
+        let next = expect_ident(cursor, "identifier after `.`")?;
+        segments.push(next);
+    }
+    Some(segments)
+}
+
+/// Parse `GenericParams` after the leading `<` has *not* been
+/// consumed yet. Returns `None` and leaves the cursor untouched if
+/// the next token is not `<`. On `<`, consumes through the closing
+/// `>` (and reports a diagnostic on malformed bounds).
+pub(crate) fn parse_optional_generic_params(cursor: &mut Cursor<'_>) -> Option<Vec<GenericParam>> {
+    if !matches!(cursor.peek_token(), Some(Token::Lt)) {
+        return Some(Vec::new());
+    }
+    cursor.advance();
+    let mut params = Vec::new();
+    let first = parse_generic_param(cursor)?;
+    params.push(first);
+    while matches!(cursor.peek_token(), Some(Token::Comma)) {
+        cursor.advance();
+        if matches!(cursor.peek_token(), Some(Token::Gt)) {
+            break;
+        }
+        params.push(parse_generic_param(cursor)?);
+    }
+    cursor.expect(&Token::Gt, "`>`").ok()?;
+    Some(params)
+}
+
+fn parse_generic_param(cursor: &mut Cursor<'_>) -> Option<GenericParam> {
+    let name = expect_ident(cursor, "generic parameter name")?;
+    let lo = name.span.lo;
+    let mut hi = name.span.hi;
+    let mut bounds = Vec::new();
+    if matches!(cursor.peek_token(), Some(Token::Colon)) {
+        cursor.advance();
+        let first = parse_type_path(cursor)?;
+        hi = first.last().map(|s| s.span.hi).expect("non-empty path");
+        bounds.push(first);
+        while matches!(cursor.peek_token(), Some(Token::Plus)) {
+            cursor.advance();
+            let next = parse_type_path(cursor)?;
+            hi = next.last().map(|s| s.span.hi).expect("non-empty path");
+            bounds.push(next);
+        }
+    }
+    Some(GenericParam {
+        name,
+        bounds,
+        span: Span::new(cursor.file(), lo, hi),
+    })
+}
+
+fn expect_ident(cursor: &mut Cursor<'_>, label: &str) -> Option<Ident> {
+    let spanned = cursor.peek()?;
+    if let Token::Ident(name) = &spanned.token {
+        let ident = Ident {
+            name: name.clone(),
+            span: spanned.span,
+        };
+        cursor.advance();
+        Some(ident)
+    } else {
+        let span = spanned.span;
+        cursor.error(span, format!("expected {label}"));
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use phc_lexer::{Lexer, Spanned};
+    use phc_span::FileId;
+
+    fn cursor_for(src: &str) -> (Vec<Spanned>, u32, FileId) {
+        let tokens: Vec<Spanned> = Lexer::new(src, FileId(0))
+            .map(|r| r.expect("clean lex"))
+            .collect();
+        (tokens, src.len() as u32, FileId(0))
+    }
+
+    fn type_of(src: &str) -> TypeRef {
+        let (tokens, len, file) = cursor_for(src);
+        let mut cursor = Cursor::new(&tokens, file, len);
+        let ty = parse_type(&mut cursor).expect("parse_type returned None");
+        let diags = cursor.into_diagnostics();
+        assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+        ty
+    }
+
+    fn names(path: &[Ident]) -> Vec<&str> {
+        path.iter().map(|i| i.name.as_str()).collect()
+    }
+
+    #[test]
+    fn primitive_type_parses() {
+        let ty = type_of("int");
+        assert_eq!(names(&ty.path), vec!["int"]);
+        assert!(ty.args.is_empty());
+        assert!(!ty.nullable);
+    }
+
+    #[test]
+    fn dotted_path_type_parses() {
+        let ty = type_of("app.User");
+        assert_eq!(names(&ty.path), vec!["app", "User"]);
+    }
+
+    #[test]
+    fn nullable_suffix_is_recorded() {
+        let ty = type_of("string?");
+        assert_eq!(names(&ty.path), vec!["string"]);
+        assert!(ty.nullable);
+    }
+
+    #[test]
+    fn generic_argument_parses() {
+        let ty = type_of("list<int>");
+        assert_eq!(names(&ty.path), vec!["list"]);
+        assert_eq!(ty.args.len(), 1);
+        assert_eq!(names(&ty.args[0].path), vec!["int"]);
+    }
+
+    #[test]
+    fn nested_generic_parses() {
+        let ty = type_of("map<string, list<User>>");
+        assert_eq!(ty.args.len(), 2);
+        assert_eq!(names(&ty.args[0].path), vec!["string"]);
+        assert_eq!(names(&ty.args[1].path), vec!["list"]);
+        assert_eq!(names(&ty.args[1].args[0].path), vec!["User"]);
+    }
+
+    #[test]
+    fn nullable_after_generics_is_outermost() {
+        let ty = type_of("list<int>?");
+        assert!(ty.nullable);
+        assert_eq!(ty.args.len(), 1);
+        assert!(!ty.args[0].nullable);
+    }
+
+    #[test]
+    fn generic_params_with_bounds_parse() {
+        let (tokens, len, file) = cursor_for("<T: Ord, U: display + from>");
+        let mut cursor = Cursor::new(&tokens, file, len);
+        let params = parse_optional_generic_params(&mut cursor)
+            .expect("parse_optional_generic_params returned None");
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name.name, "T");
+        assert_eq!(params[0].bounds.len(), 1);
+        assert_eq!(names(&params[0].bounds[0]), vec!["Ord"]);
+        assert_eq!(params[1].name.name, "U");
+        assert_eq!(params[1].bounds.len(), 2);
+        assert_eq!(names(&params[1].bounds[1]), vec!["from"]);
+    }
+
+    #[test]
+    fn no_generic_params_returns_empty_vec() {
+        let (tokens, len, file) = cursor_for("X");
+        let mut cursor = Cursor::new(&tokens, file, len);
+        let params = parse_optional_generic_params(&mut cursor).unwrap();
+        assert!(params.is_empty());
+        // Cursor untouched — `X` is still the next token.
+        assert!(matches!(cursor.peek_token(), Some(Token::Ident(_))));
+    }
+
+    #[test]
+    fn missing_type_after_lt_is_an_error() {
+        let (tokens, len, file) = cursor_for("list<>");
+        let mut cursor = Cursor::new(&tokens, file, len);
+        let result = parse_type(&mut cursor);
+        assert!(result.is_none());
+        let diags = cursor.into_diagnostics();
+        assert!(!diags.is_empty());
+    }
+}
