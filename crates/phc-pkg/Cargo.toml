@@ -8,5 +8,7 @@ repository.workspace = true
 description = "PHC package manager and dependency resolver"
 
 [dependencies]
-toml = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+phc-errors = { path = "../phc-errors" }
+phc-span = { path = "../phc-span" }

@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: MIT
-//! Package manager: semver dependency resolution and lock file.
+//! Package metadata + (eventually) dependency resolution.
+//!
+//! This first slice covers `phc.json` reading per D-020. Dependency
+//! resolution, lock files, and registries land alongside the
+//! multi-file build pipeline.
 
-// TODO(phase-7): real package manager lands alongside the build system.
+mod manifest;
+
+#[cfg(test)]
+mod tests;
+
+pub use manifest::{read_manifest, Dependencies, Manifest, ManifestError};
