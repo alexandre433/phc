@@ -10,6 +10,164 @@
 use logos::{FilterResult, Logos};
 use phc_span::{FileId, Span};
 
+/// One piece of a tokenised string literal.
+///
+/// A [`Token::StrLit`] holds an ordered sequence of these. `Text`
+/// chunks have already had escape sequences and `{{` / `}}` brace
+/// escapes resolved, so the parser sees plain UTF-8. `Interp` keeps
+/// the raw expression text between matched `{` and `}`; the parser
+/// re-enters the lexer on that text when it consumes the chunk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StringPart {
+    /// Literal text after escape processing.
+    Text(String),
+    /// Raw expression text between a matched `{` and `}` inside the
+    /// string (D-017). Re-lexed by the parser when consumed.
+    Interp(String),
+}
+
+/// Lex a string literal body after the opening `"` has matched.
+///
+/// Per D-017 every double-quoted string interpolates. The callback
+/// walks the remainder, processing standard escapes (`\"`, `\\`,
+/// `\n`, `\t`, `\r`, `\0`), the brace escapes `{{` / `}}` (literal
+/// `{` / `}`), and `{ ... }` interpolation expressions. Inside an
+/// interpolation we count brace depth and step past any nested
+/// double-quoted strings so the matching `}` is found correctly.
+///
+/// Returns the assembled [`StringPart`] sequence on success. On
+/// error (unterminated string, unterminated interpolation, unknown
+/// escape, unmatched `}`), returns `Err(())` so the lexer surfaces
+/// an error span and resumes after the offending byte. The unicode
+/// escape `\u{HHHH}` is intentionally not handled in this commit;
+/// it is a documented Phase 2 follow-up.
+fn lex_string(lex: &mut logos::Lexer<Token>) -> Result<Vec<StringPart>, ()> {
+    let remainder = lex.remainder();
+    let bytes = remainder.as_bytes();
+    let mut parts: Vec<StringPart> = Vec::new();
+    let mut buf = String::new();
+    let mut i: usize = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                if !buf.is_empty() {
+                    parts.push(StringPart::Text(std::mem::take(&mut buf)));
+                }
+                lex.bump(i + 1);
+                return Ok(parts);
+            }
+            b'\\' => {
+                if i + 1 >= bytes.len() {
+                    lex.bump(remainder.len());
+                    return Err(());
+                }
+                let esc = match bytes[i + 1] {
+                    b'"' => '"',
+                    b'\\' => '\\',
+                    b'n' => '\n',
+                    b't' => '\t',
+                    b'r' => '\r',
+                    b'0' => '\0',
+                    _ => {
+                        // TODO(phase-2): support `\u{HHHH}` unicode escape.
+                        lex.bump(i + 2);
+                        return Err(());
+                    }
+                };
+                buf.push(esc);
+                i += 2;
+            }
+            b'{' if bytes.get(i + 1) == Some(&b'{') => {
+                buf.push('{');
+                i += 2;
+            }
+            b'}' if bytes.get(i + 1) == Some(&b'}') => {
+                buf.push('}');
+                i += 2;
+            }
+            b'{' => {
+                if !buf.is_empty() {
+                    parts.push(StringPart::Text(std::mem::take(&mut buf)));
+                }
+                let body_start = i + 1;
+                let consumed = match scan_interp_body(&remainder[body_start..]) {
+                    Some(n) => n,
+                    None => {
+                        lex.bump(remainder.len());
+                        return Err(());
+                    }
+                };
+                let body = &remainder[body_start..body_start + consumed - 1];
+                parts.push(StringPart::Interp(body.to_string()));
+                i = body_start + consumed;
+            }
+            b'}' => {
+                lex.bump(i + 1);
+                return Err(());
+            }
+            _ => {
+                let ch = remainder[i..]
+                    .chars()
+                    .next()
+                    .expect("non-empty remainder yields a char");
+                buf.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+    }
+    lex.bump(remainder.len());
+    Err(())
+}
+
+/// Step past the body of one `{ ... }` interpolation, returning the
+/// number of bytes consumed including the closing `}`.
+///
+/// Counts nested `{` `}` pairs so an interpolation can itself wrap
+/// a block-form expression, and skips past any nested double-quoted
+/// strings so a `}` inside such a string is not treated as the
+/// closer. Returns `None` on EOF before the matching `}`.
+fn scan_interp_body(remainder: &str) -> Option<usize> {
+    let bytes = remainder.as_bytes();
+    let mut depth: usize = 1;
+    let mut i: usize = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() {
+                    match bytes[i] {
+                        b'\\' if i + 1 < bytes.len() => i += 2,
+                        b'"' => {
+                            i += 1;
+                            break;
+                        }
+                        _ => {
+                            let ch = remainder[i..].chars().next()?;
+                            i += ch.len_utf8();
+                        }
+                    }
+                }
+            }
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                i += 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {
+                let ch = remainder[i..].chars().next()?;
+                i += ch.len_utf8();
+            }
+        }
+    }
+    None
+}
+
 /// Logos callback for `/* ... */` block comments.
 ///
 /// Block comments nest (spec §1.2). Logos has no native nesting, so
@@ -58,6 +216,16 @@ pub enum Token {
     /// downstream consumers.
     #[token("/*", skip_block_comment)]
     BlockComment,
+
+    // ----- String literal -----
+    /// Double-quoted string literal, fully tokenised per D-017.
+    ///
+    /// The body is split into a sequence of [`StringPart`]s with
+    /// escapes resolved and `{ ... }` interpolation expressions
+    /// captured as raw text. The parser re-lexes each interpolation
+    /// body when it consumes the chunk.
+    #[token("\"", lex_string)]
+    StrLit(Vec<StringPart>),
 
     // ----- Hard keywords (spec/keywords.md) -----
     #[token("flip")]
@@ -440,6 +608,117 @@ mod tests {
     fn block_comment_can_span_multiple_lines() {
         let src = "function /* line one\n   line two\n   line three */ return";
         assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+    }
+
+    fn parts_of(token: Token) -> Vec<StringPart> {
+        match token {
+            Token::StrLit(parts) => parts,
+            other => panic!("expected StrLit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_string_yields_no_parts() {
+        let toks = lex(r#""""#);
+        assert_eq!(toks.len(), 1);
+        assert!(parts_of(toks.into_iter().next().unwrap()).is_empty());
+    }
+
+    #[test]
+    fn plain_string_is_one_text_chunk() {
+        let toks = lex(r#""hello""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Text("hello".into())]
+        );
+    }
+
+    #[test]
+    fn escape_sequences_are_resolved() {
+        let toks = lex(r#""a\"b\\c\nd\te\rf\0g""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Text("a\"b\\c\nd\te\rf\0g".into())]
+        );
+    }
+
+    #[test]
+    fn double_brace_is_a_literal_brace() {
+        let toks = lex(r#""open {{ close }}""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Text("open { close }".into())]
+        );
+    }
+
+    #[test]
+    fn single_interpolation_splits_into_three_parts() {
+        let toks = lex(r#""hi {$user->name}!""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![
+                StringPart::Text("hi ".into()),
+                StringPart::Interp("$user->name".into()),
+                StringPart::Text("!".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn interpolation_at_string_start_has_no_leading_text() {
+        let toks = lex(r#""{$x} trailing""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![
+                StringPart::Interp("$x".into()),
+                StringPart::Text(" trailing".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn interpolation_can_contain_nested_braces() {
+        // The expression body is captured verbatim; the parser will
+        // re-lex it. The lexer only needs to track brace depth so it
+        // finds the right closing `}`.
+        let toks = lex(r#""{ match($x) { _ => 1 } }""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Interp(" match($x) { _ => 1 } ".into())]
+        );
+    }
+
+    #[test]
+    fn interpolation_can_contain_a_nested_string() {
+        // The nested `"fallback"` must not terminate the outer string,
+        // and the `}` inside its bytes (there is none here, but the
+        // scanner must not get confused) is irrelevant.
+        let toks = lex(r#""{$name ?? "anon"}""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Interp(r#"$name ?? "anon""#.into())]
+        );
+    }
+
+    #[test]
+    fn unterminated_string_is_an_error() {
+        let mut lexer = Lexer::new(r#""never closed"#, FileId(1));
+        let err = lexer.next().unwrap().unwrap_err();
+        assert_eq!(err, Span::new(FileId(1), 0, 13));
+        assert!(lexer.next().is_none());
+    }
+
+    #[test]
+    fn unterminated_interpolation_is_an_error() {
+        let mut lexer = Lexer::new(r#""hello {$x"#, FileId(1));
+        let err = lexer.next().unwrap().unwrap_err();
+        assert_eq!(err, Span::new(FileId(1), 0, 10));
+    }
+
+    #[test]
+    fn unmatched_close_brace_in_string_is_an_error() {
+        let mut lexer = Lexer::new(r#""oops } here""#, FileId(1));
+        assert!(lexer.next().unwrap().is_err());
     }
 
     #[test]
