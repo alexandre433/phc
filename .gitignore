@@ -1,4 +1,9 @@
 /target
+# Per-crate target dirs created when cargo invokes a single crate
+# from its own working directory (e.g. integration tests using
+# relative paths). Match `target/` anywhere in the tree, not just
+# at the root.
+**/target/
 Cargo.lock
 *.swp
 .DS_Store
