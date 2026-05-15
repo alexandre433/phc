@@ -199,6 +199,15 @@ When writing Rust code in this repo:
 - Keep unsafe Rust out unless there is a compelling performance or FFI reason
 - If unsafe is introduced, document why it is required
 
+#### Comments
+
+- Every `pub` item (fn, struct, enum, trait, type alias, const, module) gets a `///` doc comment. One sentence minimum; explain *purpose*, not signature
+- Every crate `lib.rs` gets a `//!` module-level summary describing the crate's role in the pipeline
+- Inline `//` comments only when *why* is non-obvious: a hidden invariant, a subtle ordering constraint, a workaround for a known bug, behaviour that would surprise the reader
+- Do not write `// what the code does` — well-named identifiers cover that. Do not reference task IDs, PR numbers, or callers ("used by X", "for issue #42") — that belongs in commit messages and rots in code
+- When a comment encodes a spec rule, cite the D-NNN id (e.g. `// D-005: &flip is mutable borrow`) so the link to spec/ stays explicit
+- `TODO:` comments must include the phase: `// TODO(phase-3): …`
+
 ### 5. Diagnostics matter
 
 PHC should aim for excellent diagnostics.
@@ -227,6 +236,18 @@ If a task requires syntax that has not been decided yet, either:
 
 Do not treat placeholder syntax as final.
 
+### 8. Agent parallelism — confirm before fan-out
+
+When working in this repo, an agent (including the main thread) may spawn:
+
+- **0 or 1** subagent without asking
+- **2** parallel subagents without asking, if the tasks are clearly independent
+- **3 or more** parallel subagents only after asking the user "fan out to N parallel agents, or run sequentially?"
+
+The threshold is parallelism, not total count. Three sequential investigator calls are fine; three concurrent ones need a check. The check exists because parallel fan-out multiplies token cost and makes results harder to reconcile — the user should opt in.
+
+Read-only and write-capable agents follow the same rule. The Plan-mode 3-Explore ceiling is a separate, stricter cap that still applies inside plan mode.
+
 ## Build and validation commands
 
 Until fuller implementation exists, use these expected commands where possible:
@@ -250,12 +271,46 @@ When changing project direction or locking in a decision:
 
 ## Commit guidance
 
-Prefer small commits with clear intent, for example:
+Every commit must follow this shape:
 
-- `chore: scaffold parser crate`
-- `feat(parser): add token stream abstraction`
-- `docs(spec): add operator precedence draft`
-- `refactor(ir): split control-flow nodes from value nodes`
+```
+<type>(<scope>): <subject>          # ≤50 chars, imperative, no period
+
+<optional body — required when the "why" is non-obvious>
+
+[phase-N]                           # N = phase number 1..10
+Refs #<issue>                       # phase issue: #2 Phase 1, #3 Phase 2, etc.
+                                    # use `Closes #N` only when commit completes a checklist item
+```
+
+Rules:
+
+- `<type>` ∈ `{feat, fix, chore, refactor, docs, test, perf, build, ci}`
+- `<scope>` is the crate name without the `phc-` prefix (e.g. `parser`, `ir`, `spec`) or `repo` for cross-cutting changes
+- Subject: imperative mood ("add", not "added"/"adds"), no trailing period, ≤50 chars
+- Body: required whenever the diff alone does not explain *why*. Wrap at 72 chars. Explain motivation, not mechanics
+- `[phase-N]` tag and `Refs #N` footer are mandatory on any commit that advances a phase. `chore` and `docs` commits that touch only meta files (READMEs, this file) may omit both
+
+Examples:
+
+```
+feat(lexer): add string interpolation token
+
+Per D-017 string interpolation is always on; lexer must split
+`"hi {name}"` into [StrLit, Interp, Ident, Interp, StrLit]
+so the parser sees a real expression tree, not a post-processed
+string.
+
+[phase-2]
+Refs #3
+```
+
+```
+docs(spec): close Phase 1
+
+[phase-1]
+Closes #2
+```
 
 ## What success looks like
 

@@ -98,15 +98,15 @@ Do not pull future-phase work into earlier phases unless explicitly asked.
 - No `unsafe` unless required for performance/FFI — document why
 - Preserve spans and source locations; diagnostics are first-class
 - Design for pack-level caching, invalidation, and parallel compilation
+- Comment policy: see `AGENTS.md` §4 "Rust implementation guidance / Comments". `///` on every `pub` item, `//!` on every `lib.rs`, inline `//` only when *why* is non-obvious
 
 ## Commit Style
 
-```
-chore: scaffold parser crate
-feat(parser): add token stream abstraction
-docs(spec): add operator precedence draft
-refactor(ir): split control-flow nodes from value nodes
-```
+See `AGENTS.md` §"Commit guidance" for the full spec (type, scope, ≤50-char subject, `[phase-N]` tag, `Refs #N` footer, body when why non-obvious).
+
+## Agent Parallelism
+
+See `AGENTS.md` §8. Spawning ≥3 parallel subagents requires user confirmation first.
 
 ## Behavioral Guidelines
 
