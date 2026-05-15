@@ -135,14 +135,23 @@ fn function_item_parses_after_pack() {
     let src = "pack a;\nfunction main(): void {}";
     let file = parse_ok(src);
     assert_eq!(file.items.len(), 1);
-    match &file.items[0] {
-        phc_ast::Item::Function(f) => assert_eq!(f.name.name, "main"),
-    }
+    let phc_ast::Item::Function(f) = &file.items[0] else {
+        panic!("expected Function, got {:?}", file.items[0]);
+    };
+    assert_eq!(f.name.name, "main");
+}
+
+#[test]
+fn class_item_parses_after_pack() {
+    let src = "pack a;\npublic class Foo {}";
+    let file = parse_ok(src);
+    assert_eq!(file.items.len(), 1);
+    assert!(matches!(&file.items[0], phc_ast::Item::Class(_)));
 }
 
 #[test]
 fn unknown_top_level_keyword_is_flagged() {
-    let src = "pack a;\nclass Foo {}";
+    let src = "pack a;\nasync $oops;";
     let diags = parse_err(src);
     assert!(diags
         .iter()

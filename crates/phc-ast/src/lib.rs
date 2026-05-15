@@ -82,13 +82,146 @@ pub struct GenericParam {
 }
 
 /// Top-level item: function, class, enum, interface, trait, or test.
-///
-/// Only the variants that the parser handles today are present.
-/// Class / enum / interface / trait / test land in later commits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     Function(FunctionDecl),
-    // TODO(phase-2): Class, Enum, Interface, Trait, Test variants.
+    Class(ClassDecl),
+    Enum(EnumDecl),
+    Interface(InterfaceDecl),
+    Trait(TraitDecl),
+    Test(TestDecl),
+}
+
+/// `[public] class Name<T> [implements I, J] { ... }` (D-002, D-012).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassDecl {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub generic_params: Vec<GenericParam>,
+    pub implements: Vec<Vec<Ident>>,
+    pub members: Vec<ClassMember>,
+    pub span: Span,
+}
+
+/// One member inside a class body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClassMember {
+    Construct(ConstructDecl),
+    TraitUse(TraitUse),
+    Field(FieldDecl),
+    Method(FunctionDecl),
+}
+
+/// `construct(<params>) { ... }` — at most one per class in v0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstructDecl {
+    pub params: Vec<ConstructParam>,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// A constructor parameter, optionally promoted to a field by a
+/// leading `public` (D-012).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstructParam {
+    pub promoted: bool,
+    pub borrow: Borrow,
+    pub is_mut: bool,
+    pub ty: TypeRef,
+    pub name: Ident,
+    pub span: Span,
+}
+
+/// `use <TypePath>;` inside a class body — mixes in a trait (D-013).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraitUse {
+    pub path: Vec<Ident>,
+    pub span: Span,
+}
+
+/// `[public] [flip] <Type> $<name> [= expr] [HookBlock] ;` (D-018).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldDecl {
+    pub visibility: Visibility,
+    pub is_mut: bool,
+    pub ty: TypeRef,
+    pub name: Ident,
+    pub default: Option<Expr>,
+    pub hooks: Vec<PropertyHook>,
+    pub span: Span,
+}
+
+/// One hook inside a [`FieldDecl::hooks`] list (D-018).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyHook {
+    /// `get => expr;` short form.
+    GetExpr { expr: Expr, span: Span },
+    /// `get { ... }` block form.
+    GetBlock { body: Block, span: Span },
+    /// `set(Type $name) { ... }`.
+    Set {
+        param_ty: TypeRef,
+        param_name: Ident,
+        body: Block,
+        span: Span,
+    },
+}
+
+/// `[public] enum Name [: Backing] { Variant [= literal], ... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumDecl {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub backing: Option<TypeRef>,
+    pub variants: Vec<EnumVariant>,
+    pub span: Span,
+}
+
+/// One variant of an [`EnumDecl`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariant {
+    pub name: Ident,
+    pub value: Option<Expr>,
+    pub span: Span,
+}
+
+/// `[public] interface Name<T> { <MethodSig>... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterfaceDecl {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub generic_params: Vec<GenericParam>,
+    pub methods: Vec<MethodSig>,
+    pub span: Span,
+}
+
+/// A method signature inside an [`InterfaceDecl`] — same shape as a
+/// [`FunctionDecl`] header but with no body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodSig {
+    pub name: Ident,
+    pub generic_params: Vec<GenericParam>,
+    pub params: Vec<Param>,
+    pub return_type: TypeRef,
+    pub span: Span,
+}
+
+/// `[public] trait Name<T> { <FunctionDecl>... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraitDecl {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub generic_params: Vec<GenericParam>,
+    pub methods: Vec<FunctionDecl>,
+    pub span: Span,
+}
+
+/// `test "name" { ... }` — provisional surface (D-021).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestDecl {
+    pub name: Vec<StrPart>,
+    pub body: Block,
+    pub span: Span,
 }
 
 /// `[public] [async] function name<T>(p1, p2): RetType { ... }`.

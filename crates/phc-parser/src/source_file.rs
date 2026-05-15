@@ -18,6 +18,9 @@ use phc_ast::{Ident, Item, PackDecl, PackPath, SourceFile, UseDecl};
 use phc_lexer::Token;
 use phc_span::Span;
 
+use crate::decls::{
+    parse_class_decl, parse_enum_decl, parse_interface_decl, parse_test_decl, parse_trait_decl,
+};
 use crate::functions::parse_function_decl;
 use crate::Cursor;
 
@@ -79,6 +82,11 @@ fn parse_item(cursor: &mut Cursor<'_>) -> Option<Item> {
     }
     match cursor.peek_at(offset).map(|s| &s.token) {
         Some(Token::Function) => parse_function_decl(cursor).map(Item::Function),
+        Some(Token::Class) => parse_class_decl(cursor).map(Item::Class),
+        Some(Token::Enum) => parse_enum_decl(cursor).map(Item::Enum),
+        Some(Token::Interface) => parse_interface_decl(cursor).map(Item::Interface),
+        Some(Token::Trait) => parse_trait_decl(cursor).map(Item::Trait),
+        Some(Token::Test) => parse_test_decl(cursor).map(Item::Test),
         _ => {
             let span = cursor.current_span();
             cursor.error(

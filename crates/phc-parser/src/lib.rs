@@ -11,6 +11,7 @@
 //! [`parse_source_file`] entry point. Productions are split into
 //! sibling modules as they grow.
 
+mod decls;
 mod expressions;
 mod functions;
 mod source_file;
