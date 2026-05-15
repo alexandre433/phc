@@ -87,5 +87,70 @@ pub struct GenericParam {
 /// Class / enum / interface / trait / test land in later commits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
-    // TODO(phase-2): variants land alongside their parsers.
+    Function(FunctionDecl),
+    // TODO(phase-2): Class, Enum, Interface, Trait, Test variants.
+}
+
+/// `[public] [async] function name<T>(p1, p2): RetType { ... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDecl {
+    pub visibility: Visibility,
+    pub is_async: bool,
+    pub name: Ident,
+    pub generic_params: Vec<GenericParam>,
+    pub params: Vec<Param>,
+    pub return_type: TypeRef,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// Visibility marker (D-008). Only two levels in v0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    /// Pack-scoped — visible to every file in the same pack only.
+    Default,
+    /// Cross-pack — visible to any pack that imports the item.
+    Public,
+}
+
+/// A parameter on a function or lambda.
+///
+/// Grammar: `Param = [ BorrowMod ] Type VarRef`. The `$` sigil on
+/// the variable name is consumed by the lexer; the parser stores
+/// only the bare identifier in [`Self::name`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Param {
+    pub borrow: Borrow,
+    pub ty: TypeRef,
+    pub name: Ident,
+    pub span: Span,
+}
+
+/// Borrow modifier on a parameter or expression operand (D-005).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Borrow {
+    /// No leading `&`. Owned-by-value at the call boundary.
+    None,
+    /// Leading `&` only — shared (read) borrow.
+    Shared,
+    /// Leading `&flip` — mutable (exclusive) borrow.
+    Mutable,
+}
+
+/// A `{ ... }` block.
+///
+/// Statements land in P5 alongside the rest of the statement
+/// grammar. For now a `Block` is purely the brace pair plus its
+/// span, which is enough to round-trip a function declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Block {
+    pub statements: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// Placeholder for the statement enum. Variants land in P5.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stmt {
+    // TODO(phase-2): LocalBinding, Reassign, If, While, For, Return,
+    // Break, Continue, ExprStmt.
 }

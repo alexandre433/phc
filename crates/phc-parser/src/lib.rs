@@ -11,6 +11,7 @@
 //! [`parse_source_file`] entry point. Productions are split into
 //! sibling modules as they grow.
 
+mod functions;
 mod source_file;
 mod types;
 
@@ -92,6 +93,10 @@ impl<'tok> Cursor<'tok> {
 
     pub(crate) fn peek(&self) -> Option<&'tok Spanned> {
         self.tokens.get(self.pos)
+    }
+
+    pub(crate) fn pos(&self) -> usize {
+        self.pos
     }
 
     /// Peek `offset` tokens past the cursor. `peek_at(0) == peek()`.

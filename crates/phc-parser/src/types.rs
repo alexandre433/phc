@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Wired into source_file.rs by P3 (function declarations); the
-// inline tests below already exercise every path. Drop this allow
-// once parse_type is referenced from a non-test caller.
-#![allow(dead_code)]
-
 //! Type and generic-parameter productions.
 //!
 //! Grammar (`spec/grammar.ebnf`):
@@ -72,15 +67,41 @@ fn parse_type_arg_list(cursor: &mut Cursor<'_>) -> Option<Vec<TypeRef>> {
 }
 
 /// Parse a `TypePath` (dot-separated identifier sequence).
+///
+/// Accepts the `void` keyword as a leading segment since it is the
+/// only reserved word that doubles as a stdlib type name (spec
+/// D-006a / keywords.md). All other primitives (`int`, `string`,
+/// `bool`, `list`, ...) lex as plain identifiers.
 pub(crate) fn parse_type_path(cursor: &mut Cursor<'_>) -> Option<Vec<Ident>> {
-    let first = expect_ident(cursor, "type identifier")?;
+    let first = expect_type_segment(cursor, "type identifier")?;
     let mut segments = vec![first];
     while matches!(cursor.peek_token(), Some(Token::Dot)) {
         cursor.advance();
-        let next = expect_ident(cursor, "identifier after `.`")?;
+        let next = expect_type_segment(cursor, "identifier after `.`")?;
         segments.push(next);
     }
     Some(segments)
+}
+
+fn expect_type_segment(cursor: &mut Cursor<'_>, label: &str) -> Option<Ident> {
+    let spanned = cursor.peek()?;
+    let name_opt = match &spanned.token {
+        Token::Ident(name) => Some(name.clone()),
+        Token::Void => Some("void".to_string()),
+        _ => None,
+    };
+    if let Some(name) = name_opt {
+        let ident = Ident {
+            name,
+            span: spanned.span,
+        };
+        cursor.advance();
+        Some(ident)
+    } else {
+        let span = spanned.span;
+        cursor.error(span, format!("expected {label}"));
+        None
+    }
 }
 
 /// Parse `GenericParams` after the leading `<` has *not* been

@@ -131,8 +131,20 @@ fn malformed_use_continues_to_next_one() {
 }
 
 #[test]
-fn trailing_top_level_item_is_flagged_as_unimplemented() {
+fn function_item_parses_after_pack() {
     let src = "pack a;\nfunction main(): void {}";
+    let file = parse_ok(src);
+    assert_eq!(file.items.len(), 1);
+    match &file.items[0] {
+        phc_ast::Item::Function(f) => assert_eq!(f.name.name, "main"),
+    }
+}
+
+#[test]
+fn unknown_top_level_keyword_is_flagged() {
+    let src = "pack a;\nclass Foo {}";
     let diags = parse_err(src);
-    assert!(diags.iter().any(|d| d.message.contains("not yet parsed")));
+    assert!(diags
+        .iter()
+        .any(|d| d.message.contains("expected `function`")));
 }

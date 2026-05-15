@@ -14,10 +14,11 @@
 //! `Item` is parsed by sibling modules; this commit accepts zero
 //! items and reports a TODO if any are present.
 
-use phc_ast::{Ident, PackDecl, PackPath, SourceFile, UseDecl};
+use phc_ast::{Ident, Item, PackDecl, PackPath, SourceFile, UseDecl};
 use phc_lexer::Token;
 use phc_span::Span;
 
+use crate::functions::parse_function_decl;
 use crate::Cursor;
 
 /// Parse a complete `SourceFile`. Returns `None` only when the pack
@@ -34,14 +35,21 @@ pub(crate) fn parse_source_file(cursor: &mut Cursor<'_>) -> Option<SourceFile> {
             recover_to_next_top_level(cursor);
         }
     }
-    if cursor.peek().is_some() {
-        let span = cursor.current_span();
-        cursor.error(
-            span,
-            "top-level items (function/class/...) are not yet parsed",
-        );
+    let mut items: Vec<Item> = Vec::new();
+    while cursor.peek().is_some() {
+        let before = cursor.pos();
+        if let Some(item) = parse_item(cursor) {
+            items.push(item);
+        } else {
+            recover_to_next_top_level(cursor);
+            // The recovery sync set includes the offending keyword
+            // itself (e.g. `class`), so guarantee forward progress
+            // by skipping one token whenever recovery did not move.
+            if cursor.pos() == before {
+                cursor.advance();
+            }
+        }
     }
-    let items = Vec::new();
     let end = cursor.current_span().hi;
     let span = Span::new(cursor.file(), pack.span.lo, end);
     Some(SourceFile {
@@ -50,6 +58,36 @@ pub(crate) fn parse_source_file(cursor: &mut Cursor<'_>) -> Option<SourceFile> {
         items,
         span,
     })
+}
+
+/// Dispatch on the next token to one of the item parsers.
+///
+/// Skips optional `public` and `async` modifiers without consuming
+/// to find the keyword that determines the item kind. Today only
+/// `FunctionDecl` is wired; class/enum/interface/trait/test land
+/// in P6.
+fn parse_item(cursor: &mut Cursor<'_>) -> Option<Item> {
+    let mut offset = 0;
+    if matches!(
+        cursor.peek_at(offset).map(|s| &s.token),
+        Some(Token::Public)
+    ) {
+        offset += 1;
+    }
+    if matches!(cursor.peek_at(offset).map(|s| &s.token), Some(Token::Async)) {
+        offset += 1;
+    }
+    match cursor.peek_at(offset).map(|s| &s.token) {
+        Some(Token::Function) => parse_function_decl(cursor).map(Item::Function),
+        _ => {
+            let span = cursor.current_span();
+            cursor.error(
+                span,
+                "expected `function`, `class`, `enum`, `interface`, `trait`, or `test`",
+            );
+            None
+        }
+    }
 }
 
 fn parse_pack_decl(cursor: &mut Cursor<'_>) -> Option<PackDecl> {
