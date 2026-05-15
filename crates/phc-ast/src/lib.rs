@@ -286,12 +286,18 @@ pub struct Block {
 pub enum Stmt {
     Local(LocalBinding),
     Reassign(ReassignStmt),
+    /// `<member-chain> = <expr>;` — D-005a member-field write.
+    MemberAssign(MemberAssignStmt),
     If(IfStmt),
     While(WhileStmt),
     For(ForStmt),
     Return(ReturnStmt),
-    Break { span: Span },
-    Continue { span: Span },
+    Break {
+        span: Span,
+    },
+    Continue {
+        span: Span,
+    },
     Expr(ExprStmt),
 }
 
@@ -309,6 +315,16 @@ pub struct LocalBinding {
 /// [`Expr::Var`] or a chain of [`Expr::Member`] rooted at one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReassignStmt {
+    pub lhs: Expr,
+    pub value: Expr,
+    pub span: Span,
+}
+
+/// `<member-chain> = <expr>;` (D-005a). The LHS must be an
+/// [`Expr::Member`] rooted at a [`Expr::Var`] or [`Expr::This`];
+/// bare `$x = ...` (no `->`) is rejected with a diagnostic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberAssignStmt {
     pub lhs: Expr,
     pub value: Expr,
     pub span: Span,
@@ -428,6 +444,13 @@ pub enum Expr {
     Index {
         target: Box<Expr>,
         index: Box<Expr>,
+        span: Span,
+    },
+    /// `value?` — postfix Result/Option propagation (D-006a').
+    /// On success yields the inner payload; on failure short-circuits
+    /// the enclosing function with the failure variant.
+    Try {
+        value: Box<Expr>,
         span: Span,
     },
     /// Unary prefix operator (`!`, `-`, `await`).

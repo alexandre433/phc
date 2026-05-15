@@ -214,6 +214,14 @@ fn parse_postfix(cursor: &mut Cursor<'_>) -> Option<Expr> {
                     span,
                 };
             }
+            Some(Token::Question) => {
+                let q = cursor.advance().expect("`?` was peeked").span;
+                let span = Span::new(cursor.file(), expr_span(&expr).lo, q.hi);
+                expr = Expr::Try {
+                    value: Box::new(expr),
+                    span,
+                };
+            }
             _ => return Some(expr),
         }
     }
@@ -603,6 +611,7 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::Static { span, .. }
         | Expr::Call { span, .. }
         | Expr::Index { span, .. }
+        | Expr::Try { span, .. }
         | Expr::Unary { span, .. }
         | Expr::Borrow { span, .. }
         | Expr::Cast { span, .. }
@@ -981,6 +990,45 @@ mod tests {
                 assert!(matches!(*inner, Expr::Binary { op: BinOp::Add, .. }));
             }
             other => panic!("expected Paren, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn postfix_question_yields_try() {
+        match parse_ok("fetch($url)?") {
+            Expr::Try { value, .. } => assert!(matches!(*value, Expr::Call { .. })),
+            other => panic!("expected Try, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_chains_with_member_access() {
+        // `fetch($a)?->body` — postfix `?` then `->body`.
+        match parse_ok("fetch($a)?->body") {
+            Expr::Member {
+                receiver, field, ..
+            } => {
+                assert_eq!(field.name, "body");
+                assert!(matches!(*receiver, Expr::Try { .. }));
+            }
+            other => panic!("expected Member rooted at Try, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_binds_tighter_than_arithmetic() {
+        // `$a? + $b?` parses as `($a?) + ($b?)`.
+        match parse_ok("$a? + $b?") {
+            Expr::Binary {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+                ..
+            } => {
+                assert!(matches!(*lhs, Expr::Try { .. }));
+                assert!(matches!(*rhs, Expr::Try { .. }));
+            }
+            other => panic!("expected Binary(Add), got {other:?}"),
         }
     }
 

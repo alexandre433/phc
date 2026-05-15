@@ -19,8 +19,8 @@
 //! path that handles both `Reassign` and `ExprStmt`.
 
 use phc_ast::{
-    Block, Expr, ExprStmt, ForStmt, Ident, IfStmt, LocalBinding, ReassignStmt, ReturnStmt, Stmt,
-    WhileStmt,
+    Block, Expr, ExprStmt, ForStmt, Ident, IfStmt, LocalBinding, MemberAssignStmt, ReassignStmt,
+    ReturnStmt, Stmt, WhileStmt,
 };
 use phc_lexer::Token;
 use phc_span::Span;
@@ -116,6 +116,16 @@ fn parse_local_or_expr_or_reassign(cursor: &mut Cursor<'_>) -> Option<Stmt> {
         let value = parse_expr(cursor)?;
         let end = cursor.expect(&Token::Semicolon, "`;`").ok()?.hi;
         return Some(Stmt::Reassign(ReassignStmt {
+            lhs,
+            value,
+            span: Span::new(cursor.file(), lo, end),
+        }));
+    }
+    if cursor.eat(&Token::Eq).is_some() {
+        validate_member_assign_lhs(cursor, &lhs);
+        let value = parse_expr(cursor)?;
+        let end = cursor.expect(&Token::Semicolon, "`;`").ok()?.hi;
+        return Some(Stmt::MemberAssign(MemberAssignStmt {
             lhs,
             value,
             span: Span::new(cursor.file(), lo, end),
@@ -251,6 +261,29 @@ fn validate_reassign_lhs(cursor: &mut Cursor<'_>, lhs: &Expr) {
     }
 }
 
+/// D-005a: the LHS of a member-assignment `=` must be an
+/// [`Expr::Member`] chain rooted at a `$name` or `$this`. A bare
+/// variable LHS is rejected so `$x = expr;` keeps requiring `:=`
+/// with a `flip` declaration.
+fn validate_member_assign_lhs(cursor: &mut Cursor<'_>, lhs: &Expr) {
+    fn rooted_at_var(expr: &Expr) -> bool {
+        match expr {
+            Expr::Var { .. } | Expr::This { .. } => true,
+            Expr::Member { receiver, .. } => rooted_at_var(receiver),
+            _ => false,
+        }
+    }
+    let ok = matches!(lhs, Expr::Member { .. }) && rooted_at_var(lhs);
+    if !ok {
+        let span = expr_span(lhs);
+        cursor.error(
+            span,
+            "left-hand side of `=` must be a `->` chain rooted at `$name` or `$this`; \
+             use `:=` (with `flip`) to reassign a variable",
+        );
+    }
+}
+
 fn expr_span(expr: &Expr) -> Span {
     match expr {
         Expr::IntLit { span, .. }
@@ -266,6 +299,7 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::Static { span, .. }
         | Expr::Call { span, .. }
         | Expr::Index { span, .. }
+        | Expr::Try { span, .. }
         | Expr::Unary { span, .. }
         | Expr::Borrow { span, .. }
         | Expr::Cast { span, .. }
@@ -478,6 +512,46 @@ mod tests {
     fn nested_blocks_compose() {
         let body = body_of("function f(): void { if (true) { if (false) { return; } else { } } }");
         assert!(matches!(&body.statements[0], Stmt::If(_)));
+    }
+
+    #[test]
+    fn member_assign_via_equals() {
+        // D-005a: `$this->createdAt = ...;` is a real Statement.
+        let body = body_of("function f(): void { $this->createdAt := 0; $this->createdAt = 7; }");
+        assert_eq!(body.statements.len(), 2);
+        assert!(matches!(body.statements[0], Stmt::Reassign(_)));
+        match &body.statements[1] {
+            Stmt::MemberAssign(m) => {
+                assert!(matches!(m.lhs, Expr::Member { .. }));
+                assert!(matches!(m.value, Expr::IntLit { .. }));
+            }
+            other => panic!("expected MemberAssign, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn member_assign_through_a_long_chain() {
+        let body = body_of("function f(): void { $user->profile->bio = $value; }");
+        match &body.statements[0] {
+            Stmt::MemberAssign(m) => {
+                if let Expr::Member { receiver, .. } = &m.lhs {
+                    assert!(matches!(**receiver, Expr::Member { .. }));
+                } else {
+                    panic!("expected Member root");
+                }
+            }
+            other => panic!("expected MemberAssign, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_var_with_equals_is_rejected() {
+        // `$x = 1;` with no `->` is NOT a member assignment; D-005
+        // still requires `:=` for variable reassignment.
+        let (_decl, diags) = parse_function("function f(): void { flip int $x = 0; $x = 1; }");
+        assert!(diags
+            .iter()
+            .any(|d| d.message.contains("left-hand side of `=`")));
     }
 
     #[test]

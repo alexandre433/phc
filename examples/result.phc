@@ -1,5 +1,6 @@
 pack examples.result;
 
 public function parsePort(string $raw): result<int, ParseError> {
-    return $raw->toInt();
+    int $value = $raw->toInt()?;
+    return result::ok($value);
 }
