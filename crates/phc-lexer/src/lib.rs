@@ -35,12 +35,14 @@ pub enum StringPart {
 /// interpolation we count brace depth and step past any nested
 /// double-quoted strings so the matching `}` is found correctly.
 ///
+/// Supports `\u{HHHH}` unicode escapes via [`parse_unicode_escape`]
+/// (1–6 hex digits, rejects surrogates and out-of-range scalars).
+///
 /// Returns the assembled [`StringPart`] sequence on success. On
 /// error (unterminated string, unterminated interpolation, unknown
-/// escape, unmatched `}`), returns `Err(())` so the lexer surfaces
-/// an error span and resumes after the offending byte. The unicode
-/// escape `\u{HHHH}` is intentionally not handled in this commit;
-/// it is a documented Phase 2 follow-up.
+/// escape, malformed unicode escape, unmatched `}`), returns
+/// `Err(())` so the lexer surfaces an error span and resumes after
+/// the offending byte.
 fn lex_string(lex: &mut logos::Lexer<Token>) -> Result<Vec<StringPart>, ()> {
     let remainder = lex.remainder();
     let bytes = remainder.as_bytes();
@@ -68,8 +70,18 @@ fn lex_string(lex: &mut logos::Lexer<Token>) -> Result<Vec<StringPart>, ()> {
                     b't' => '\t',
                     b'r' => '\r',
                     b'0' => '\0',
+                    b'u' => match parse_unicode_escape(&bytes[i + 2..]) {
+                        Some((ch, consumed)) => {
+                            buf.push(ch);
+                            i += 2 + consumed;
+                            continue;
+                        }
+                        None => {
+                            lex.bump(i + 2);
+                            return Err(());
+                        }
+                    },
                     _ => {
-                        // TODO(phase-2): support `\u{HHHH}` unicode escape.
                         lex.bump(i + 2);
                         return Err(());
                     }
@@ -117,6 +129,47 @@ fn lex_string(lex: &mut logos::Lexer<Token>) -> Result<Vec<StringPart>, ()> {
     }
     lex.bump(remainder.len());
     Err(())
+}
+
+/// Parse a `\u{HHHH}` unicode escape starting just after the `\u`.
+///
+/// Accepts 1 to 6 hex digits, mirroring the Rust string-escape rules
+/// (the only well-defined Unicode scalar values fit in 6 hex digits).
+/// Returns the decoded `char` and the number of bytes consumed —
+/// `{`, the digits, and the closing `}` — on success. Rejects empty
+/// digit sequences, missing braces, non-hex characters, and code
+/// points that are not valid Unicode scalars (surrogates and values
+/// above `U+10FFFF`).
+fn parse_unicode_escape(rest: &[u8]) -> Option<(char, usize)> {
+    if rest.first() != Some(&b'{') {
+        return None;
+    }
+    let mut value: u32 = 0;
+    let mut digits: usize = 0;
+    let mut i: usize = 1;
+    while i < rest.len() {
+        let b = rest[i];
+        if b == b'}' {
+            if digits == 0 {
+                return None;
+            }
+            let ch = char::from_u32(value)?;
+            return Some((ch, i + 1));
+        }
+        let d = match b {
+            b'0'..=b'9' => (b - b'0') as u32,
+            b'a'..=b'f' => (b - b'a' + 10) as u32,
+            b'A'..=b'F' => (b - b'A' + 10) as u32,
+            _ => return None,
+        };
+        digits += 1;
+        if digits > 6 {
+            return None;
+        }
+        value = (value << 4) | d;
+        i += 1;
+    }
+    None
 }
 
 /// Step past the body of one `{ ... }` interpolation, returning the
@@ -640,6 +693,61 @@ mod tests {
             parts_of(toks.into_iter().next().unwrap()),
             vec![StringPart::Text("a\"b\\c\nd\te\rf\0g".into())]
         );
+    }
+
+    #[test]
+    fn unicode_escape_decodes_short_form() {
+        // U+0041 = 'A'
+        let toks = lex(r#""\u{41}""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Text("A".into())]
+        );
+    }
+
+    #[test]
+    fn unicode_escape_decodes_full_six_hex() {
+        // U+1F600 = 😀 (six hex digits, outside the BMP)
+        let toks = lex(r#""hi \u{01F600}""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Text("hi 😀".into())]
+        );
+    }
+
+    #[test]
+    fn unicode_escape_accepts_mixed_case_hex() {
+        let toks = lex(r#""\u{aB}""#);
+        assert_eq!(
+            parts_of(toks.into_iter().next().unwrap()),
+            vec![StringPart::Text("\u{ab}".into())]
+        );
+    }
+
+    #[test]
+    fn unicode_escape_with_no_digits_is_an_error() {
+        let mut lexer = Lexer::new(r#""\u{}""#, FileId(0));
+        assert!(lexer.next().unwrap().is_err());
+    }
+
+    #[test]
+    fn unicode_escape_with_surrogate_is_an_error() {
+        // U+D800 is a surrogate code point — not a valid scalar value.
+        let mut lexer = Lexer::new(r#""\u{D800}""#, FileId(0));
+        assert!(lexer.next().unwrap().is_err());
+    }
+
+    #[test]
+    fn unicode_escape_above_max_codepoint_is_an_error() {
+        // U+110000 is one past the maximum valid scalar.
+        let mut lexer = Lexer::new(r#""\u{110000}""#, FileId(0));
+        assert!(lexer.next().unwrap().is_err());
+    }
+
+    #[test]
+    fn unicode_escape_missing_closing_brace_is_an_error() {
+        let mut lexer = Lexer::new(r#""\u{41"#, FileId(0));
+        assert!(lexer.next().unwrap().is_err());
     }
 
     #[test]
