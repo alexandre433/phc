@@ -9,4 +9,10 @@ description = "PHC semantic analysis and validation"
 
 [dependencies]
 phc-ast = { path = "../phc-ast" }
-miette = { workspace = true }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
+
+[dev-dependencies]
+phc-parser = { path = "../phc-parser" }
+phc-lexer = { path = "../phc-lexer" }
+insta = { version = "1", features = ["glob"] }
