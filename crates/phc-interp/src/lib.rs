@@ -15,10 +15,15 @@
 //! current set is `Logger::info(string)` → eprintln. More land
 //! alongside the matching language feature.
 
-use phc_ast::{BinOp, Expr, FunctionDecl, Item, SourceFile, Stmt, StrPart, UnaryOp};
+use phc_ast::{
+    BinOp, ClassDecl, ClassMember, ConstructDecl, Expr, FunctionDecl, Item, SourceFile, Stmt,
+    StrPart, TraitDecl, UnaryOp,
+};
 use phc_semantic::{Resolved, Symbol, SymbolId, SymbolKind};
 use phc_typecheck::Typed;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Runtime value carried by the interpreter.
 #[derive(Clone, Debug)]
@@ -29,6 +34,13 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     String(String),
+    /// Class instance. Field storage is shared (`Rc<RefCell<...>>`)
+    /// so two bindings holding the same instance see each other's
+    /// mutations — matching PHP's by-reference object semantics.
+    Instance {
+        class: String,
+        fields: Rc<RefCell<HashMap<String, Value>>>,
+    },
 }
 
 impl Value {
@@ -40,6 +52,7 @@ impl Value {
             Value::Float(f) => format!("{f}"),
             Value::Bool(b) => b.to_string(),
             Value::String(s) => s.clone(),
+            Value::Instance { class, .. } => format!("<{class} instance>"),
         }
     }
 }
@@ -181,6 +194,56 @@ fn find_function<'a>(
     })
 }
 
+fn find_class<'a>(file: &'a SourceFile, name: &str) -> Option<&'a ClassDecl> {
+    file.items.iter().find_map(|item| match item {
+        Item::Class(c) if c.name.name == name => Some(c),
+        _ => None,
+    })
+}
+
+fn find_trait<'a>(file: &'a SourceFile, name: &str) -> Option<&'a TraitDecl> {
+    file.items.iter().find_map(|item| match item {
+        Item::Trait(t) if t.name.name == name => Some(t),
+        _ => None,
+    })
+}
+
+fn find_method_in_class<'a>(class: &'a ClassDecl, name: &str) -> Option<&'a FunctionDecl> {
+    class.members.iter().find_map(|m| match m {
+        ClassMember::Method(f) if f.name.name == name => Some(f),
+        _ => None,
+    })
+}
+
+fn find_constructor(class: &ClassDecl) -> Option<&ConstructDecl> {
+    class.members.iter().find_map(|m| match m {
+        ClassMember::Construct(c) => Some(c),
+        _ => None,
+    })
+}
+
+/// Search the trait `use Trait;` mixins on a class for a method.
+/// Linear scan; the first matching trait wins. Conflict detection
+/// (D-013: two traits with the same method = error) is the
+/// resolver's job, so the interpreter simply returns the first.
+fn find_method_in_traits<'a>(
+    file: &'a SourceFile,
+    class: &'a ClassDecl,
+    name: &str,
+) -> Option<&'a FunctionDecl> {
+    for member in &class.members {
+        if let ClassMember::TraitUse(trait_use) = member {
+            let trait_name = trait_use.path.last()?.name.as_str();
+            if let Some(t) = find_trait(file, trait_name) {
+                if let Some(m) = t.methods.iter().find(|m| m.name.name == name) {
+                    return Some(m);
+                }
+            }
+        }
+    }
+    None
+}
+
 struct Interp<'a> {
     // file + typed are unused at the I1 frontier; they will drive
     // function call dispatch (I2) and method lookup (I3).
@@ -222,6 +285,11 @@ impl<'a> Interp<'a> {
             Stmt::Reassign(r) => {
                 let value = self.eval_expr(&r.value, env)?;
                 self.do_assign(&r.lhs, value, env)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::MemberAssign(m) => {
+                let value = self.eval_expr(&m.value, env)?;
+                self.do_member_assign(&m.lhs, value, env)?;
                 Ok(Flow::Normal)
             }
             Stmt::If(i) => {
@@ -270,8 +338,8 @@ impl<'a> Interp<'a> {
     }
 
     /// Reassignment target: either a bare `$name` (env update) or a
-    /// `->` chain rooted at one (deferred to I3 with class
-    /// instances).
+    /// `->` chain rooted at one (writes the field directly, same as
+    /// MemberAssign with `=`).
     fn do_assign(&mut self, lhs: &Expr, value: Value, env: &mut Env) -> Result<(), RuntimeError> {
         match lhs {
             Expr::Var { span, .. } => {
@@ -290,9 +358,41 @@ impl<'a> Interp<'a> {
                 }
                 Ok(())
             }
+            Expr::Member { .. } => self.do_member_assign(lhs, value, env),
+            other => Err(RuntimeError {
+                message: format!("`:=` LHS shape {other:?} is not supported"),
+            }),
+        }
+    }
+
+    /// Member-chain assignment: walk the chain to the leaf field's
+    /// owning instance, then mutate that field. The leaf is always
+    /// the `field` of the outermost `Member`; the rest of the chain
+    /// is read-only navigation.
+    fn do_member_assign(
+        &mut self,
+        lhs: &Expr,
+        value: Value,
+        env: &mut Env,
+    ) -> Result<(), RuntimeError> {
+        let Expr::Member {
+            receiver, field, ..
+        } = lhs
+        else {
+            return Err(RuntimeError {
+                message: format!("member-assign LHS must be a `->` chain, got {lhs:?}"),
+            });
+        };
+        let recv = self.eval_expr(receiver, env)?;
+        match recv {
+            Value::Instance { fields, .. } => {
+                fields.borrow_mut().insert(field.name.clone(), value);
+                Ok(())
+            }
             other => Err(RuntimeError {
                 message: format!(
-                    "`:=` LHS shape {other:?} is not yet supported (I3 lands member chains)"
+                    "cannot write field `{}` on non-instance value `{:?}`",
+                    field.name, other
                 ),
             }),
         }
@@ -305,7 +405,7 @@ impl<'a> Interp<'a> {
             Expr::BoolLit { value, .. } => Ok(Value::Bool(*value)),
             Expr::NullLit { .. } => Ok(Value::Null),
             Expr::StrLit { parts, .. } => self.eval_string_literal(parts, env),
-            Expr::Var { span, .. } => {
+            Expr::Var { span, .. } | Expr::This { span } => {
                 let id = self
                     .resolved
                     .uses
@@ -317,6 +417,26 @@ impl<'a> Interp<'a> {
                 env.lookup(id).cloned().ok_or_else(|| RuntimeError {
                     message: "variable used before initialisation".to_string(),
                 })
+            }
+            Expr::Member {
+                receiver, field, ..
+            } => {
+                let recv = self.eval_expr(receiver, env)?;
+                match recv {
+                    Value::Instance { fields, .. } => fields
+                        .borrow()
+                        .get(&field.name)
+                        .cloned()
+                        .ok_or_else(|| RuntimeError {
+                            message: format!("no field `{}` on instance", field.name),
+                        }),
+                    other => Err(RuntimeError {
+                        message: format!(
+                            "cannot read field `{}` on non-instance value `{:?}`",
+                            field.name, other
+                        ),
+                    }),
+                }
             }
             Expr::Call { callee, args, .. } => self.eval_call(callee, args, env),
             Expr::Paren { inner, .. } => self.eval_expr(inner, env),
@@ -396,13 +516,23 @@ impl<'a> Interp<'a> {
                 }
             }
         }
-        // User-defined free function: `name(args)` parses as
-        // `Call { callee: TypeName(name), ... }`. Look up the name
-        // in the top-level scope, recover the AST FunctionDecl,
-        // bind args by position, evaluate the body, return the
-        // Return value (or Void on fall-through).
+        // Method call: `$obj->name(args)` parses as
+        // `Call { callee: Member { receiver, field }, ... }`.
+        if let Expr::Member {
+            receiver, field, ..
+        } = callee
+        {
+            let recv = self.eval_expr(receiver, env)?;
+            return self.invoke_method(recv, &field.name, args, env);
+        }
+        // Class construction or free function: `name(args)` parses
+        // as `Call { callee: TypeName(name), ... }`.
         if let Expr::TypeName { name, .. } = callee {
             if let Some(id) = self.resolved.top_level.get(&name.name).copied() {
+                let kind = self.resolved.symbol(id).kind;
+                if kind == SymbolKind::Class {
+                    return self.construct_class(&name.name, args, env);
+                }
                 if let Some(decl) = find_function(self.file, &self.resolved.symbols, id) {
                     return self.invoke_function(decl, args, env);
                 }
@@ -413,37 +543,154 @@ impl<'a> Interp<'a> {
         })
     }
 
-    fn invoke_function(
+    fn invoke_method(
         &mut self,
-        decl: &FunctionDecl,
+        receiver: Value,
+        method_name: &str,
         args: &[Expr],
         caller_env: &mut Env,
     ) -> Result<Value, RuntimeError> {
-        if args.len() != decl.params.len() {
+        let class_name = match &receiver {
+            Value::Instance { class, .. } => class.clone(),
+            other => {
+                return Err(RuntimeError {
+                    message: format!("cannot call method `{method_name}` on `{other:?}`"),
+                });
+            }
+        };
+        let class_decl = find_class(self.file, &class_name).ok_or_else(|| RuntimeError {
+            message: format!("class `{class_name}` not found in this source file"),
+        })?;
+        let method = find_method_in_class(class_decl, method_name)
+            .or_else(|| find_method_in_traits(self.file, class_decl, method_name));
+        let Some(method) = method else {
+            return Err(RuntimeError {
+                message: format!("no method `{method_name}` on class `{class_name}`"),
+            });
+        };
+        let mut arg_values = Vec::with_capacity(args.len());
+        for a in args {
+            arg_values.push(self.eval_expr(a, caller_env)?);
+        }
+        self.run_function_with_this(method, arg_values, Some(receiver))
+    }
+
+    fn construct_class(
+        &mut self,
+        class_name: &str,
+        args: &[Expr],
+        caller_env: &mut Env,
+    ) -> Result<Value, RuntimeError> {
+        let class_decl = find_class(self.file, class_name).ok_or_else(|| RuntimeError {
+            message: format!("class `{class_name}` not found in this source file"),
+        })?;
+        // Initialise field storage with each field's declared default
+        // (or Value::Null for fields with no default).
+        let mut fields: HashMap<String, Value> = HashMap::new();
+        for member in &class_decl.members {
+            if let ClassMember::Field(field) = member {
+                let value = match &field.default {
+                    Some(expr) => self.eval_expr(expr, caller_env)?,
+                    None => Value::Null,
+                };
+                fields.insert(field.name.name.clone(), value);
+            }
+        }
+        let instance = Value::Instance {
+            class: class_name.to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        };
+        // Run the constructor (if any). Constructor parameters with
+        // `public` are promoted to fields after binding.
+        if let Some(ctor) = find_constructor(class_decl) {
+            let mut arg_values = Vec::with_capacity(args.len());
+            for a in args {
+                arg_values.push(self.eval_expr(a, caller_env)?);
+            }
+            // Resolver records `$this` def_span at the class name
+            // (not the `construct` keyword), so pass class.name.span.
+            self.run_constructor(ctor, arg_values, instance.clone(), class_decl.name.span)?;
+        } else if !args.is_empty() {
+            return Err(RuntimeError {
+                message: format!(
+                    "class `{class_name}` has no constructor but received {} arguments",
+                    args.len()
+                ),
+            });
+        }
+        Ok(instance)
+    }
+
+    fn run_constructor(
+        &mut self,
+        ctor: &ConstructDecl,
+        arg_values: Vec<Value>,
+        this: Value,
+        this_span: phc_span::Span,
+    ) -> Result<(), RuntimeError> {
+        if arg_values.len() != ctor.params.len() {
+            return Err(RuntimeError {
+                message: format!(
+                    "constructor expects {} arguments, got {}",
+                    ctor.params.len(),
+                    arg_values.len()
+                ),
+            });
+        }
+        let mut env = Env::default();
+        env.enter();
+        // Bind $this synthetic + every parameter.
+        if let Value::Instance { fields, .. } = &this {
+            for (param, value) in ctor.params.iter().zip(arg_values) {
+                if param.promoted {
+                    fields
+                        .borrow_mut()
+                        .insert(param.name.name.clone(), value.clone());
+                }
+                if let Some(sid) = self.symbol_at_def(param.name.span) {
+                    env.bind(sid, value);
+                }
+            }
+            self.bind_this(&mut env, this.clone(), this_span);
+        }
+        let flow = self.eval_block_body(&ctor.body.statements, &mut env)?;
+        env.leave();
+        match flow {
+            Flow::Normal | Flow::Return(_) => Ok(()),
+            Flow::Break | Flow::Continue => Err(RuntimeError {
+                message: "`break`/`continue` escaped a constructor body".to_string(),
+            }),
+        }
+    }
+
+    fn run_function_with_this(
+        &mut self,
+        decl: &FunctionDecl,
+        arg_values: Vec<Value>,
+        this: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if arg_values.len() != decl.params.len() {
             return Err(RuntimeError {
                 message: format!(
                     "`{}` expects {} arguments, got {}",
                     decl.name.name,
                     decl.params.len(),
-                    args.len()
+                    arg_values.len()
                 ),
             });
         }
-        // Evaluate args in caller's env, then push a fresh frame
-        // with the parameter bindings.
-        let mut arg_values = Vec::with_capacity(args.len());
-        for a in args {
-            arg_values.push(self.eval_expr(a, caller_env)?);
-        }
-        let mut callee_env = Env::default();
-        callee_env.enter();
+        let mut env = Env::default();
+        env.enter();
         for (param, value) in decl.params.iter().zip(arg_values) {
             if let Some(sid) = self.symbol_at_def(param.name.span) {
-                callee_env.bind(sid, value);
+                env.bind(sid, value);
             }
         }
-        let flow = self.eval_block_body(&decl.body.statements, &mut callee_env)?;
-        callee_env.leave();
+        if let Some(this_value) = this {
+            self.bind_this(&mut env, this_value, decl.name.span);
+        }
+        let flow = self.eval_block_body(&decl.body.statements, &mut env)?;
+        env.leave();
         Ok(match flow {
             Flow::Return(v) => v,
             Flow::Normal => Value::Void,
@@ -453,6 +700,33 @@ impl<'a> Interp<'a> {
                 })
             }
         })
+    }
+
+    /// Bind `$this` in the given env. The synthetic `$this` symbol
+    /// is whichever Value-kind symbol the resolver introduced with
+    /// def_span equal to the surrounding decl span (constructor /
+    /// method / hook). We scan for that symbol so we hit the same
+    /// id resolved.uses already references.
+    fn bind_this(&self, env: &mut Env, this: Value, host_span: phc_span::Span) {
+        for sym in &self.resolved.symbols {
+            if sym.name == "this" && sym.kind == SymbolKind::Value && sym.def_span == host_span {
+                env.bind(sym.id, this);
+                return;
+            }
+        }
+    }
+
+    fn invoke_function(
+        &mut self,
+        decl: &FunctionDecl,
+        args: &[Expr],
+        caller_env: &mut Env,
+    ) -> Result<Value, RuntimeError> {
+        let mut arg_values = Vec::with_capacity(args.len());
+        for a in args {
+            arg_values.push(self.eval_expr(a, caller_env)?);
+        }
+        self.run_function_with_this(decl, arg_values, None)
     }
 
     fn symbol_at_def(&self, span: phc_span::Span) -> Option<SymbolId> {

@@ -225,6 +225,125 @@ fn null_coalesce_returns_rhs_when_lhs_null() {
 }
 
 #[test]
+fn class_construction_and_field_read() {
+    let out = run_src(
+        r#"pack a;
+           public class Box {
+               int $value = 7;
+           }
+           function main(): int {
+               Box $b = Box();
+               return $b->value;
+           }"#,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(matches!(out.result, Some(Value::Int(7))));
+}
+
+#[test]
+fn constructor_promoted_param_becomes_field() {
+    let out = run_src(
+        r#"pack a;
+           public class Box {
+               construct(public int $value) {}
+           }
+           function main(): int {
+               Box $b = Box(42);
+               return $b->value;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(42))));
+}
+
+#[test]
+fn constructor_body_can_assign_field_via_member_assign() {
+    let out = run_src(
+        r#"pack a;
+           public class Box {
+               int $value = 0;
+               construct(int $seed) {
+                   $this->value = $seed * 2;
+               }
+           }
+           function main(): int {
+               Box $b = Box(5);
+               return $b->value;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(10))));
+}
+
+#[test]
+fn method_dispatch_returns_field() {
+    let out = run_src(
+        r#"pack a;
+           public class Box {
+               construct(public int $value) {}
+               public function get(): int { return $this->value; }
+           }
+           function main(): int {
+               Box $b = Box(3);
+               return $b->get();
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(3))));
+}
+
+#[test]
+fn member_assign_via_equals_mutates_instance() {
+    let out = run_src(
+        r#"pack a;
+           public class Box {
+               flip int $value = 0;
+           }
+           function main(): int {
+               Box $b = Box();
+               $b->value = 99;
+               return $b->value;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(99))));
+}
+
+#[test]
+fn instance_aliasing_shares_mutation() {
+    // PHP-style by-reference object semantics: $b and $a name the
+    // same instance, so a write through $a is visible through $b.
+    let out = run_src(
+        r#"pack a;
+           public class Box {
+               flip int $value = 0;
+           }
+           function main(): int {
+               Box $b = Box();
+               Box $a = $b;
+               $a->value = 5;
+               return $b->value;
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(5))));
+}
+
+#[test]
+fn trait_method_mixin_resolves() {
+    let out = run_src(
+        r#"pack a;
+           public trait Doubled {
+               function doubled(): int { return $this->value + $this->value; }
+           }
+           public class Box {
+               use Doubled;
+               construct(public int $value) {}
+           }
+           function main(): int {
+               Box $b = Box(3);
+               return $b->doubled();
+           }"#,
+    );
+    assert!(matches!(out.result, Some(Value::Int(6))));
+}
+
+#[test]
 fn hello_phc_example_runs_end_to_end() {
     let src = std::fs::read_to_string("../../examples/hello.phc").expect("read hello.phc");
     let out = run_src(&src);
