@@ -7,8 +7,41 @@
 //! `spec/keywords.md` and `spec/operators.md` for the canonical
 //! vocabulary this module implements.
 
-use logos::Logos;
+use logos::{FilterResult, Logos};
 use phc_span::{FileId, Span};
+
+/// Logos callback for `/* ... */` block comments.
+///
+/// Block comments nest (spec §1.2). Logos has no native nesting, so
+/// we open with the literal `/*` token and let this callback consume
+/// the body — counting depth — until the matching `*/`. On success we
+/// `Skip` so the comment never appears in the token stream; on EOF
+/// before close, we `SkipErr` so the iterator surfaces an error span.
+fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
+    let remainder = lex.remainder();
+    let bytes = remainder.as_bytes();
+    let mut depth: usize = 1;
+    let mut i: usize = 0;
+    while i + 1 < bytes.len() {
+        match (bytes[i], bytes[i + 1]) {
+            (b'/', b'*') => {
+                depth += 1;
+                i += 2;
+            }
+            (b'*', b'/') => {
+                depth -= 1;
+                i += 2;
+                if depth == 0 {
+                    lex.bump(i);
+                    return FilterResult::Skip;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    lex.bump(remainder.len());
+    FilterResult::Error(())
+}
 
 /// A single lexical token in PHC source.
 ///
@@ -19,6 +52,13 @@ use phc_span::{FileId, Span};
 #[logos(skip r"[ \t\r\n\f]+")]
 #[logos(skip r"//[^\n]*")]
 pub enum Token {
+    // ----- Comments -----
+    /// `/* ... */` block comment. Nesting allowed (spec §1.2).
+    /// Always skipped via [`skip_block_comment`]; never observed by
+    /// downstream consumers.
+    #[token("/*", skip_block_comment)]
+    BlockComment,
+
     // ----- Hard keywords (spec/keywords.md) -----
     #[token("flip")]
     Flip,
@@ -380,6 +420,42 @@ mod tests {
     fn line_comments_are_skipped() {
         let src = "function // this is ignored\nreturn";
         assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+    }
+
+    #[test]
+    fn block_comments_are_skipped() {
+        let src = "function /* anything in here */ return";
+        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+    }
+
+    #[test]
+    fn block_comments_nest() {
+        // Spec §1.2: block comments nest. The middle */ must NOT
+        // close the outer comment.
+        let src = "function /* outer /* inner */ still outer */ return";
+        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+    }
+
+    #[test]
+    fn block_comment_can_span_multiple_lines() {
+        let src = "function /* line one\n   line two\n   line three */ return";
+        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+    }
+
+    #[test]
+    fn unterminated_block_comment_is_an_error() {
+        let mut lexer = Lexer::new("function /* never closed", FileId(3));
+        assert!(matches!(
+            lexer.next(),
+            Some(Ok(Spanned {
+                token: Token::Function,
+                ..
+            }))
+        ));
+        let err = lexer.next().unwrap().unwrap_err();
+        // Error span starts at the `/*` and runs to EOF.
+        assert_eq!(err, Span::new(FileId(3), 9, 24));
+        assert!(lexer.next().is_none());
     }
 
     #[test]
