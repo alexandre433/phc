@@ -1,0 +1,32 @@
+---
+source: crates/phc-lexer/tests/lex_examples.rs
+expression: rendered
+input_file: examples/hello.phc
+---
+   0..4     Pack
+   5..13    Ident("examples")
+  13..14    Dot
+  14..19    Ident("hello")
+  19..20    Semicolon
+  22..28    Public
+  29..37    Function
+  38..42    Ident("main")
+  42..43    LParen
+  43..44    RParen
+  44..45    Colon
+  46..50    Void
+  51..52    LBrace
+  57..63    Ident("string")
+  64..65    Dollar
+  65..69    Ident("name")
+  70..71    Eq
+  72..77    StrLit[Text("PHC")]
+  77..78    Semicolon
+  83..89    Ident("Logger")
+  89..91    StaticOp
+  91..95    Ident("info")
+  95..96    LParen
+  96..113   StrLit[Text("Hello, "), Interp("$name"), Text("!")]
+ 113..114   RParen
+ 114..115   Semicolon
+ 116..117   RBrace

@@ -1,0 +1,48 @@
+---
+source: crates/phc-lexer/tests/lex_examples.rs
+expression: rendered
+input_file: examples/result.phc
+---
+   0..4     Pack
+   5..13    Ident("examples")
+  13..14    Dot
+  14..20    Ident("result")
+  20..21    Semicolon
+  23..29    Public
+  30..38    Function
+  39..48    Ident("parsePort")
+  48..49    LParen
+  49..55    Ident("string")
+  56..57    Dollar
+  57..60    Ident("raw")
+  60..61    RParen
+  61..62    Colon
+  63..69    Ident("result")
+  69..70    Lt
+  70..73    Ident("int")
+  73..74    Comma
+  75..85    Ident("ParseError")
+  85..86    Gt
+  87..88    LBrace
+  93..96    Ident("int")
+  97..98    Dollar
+  98..103   Ident("value")
+ 104..105   Eq
+ 106..107   Dollar
+ 107..110   Ident("raw")
+ 110..112   Arrow
+ 112..117   Ident("toInt")
+ 117..118   LParen
+ 118..119   RParen
+ 119..120   Question
+ 120..121   Semicolon
+ 126..132   Return
+ 133..139   Ident("result")
+ 139..141   StaticOp
+ 141..143   Ident("ok")
+ 143..144   LParen
+ 144..145   Dollar
+ 145..150   Ident("value")
+ 150..151   RParen
+ 151..152   Semicolon
+ 153..154   RBrace

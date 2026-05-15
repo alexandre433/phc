@@ -1,0 +1,49 @@
+---
+source: crates/phc-lexer/tests/lex_examples.rs
+expression: rendered
+input_file: examples/bindings.phc
+---
+   0..4     Pack
+   5..13    Ident("examples")
+  13..14    Dot
+  14..22    Ident("bindings")
+  22..23    Semicolon
+  25..31    Public
+  32..40    Function
+  41..45    Ident("main")
+  45..46    LParen
+  46..47    RParen
+  47..48    Colon
+  49..53    Void
+  54..55    LBrace
+  60..63    Ident("int")
+  64..65    Dollar
+  65..70    Ident("count")
+  71..72    Eq
+  73..75    IntLit("42")
+  75..76    Semicolon
+  81..85    Flip
+  86..89    Ident("int")
+  90..91    Dollar
+  91..96    Ident("score")
+  97..98    Eq
+  99..100   IntLit("0")
+ 100..101   Semicolon
+ 106..107   Dollar
+ 107..112   Ident("score")
+ 113..115   Reassign
+ 116..117   Dollar
+ 117..122   Ident("score")
+ 123..124   Plus
+ 125..126   IntLit("1")
+ 126..127   Semicolon
+ 132..133   Dollar
+ 133..138   Ident("score")
+ 139..141   Reassign
+ 142..143   Dollar
+ 143..148   Ident("score")
+ 149..150   Plus
+ 151..152   Dollar
+ 152..157   Ident("count")
+ 157..158   Semicolon
+ 159..160   RBrace
