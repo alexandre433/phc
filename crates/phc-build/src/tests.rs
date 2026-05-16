@@ -173,6 +173,55 @@ function main(): void {
     assert!(stdout.contains("compiled with result + ?"));
 }
 
+/// Build + run a program that exercises C5a inline-invoked lambdas:
+/// one no-capture and one capturing two outer locals. The captures
+/// must be copied into the env struct at the call site so the
+/// lifted body sees the right values; output asserts both branches
+/// produced the expected result.
+#[test]
+fn build_and_run_inline_lambda_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_inline_lambda_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    int $a = 7;
+    int $b = 35;
+    int $sum = ((int $x, int $y): int => $x + $y)($a, $b);
+    int $bumped = ((int $n): int => $n + $a + $b)(0);
+    if ($sum == 42) { Logger::info("sum ok"); }
+    if ($bumped == 42) { Logger::info("captures ok"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("inline_lambda_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("inline_lambda_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("sum ok"), "missing sum line: {stdout:?}");
+    assert!(
+        stdout.contains("captures ok"),
+        "missing captures line: {stdout:?}"
+    );
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

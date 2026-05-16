@@ -51,6 +51,20 @@ typedef struct {
     phc_payload some;
 } phc_option;
 
+/* Lambda value: function pointer + heap-alloc'd capture environment.
+ * The codegen emits `fn` as the lifted-body symbol's address and
+ * `env` as a malloc'd struct holding every variable the body
+ * captures (NULL when the body captures nothing). Call sites cast
+ * `fn` to the precise `<ret>(*)(void*, args...)` shape they expect;
+ * the env is dispatched on inside the lifted body via a cast back
+ * to its specific struct type. C5a only emits inline-invoked
+ * lambdas — storing or passing one as a value is blocked on the
+ * function-type syntax decision (D-024). */
+typedef struct {
+    void* fn;
+    void* env;
+} phc_lambda;
+
 /* === Constructors === */
 phc_string phc_string_lit(const char* s);
 phc_string phc_string_owned(const char* s, size_t len);

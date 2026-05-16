@@ -13,11 +13,11 @@
 //! returns).
 
 use phc_ast::{
-    BinOp, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item, MatchArm,
-    Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
+    BinOp, Block, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item,
+    LambdaBody, MatchArm, Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
 };
 use phc_errors::{Diagnostic, Severity};
-use phc_semantic::{Resolved, SymbolKind};
+use phc_semantic::{Resolved, SymbolId, SymbolKind};
 use phc_span::Span;
 use phc_typecheck::{Primitive, Ty, Typed};
 
@@ -26,12 +26,14 @@ use crate::CodegenOutput;
 /// Emit a complete C translation unit for `file`.
 pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenOutput {
     let mut out = CodegenOutput::default();
+    let lambdas = collect_lambdas(file);
     let mut emitter = Emitter {
         buf: String::new(),
         diagnostics: &mut out.diagnostics,
         resolved,
         typed,
         file,
+        lambdas,
     };
     emitter.emit_prelude();
     // Phase 0: enum typedefs first — class fields and method
@@ -64,6 +66,13 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
             _ => {}
         }
     }
+    // Phase 3.5: lambda support — env structs, forward decls, and
+    // lifted bodies for every Expr::Lambda the file contains. Emitted
+    // before user-function bodies so call sites can reference them.
+    emitter.emit_lambda_env_structs();
+    emitter.emit_lambda_forward_decls();
+    emitter.buf.push('\n');
+    emitter.emit_lambda_bodies();
     emitter.buf.push('\n');
     // Phase 4: bodies.
     for item in &file.items {
@@ -84,6 +93,20 @@ struct Emitter<'a> {
     resolved: &'a Resolved,
     typed: &'a Typed,
     file: &'a SourceFile,
+    /// Every `Expr::Lambda` in the source file, in source order. The
+    /// emitter lifts each one to a top-level static function named
+    /// `__phc_lam_<lo>` (where `<lo>` is the lambda's span lo offset)
+    /// and emits a matching `__phc_lam_env_<lo>` capture struct.
+    lambdas: Vec<&'a Expr>,
+}
+
+/// Per-lambda capture metadata. One `Capture` per outer-scope binding
+/// that the lambda body references; the emitter produces one struct
+/// field per `Capture` and copies the live value into it at the
+/// inline-invocation site.
+struct Capture {
+    name: String,
+    ty: Ty,
 }
 
 impl<'a> Emitter<'a> {
@@ -399,6 +422,343 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+    }
+
+    // ===== Lambdas (C5a — inline-invoked only) =====
+
+    /// Pick the C return type for a lambda. Prefer the explicit
+    /// `: T` annotation; otherwise read the body expression's typed
+    /// type; otherwise fall back to `int64_t` so the C compiles even
+    /// when type inference has not yet covered the body shape.
+    fn lambda_return_c(&self, lam: &Expr) -> String {
+        if let Expr::Lambda {
+            return_type, body, ..
+        } = lam
+        {
+            if let Some(rt) = return_type {
+                return self.c_type_for(rt);
+            }
+            if let LambdaBody::Expr(e) = body {
+                if let Some(t) = self.typed.expr_types.get(&span_of_expr(e)) {
+                    if !matches!(t, Ty::Unknown) {
+                        return self.ty_to_c(t);
+                    }
+                }
+            }
+        }
+        "int64_t".into()
+    }
+
+    fn emit_lambda_env_structs(&mut self) {
+        // Snapshot lambda spans up-front so the iteration does not
+        // hold an immutable borrow while `compute_captures` runs.
+        let spans: Vec<u32> = self.lambdas.iter().map(|l| span_of_expr(l).lo).collect();
+        for (idx, lo) in spans.iter().enumerate() {
+            let lam = self.lambdas[idx];
+            let captures = self.compute_captures(lam);
+            self.buf
+                .push_str(&format!("struct __phc_lam_env_{lo} {{\n"));
+            if captures.is_empty() {
+                self.buf.push_str("    int __unused;\n");
+            } else {
+                for cap in &captures {
+                    self.buf.push_str(&format!(
+                        "    {} {};\n",
+                        self.ty_to_c(&cap.ty),
+                        mangle(&cap.name)
+                    ));
+                }
+            }
+            self.buf.push_str("};\n");
+        }
+    }
+
+    fn emit_lambda_forward_decls(&mut self) {
+        let lams: Vec<&Expr> = self.lambdas.clone();
+        for lam in lams {
+            let sig = self.lambda_signature(lam);
+            self.buf.push_str(&format!("{sig};\n"));
+        }
+    }
+
+    fn emit_lambda_bodies(&mut self) {
+        let lams: Vec<&Expr> = self.lambdas.clone();
+        for lam in lams {
+            let lo = span_of_expr(lam).lo;
+            let captures = self.compute_captures(lam);
+            let sig = self.lambda_signature(lam);
+            self.buf.push_str(&sig);
+            self.buf.push_str(" {\n");
+            self.buf.push_str(&format!(
+                "    struct __phc_lam_env_{lo}* __env = __env_void;\n"
+            ));
+            self.buf.push_str("    (void)__env;\n");
+            // Materialise each capture as a normal `phc_var_<name>`
+            // local so the body's own emit path (which references
+            // captures by their original identifier) just works.
+            for cap in &captures {
+                self.buf.push_str(&format!(
+                    "    {} phc_var_{} = __env->{};\n",
+                    self.ty_to_c(&cap.ty),
+                    mangle(&cap.name),
+                    mangle(&cap.name)
+                ));
+            }
+            if let Expr::Lambda { body, .. } = lam {
+                match body {
+                    LambdaBody::Expr(e) => {
+                        let snippet = self.emit_expr(e);
+                        self.buf.push_str(&format!("    return {snippet};\n"));
+                    }
+                    LambdaBody::Block(b) => {
+                        for stmt in &b.statements {
+                            self.emit_stmt(stmt, 1);
+                        }
+                    }
+                }
+            }
+            self.buf.push_str("}\n\n");
+        }
+    }
+
+    fn lambda_signature(&self, lam: &Expr) -> String {
+        let lo = span_of_expr(lam).lo;
+        let ret_c = self.lambda_return_c(lam);
+        let mut params = vec!["void* __env_void".to_string()];
+        if let Expr::Lambda { params: ps, .. } = lam {
+            for p in ps {
+                params.push(format!(
+                    "{} phc_var_{}",
+                    self.c_type_for(&p.ty),
+                    mangle(&p.name.name)
+                ));
+            }
+        }
+        format!("static {ret_c} __phc_lam_{lo}({})", params.join(", "))
+    }
+
+    /// Walk a lambda body and return one Capture per outer-scope
+    /// binding referenced inside. A binding is "outer" when its
+    /// resolver def_span lies outside the lambda's own span — which
+    /// covers free variables but excludes the lambda's own params
+    /// and locals declared inside the body.
+    fn compute_captures(&self, lam: &Expr) -> Vec<Capture> {
+        let lam_span = span_of_expr(lam);
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut out: Vec<Capture> = Vec::new();
+        let mut record = |sid: SymbolId, span: Span, out: &mut Vec<Capture>| {
+            if !seen.insert(sid.0) {
+                return;
+            }
+            let sym = self.resolved.symbol(sid);
+            let ty = self
+                .typed
+                .expr_types
+                .get(&span)
+                .cloned()
+                .unwrap_or(Ty::Unknown);
+            out.push(Capture {
+                name: sym.name.clone(),
+                ty,
+            });
+        };
+        if let Expr::Lambda { body, .. } = lam {
+            match body {
+                LambdaBody::Expr(e) => self.collect_free_vars(e, lam_span, &mut record, &mut out),
+                LambdaBody::Block(b) => {
+                    self.collect_free_vars_block(b, lam_span, &mut record, &mut out)
+                }
+            }
+        }
+        out
+    }
+
+    fn collect_free_vars<F>(
+        &self,
+        expr: &Expr,
+        lam_span: Span,
+        record: &mut F,
+        out: &mut Vec<Capture>,
+    ) where
+        F: FnMut(SymbolId, Span, &mut Vec<Capture>),
+    {
+        match expr {
+            Expr::Var { span, .. } | Expr::This { span } => {
+                if let Some(&sid) = self.resolved.uses.get(span) {
+                    let def = self.resolved.symbol(sid).def_span;
+                    if def.lo < lam_span.lo || def.hi > lam_span.hi {
+                        record(sid, *span, out);
+                    }
+                }
+            }
+            Expr::Paren { inner, .. } => self.collect_free_vars(inner, lam_span, record, out),
+            Expr::Unary { operand, .. } | Expr::Borrow { operand, .. } => {
+                self.collect_free_vars(operand, lam_span, record, out)
+            }
+            Expr::Try { value, .. } | Expr::Cast { value, .. } => {
+                self.collect_free_vars(value, lam_span, record, out)
+            }
+            Expr::Member { receiver, .. } => {
+                self.collect_free_vars(receiver, lam_span, record, out)
+            }
+            Expr::Static { ty, .. } => self.collect_free_vars(ty, lam_span, record, out),
+            Expr::Binary { lhs, rhs, .. } => {
+                self.collect_free_vars(lhs, lam_span, record, out);
+                self.collect_free_vars(rhs, lam_span, record, out);
+            }
+            Expr::Call { callee, args, .. } => {
+                self.collect_free_vars(callee, lam_span, record, out);
+                for a in args {
+                    self.collect_free_vars(a, lam_span, record, out);
+                }
+            }
+            Expr::Index { target, index, .. } => {
+                self.collect_free_vars(target, lam_span, record, out);
+                self.collect_free_vars(index, lam_span, record, out);
+            }
+            Expr::StrLit { parts, .. } => {
+                for p in parts {
+                    if let StrPart::Expr(e) = p {
+                        self.collect_free_vars(e, lam_span, record, out);
+                    }
+                }
+            }
+            Expr::Match {
+                scrutinee, arms, ..
+            } => {
+                self.collect_free_vars(scrutinee, lam_span, record, out);
+                for arm in arms {
+                    if let Some(g) = &arm.guard {
+                        self.collect_free_vars(g, lam_span, record, out);
+                    }
+                    self.collect_free_vars(&arm.body, lam_span, record, out);
+                }
+            }
+            // A nested lambda's own body is its own concern; from
+            // this lambda's perspective the inner lambda is just a
+            // value. The inner's captures are computed independently
+            // when the lambdas pre-pass walks it.
+            Expr::Lambda { .. } => {}
+            Expr::IntLit { .. }
+            | Expr::FloatLit { .. }
+            | Expr::BoolLit { .. }
+            | Expr::NullLit { .. }
+            | Expr::TypeName { .. } => {}
+        }
+    }
+
+    fn collect_free_vars_block<F>(
+        &self,
+        block: &Block,
+        lam_span: Span,
+        record: &mut F,
+        out: &mut Vec<Capture>,
+    ) where
+        F: FnMut(SymbolId, Span, &mut Vec<Capture>),
+    {
+        for stmt in &block.statements {
+            self.collect_free_vars_stmt(stmt, lam_span, record, out);
+        }
+    }
+
+    fn collect_free_vars_stmt<F>(
+        &self,
+        stmt: &Stmt,
+        lam_span: Span,
+        record: &mut F,
+        out: &mut Vec<Capture>,
+    ) where
+        F: FnMut(SymbolId, Span, &mut Vec<Capture>),
+    {
+        match stmt {
+            Stmt::Local(b) => self.collect_free_vars(&b.value, lam_span, record, out),
+            Stmt::Reassign(r) => {
+                self.collect_free_vars(&r.lhs, lam_span, record, out);
+                self.collect_free_vars(&r.value, lam_span, record, out);
+            }
+            Stmt::MemberAssign(m) => {
+                self.collect_free_vars(&m.lhs, lam_span, record, out);
+                self.collect_free_vars(&m.value, lam_span, record, out);
+            }
+            Stmt::Expr(e) => self.collect_free_vars(&e.expr, lam_span, record, out),
+            Stmt::Return(r) => {
+                if let Some(v) = &r.value {
+                    self.collect_free_vars(v, lam_span, record, out);
+                }
+            }
+            Stmt::If(i) => {
+                for (cond, blk) in &i.branches {
+                    self.collect_free_vars(cond, lam_span, record, out);
+                    self.collect_free_vars_block(blk, lam_span, record, out);
+                }
+                if let Some(else_blk) = &i.else_block {
+                    self.collect_free_vars_block(else_blk, lam_span, record, out);
+                }
+            }
+            Stmt::While(w) => {
+                self.collect_free_vars(&w.cond, lam_span, record, out);
+                self.collect_free_vars_block(&w.body, lam_span, record, out);
+            }
+            Stmt::For(f) => {
+                self.collect_free_vars(&f.iter, lam_span, record, out);
+                self.collect_free_vars_block(&f.body, lam_span, record, out);
+            }
+            Stmt::Break { .. } | Stmt::Continue { .. } => {}
+        }
+    }
+
+    /// Emit a call whose callee is an inline `Expr::Lambda` (possibly
+    /// wrapped in `Expr::Paren`). Allocates a capture struct, copies
+    /// every captured value in, then invokes the lifted body via a
+    /// cast to its precise signature. Returns the call expression as
+    /// a single C snippet (a GCC statement-expression so the value
+    /// flows out cleanly even when captures are present).
+    fn emit_lambda_inline_call(&mut self, callee: &Expr, args: &[Expr]) -> Option<String> {
+        let lam = unwrap_paren(callee);
+        let Expr::Lambda { params: ps, .. } = lam else {
+            return None;
+        };
+        let lo = span_of_expr(lam).lo;
+        let ret_c = self.lambda_return_c(lam);
+        let captures = self.compute_captures(lam);
+        let arg_src: Vec<String> = args.iter().map(|a| self.emit_expr(a)).collect();
+        let param_types: Vec<String> = ps.iter().map(|p| self.c_type_for(&p.ty)).collect();
+        let fn_ptr_ty = if param_types.is_empty() {
+            format!("{ret_c}(*)(void*)")
+        } else {
+            format!("{ret_c}(*)(void*, {})", param_types.join(", "))
+        };
+        let call_args = if arg_src.is_empty() {
+            "__env_void".to_string()
+        } else {
+            format!("__env_void, {}", arg_src.join(", "))
+        };
+        let fn_addr = format!("(void*)&__phc_lam_{lo}");
+        if captures.is_empty() {
+            // No env to alloc — pass NULL through and call directly.
+            let snippet = format!(
+                "(({fn_ptr_ty})({fn_addr}))((void*)0{})",
+                if arg_src.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(", {}", arg_src.join(", "))
+                }
+            );
+            return Some(snippet);
+        }
+        let mut body = String::new();
+        body.push_str(&format!(
+            "struct __phc_lam_env_{lo}* __env = phc_alloc(sizeof(*__env)); "
+        ));
+        for cap in &captures {
+            body.push_str(&format!(
+                "__env->{name} = phc_var_{name}; ",
+                name = mangle(&cap.name)
+            ));
+        }
+        body.push_str("void* __env_void = __env; ");
+        body.push_str(&format!("(({fn_ptr_ty})({fn_addr}))({call_args}); "));
+        Some(format!("({{ {body} }})"))
     }
 
     fn emit_field_defaults(&mut self, c: &ClassDecl) {
@@ -741,6 +1101,14 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_call(&mut self, callee: &Expr, args: &[Expr]) -> String {
+        // Inline-invoked lambda: `((params) => body)(args)` (and the
+        // `Paren`-wrapped variant). C5a only handles this case;
+        // stored lambdas are blocked on D-024 (function-type syntax).
+        if matches!(unwrap_paren(callee), Expr::Lambda { .. }) {
+            if let Some(snippet) = self.emit_lambda_inline_call(callee, args) {
+                return snippet;
+            }
+        }
         // Builtin: `Logger::info(string)` → phc_print(...).
         if let Expr::Static { ty, member, .. } = callee {
             if let Expr::TypeName { name, .. } = ty.as_ref() {
@@ -927,6 +1295,153 @@ fn collect_captures(pat: &Pattern, scrut_ty: &str, scrut: &str, buf: &mut String
             }
         }
         _ => {}
+    }
+}
+
+/// Strip leading `Paren` wrappers so caller sites can match on the
+/// inner expression directly. Used by the inline-lambda call path.
+fn unwrap_paren(expr: &Expr) -> &Expr {
+    let mut cur = expr;
+    while let Expr::Paren { inner, .. } = cur {
+        cur = inner;
+    }
+    cur
+}
+
+/// Walk every item in the file and return one reference per
+/// `Expr::Lambda` it contains, in source order. Stable ordering
+/// keeps the emitted symbol names deterministic.
+fn collect_lambdas(file: &SourceFile) -> Vec<&Expr> {
+    let mut out: Vec<&Expr> = Vec::new();
+    for item in &file.items {
+        match item {
+            Item::Function(f) => collect_lambdas_in_block(&f.body, &mut out),
+            Item::Class(c) => {
+                for member in &c.members {
+                    match member {
+                        ClassMember::Method(m) => collect_lambdas_in_block(&m.body, &mut out),
+                        ClassMember::Construct(con) => {
+                            collect_lambdas_in_block(&con.body, &mut out)
+                        }
+                        ClassMember::Field(f) => {
+                            if let Some(default) = &f.default {
+                                collect_lambdas_in_expr(default, &mut out);
+                            }
+                        }
+                        ClassMember::TraitUse(_) => {}
+                    }
+                }
+            }
+            Item::Trait(t) => {
+                for m in &t.methods {
+                    collect_lambdas_in_block(&m.body, &mut out);
+                }
+            }
+            Item::Enum(_) | Item::Interface(_) | Item::Test(_) => {}
+        }
+    }
+    out
+}
+
+fn collect_lambdas_in_block<'a>(block: &'a Block, out: &mut Vec<&'a Expr>) {
+    for stmt in &block.statements {
+        collect_lambdas_in_stmt(stmt, out);
+    }
+}
+
+fn collect_lambdas_in_stmt<'a>(stmt: &'a Stmt, out: &mut Vec<&'a Expr>) {
+    match stmt {
+        Stmt::Local(b) => collect_lambdas_in_expr(&b.value, out),
+        Stmt::Reassign(r) => {
+            collect_lambdas_in_expr(&r.lhs, out);
+            collect_lambdas_in_expr(&r.value, out);
+        }
+        Stmt::MemberAssign(m) => {
+            collect_lambdas_in_expr(&m.lhs, out);
+            collect_lambdas_in_expr(&m.value, out);
+        }
+        Stmt::Expr(e) => collect_lambdas_in_expr(&e.expr, out),
+        Stmt::Return(r) => {
+            if let Some(v) = &r.value {
+                collect_lambdas_in_expr(v, out);
+            }
+        }
+        Stmt::If(i) => {
+            for (cond, blk) in &i.branches {
+                collect_lambdas_in_expr(cond, out);
+                collect_lambdas_in_block(blk, out);
+            }
+            if let Some(else_blk) = &i.else_block {
+                collect_lambdas_in_block(else_blk, out);
+            }
+        }
+        Stmt::While(w) => {
+            collect_lambdas_in_expr(&w.cond, out);
+            collect_lambdas_in_block(&w.body, out);
+        }
+        Stmt::For(f) => {
+            collect_lambdas_in_expr(&f.iter, out);
+            collect_lambdas_in_block(&f.body, out);
+        }
+        Stmt::Break { .. } | Stmt::Continue { .. } => {}
+    }
+}
+
+fn collect_lambdas_in_expr<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match expr {
+        Expr::Lambda { body, .. } => {
+            out.push(expr);
+            match body {
+                LambdaBody::Expr(e) => collect_lambdas_in_expr(e, out),
+                LambdaBody::Block(b) => collect_lambdas_in_block(b, out),
+            }
+        }
+        Expr::Paren { inner, .. } => collect_lambdas_in_expr(inner, out),
+        Expr::Unary { operand, .. } | Expr::Borrow { operand, .. } => {
+            collect_lambdas_in_expr(operand, out)
+        }
+        Expr::Try { value, .. } | Expr::Cast { value, .. } => collect_lambdas_in_expr(value, out),
+        Expr::Member { receiver, .. } => collect_lambdas_in_expr(receiver, out),
+        Expr::Static { ty, .. } => collect_lambdas_in_expr(ty, out),
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_lambdas_in_expr(lhs, out);
+            collect_lambdas_in_expr(rhs, out);
+        }
+        Expr::Call { callee, args, .. } => {
+            collect_lambdas_in_expr(callee, out);
+            for a in args {
+                collect_lambdas_in_expr(a, out);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_lambdas_in_expr(target, out);
+            collect_lambdas_in_expr(index, out);
+        }
+        Expr::StrLit { parts, .. } => {
+            for p in parts {
+                if let StrPart::Expr(e) = p {
+                    collect_lambdas_in_expr(e, out);
+                }
+            }
+        }
+        Expr::Match {
+            scrutinee, arms, ..
+        } => {
+            collect_lambdas_in_expr(scrutinee, out);
+            for arm in arms {
+                if let Some(g) = &arm.guard {
+                    collect_lambdas_in_expr(g, out);
+                }
+                collect_lambdas_in_expr(&arm.body, out);
+            }
+        }
+        Expr::IntLit { .. }
+        | Expr::FloatLit { .. }
+        | Expr::BoolLit { .. }
+        | Expr::NullLit { .. }
+        | Expr::Var { .. }
+        | Expr::This { .. }
+        | Expr::TypeName { .. } => {}
     }
 }
 
