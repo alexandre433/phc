@@ -731,3 +731,34 @@ function main(): void {
     ];
     assert_eq!(out.stdout, expected);
 }
+
+#[test]
+fn method_chain_inference_propagates_for_stdlib_chains() {
+    // Verifies the typecheck patch: chained method calls on
+    // stdlib types now resolve through the codegen e2e path
+    // (interpreter doesn't need this — included as a sanity
+    // check that nothing regressed).
+    let src = r#"pack demo;
+function main(): void {
+    string $s = "  PHC ROCKS  ";
+    if ($s->trim()->lower() == "phc rocks") { Logger::info("string chain"); }
+    list<int> $xs = list();
+    $xs->push(7);
+    $xs->push(35);
+    if ($xs->at(0) + $xs->at(1) == 42) { Logger::info("list arith"); }
+    option<int> $a = option::none;
+    option<int> $b = option::some(99);
+    if ($a->orElse($b)->unwrapOr(0) == 99) { Logger::info("option chain"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(
+        out.stdout,
+        vec![
+            "string chain".to_string(),
+            "list arith".to_string(),
+            "option chain".to_string()
+        ]
+    );
+}

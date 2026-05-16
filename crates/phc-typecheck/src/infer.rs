@@ -219,19 +219,21 @@ fn walk_expr(expr: &Expr, resolved: &Resolved, bindings: &mut BindingTypes, type
             for a in args {
                 walk_expr(a, resolved, bindings, typed);
             }
-            // Call return type: when the callee resolves to a known
-            // free function, look up its FunctionSig's return type.
-            // Otherwise stay Unknown.
-            let ret_ty = match callee.as_ref() {
-                Expr::TypeName { name, .. } => resolved
-                    .top_level
-                    .get(&name.name)
-                    .copied()
-                    .and_then(|sid| typed.function_sigs.get(&sid))
-                    .map(|sig| sig.return_ty.clone())
-                    .unwrap_or(Ty::Unknown),
-                _ => Ty::Unknown,
-            };
+            // Call return type. Three shapes need recovery so that
+            // chained calls (`$x->m()->n()`) and locals fed by a
+            // method call (`int $n = $xs->len();`) get propagated
+            // types instead of falling to `Ty::Unknown`:
+            //
+            // 1. Free function: callee is `TypeName(name)` and the
+            //    name resolves to a known function sig.
+            // 2. Class method: callee is `Member { receiver, field }`
+            //    and the receiver's type is `Path[ClassName]`. Look
+            //    up the method's symbol id via the resolver's
+            //    members_of and read its FunctionSig.
+            // 3. Stdlib method: receiver typed `string`, `list<T>`,
+            //    `result<T, E>`, or `option<T>`. Hardcoded surface
+            //    matching D-025 / D-026 / D-027.
+            let ret_ty = call_return_ty(callee, resolved, typed);
             record(typed, *span, ret_ty);
             return;
         }
@@ -243,7 +245,10 @@ fn walk_expr(expr: &Expr, resolved: &Resolved, bindings: &mut BindingTypes, type
         } => {
             walk_expr(target, resolved, bindings, typed);
             walk_expr(index, resolved, bindings, typed);
-            record(typed, *span, Ty::Unknown);
+            // `$xs[i]` on a typed `list<T>` resolves to T. Other
+            // receivers stay Unknown for now.
+            let ty = index_return_ty(target, typed);
+            record(typed, *span, ty);
             return;
         }
         Expr::TypeName { span, .. } => {
@@ -307,6 +312,101 @@ fn infer_binary(op: BinOp, lhs: &Expr, rhs: &Expr, typed: &mut Typed, span: Span
 
 fn record(typed: &mut Typed, span: Span, ty: Ty) {
     typed.expr_types.insert(span, ty);
+}
+
+/// Compute a Call expression's return type from its callee shape.
+/// See the matching comment at the call site for the three cases.
+fn call_return_ty(callee: &Expr, resolved: &Resolved, typed: &Typed) -> Ty {
+    match callee {
+        Expr::TypeName { name, .. } => resolved
+            .top_level
+            .get(&name.name)
+            .copied()
+            .and_then(|sid| typed.function_sigs.get(&sid))
+            .map(|sig| sig.return_ty.clone())
+            .unwrap_or(Ty::Unknown),
+        Expr::Member {
+            receiver, field, ..
+        } => {
+            let recv_ty = match typed.expr_types.get(&span_of(receiver)) {
+                Some(t) => t,
+                None => return Ty::Unknown,
+            };
+            // 1. Stdlib method on a primitive / generic container.
+            if let Some(t) = stdlib_method_return_ty(recv_ty, &field.name) {
+                return t;
+            }
+            // 2. Class method: walk the resolver's members for the
+            //    receiver's class and match by name.
+            if let Ty::Path { path, .. } = recv_ty {
+                if path.len() == 1 {
+                    if let Some(class_id) = resolved.top_level.get(&path[0]).copied() {
+                        if let Some(members) = resolved.members_of.get(&class_id) {
+                            for &mid in members {
+                                if resolved.symbol(mid).name == field.name {
+                                    if let Some(sig) = typed.function_sigs.get(&mid) {
+                                        return sig.return_ty.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ty::Unknown
+        }
+        _ => Ty::Unknown,
+    }
+}
+
+/// Map a stdlib method to its return type given the receiver's
+/// static type. Mirrors the codegen / interpreter dispatch tables
+/// for D-025 (string), D-026 (result/option), D-027 (list).
+fn stdlib_method_return_ty(recv_ty: &Ty, method: &str) -> Option<Ty> {
+    match recv_ty {
+        Ty::Primitive(crate::Primitive::String) => match method {
+            "len" => Some(Ty::Primitive(crate::Primitive::Int)),
+            "contains" | "startsWith" | "endsWith" => Some(Ty::Primitive(crate::Primitive::Bool)),
+            "trim" | "upper" | "lower" => Some(Ty::Primitive(crate::Primitive::String)),
+            // toInt returns result<int, parseError>; precise E type
+            // is stdlib-pending so leave Unknown rather than fake it.
+            _ => None,
+        },
+        Ty::Path { path, args, .. } if path.len() == 1 => {
+            let elem = args.first().cloned();
+            match (path[0].as_str(), method) {
+                ("list", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
+                ("list", "push") => Some(Ty::Primitive(crate::Primitive::Void)),
+                ("list", "at") => elem,
+                ("result", "isOk") | ("result", "isErr") => {
+                    Some(Ty::Primitive(crate::Primitive::Bool))
+                }
+                ("result", "unwrapOr") => elem,
+                ("option", "isSome") | ("option", "isNone") => {
+                    Some(Ty::Primitive(crate::Primitive::Bool))
+                }
+                ("option", "unwrapOr") => elem,
+                ("option", "orElse") => Some(recv_ty.clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Compute the result type of `target[index]`. For a `list<T>`
+/// target, the result is T; otherwise Unknown.
+fn index_return_ty(target: &Expr, typed: &Typed) -> Ty {
+    let target_ty = match typed.expr_types.get(&span_of(target)) {
+        Some(t) => t,
+        None => return Ty::Unknown,
+    };
+    if let Ty::Path { path, args, .. } = target_ty {
+        if path.len() == 1 && path[0] == "list" {
+            return args.first().cloned().unwrap_or(Ty::Unknown);
+        }
+    }
+    Ty::Unknown
 }
 
 fn span_of(expr: &Expr) -> Span {

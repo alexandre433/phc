@@ -431,6 +431,61 @@ function main(): void {
     }
 }
 
+/// Build + run a program that exercises the typecheck patch:
+/// chained method calls (`$s->trim()->lower()`, `$xs->at(0) +
+/// $xs->at(1)`, `$o->orElse(...)->unwrapOr(...)`) all need the
+/// inner Call's return type recovered or codegen falls back to a
+/// `phc_panic("codegen TODO")`. Asserts each chain produced its
+/// sentinel.
+#[test]
+fn build_and_run_method_chain_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_method_chain_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    string $s = "  PHC ROCKS  ";
+    if ($s->trim()->lower() == "phc rocks") { Logger::info("string chain"); }
+    list<int> $xs = list();
+    $xs->push(7);
+    $xs->push(35);
+    if ($xs->at(0) + $xs->at(1) == 42) { Logger::info("list arith"); }
+    option<int> $a = option::none;
+    option<int> $b = option::some(99);
+    if ($a->orElse($b)->unwrapOr(0) == 99) { Logger::info("option chain"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("method_chain_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("method_chain_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "method-chain binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in ["string chain", "list arith", "option chain"] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.
