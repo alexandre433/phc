@@ -6,13 +6,14 @@
 //! The other subcommands are still stubbed.
 
 use clap::Parser;
-use phc_build::build_file;
+use phc_build::{build_file, check_pack_acyclicity, load_session, resolve_cross_pack_uses};
 use phc_interp::{run as interp_run, RunOutput, Value};
 use phc_parser::parse as parse_source;
+use phc_pkg::read_manifest;
 use phc_semantic::resolve;
 use phc_span::FileId;
 use phc_typecheck::typecheck;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -28,18 +29,25 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
-    /// Compile a PHC source file to a native binary via the C-emit
-    /// backend.
+    /// Compile a PHC source to a native binary. Either pass a single
+    /// `.phc` file, or run with no arguments inside a project that
+    /// contains a `phc.json` (the file with `main()` is built).
     Build {
-        /// Path to a `.phc` source file containing a `function main()`.
-        file: PathBuf,
+        /// Optional path to a single `.phc` source file. When omitted,
+        /// the project root is the current directory.
+        file: Option<PathBuf>,
         /// Output binary path. Defaults to the source file's stem
-        /// in the current directory (with `.exe` on Windows).
+        /// (or the manifest name) in the current directory.
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
-    /// Type-check the current project without producing output
-    Check,
+    /// Run the multi-file pipeline (load + cross-pack uses +
+    /// acyclicity) and report diagnostics. No binary output.
+    Check {
+        /// Project root. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        root: PathBuf,
+    },
     /// Run a PHC source file through the tree-walking interpreter
     Run {
         /// Path to a `.phc` source file containing a `function main()`
@@ -60,11 +68,8 @@ fn main() -> ExitCode {
 
     match cli.command {
         Some(Command::Run { file }) => run_file(&file),
-        Some(Command::Build { file, output }) => build_cmd(&file, output.as_deref()),
-        Some(Command::Check) => {
-            eprintln!("phc check: not yet implemented");
-            ExitCode::from(1)
-        }
+        Some(Command::Build { file, output }) => build_cmd(file.as_deref(), output.as_deref()),
+        Some(Command::Check { root }) => check_cmd(&root),
         Some(Command::Test) => {
             eprintln!("phc test: not yet implemented");
             ExitCode::from(1)
@@ -88,15 +93,28 @@ fn main() -> ExitCode {
     }
 }
 
-fn build_cmd(input: &std::path::Path, output: Option<&std::path::Path>) -> ExitCode {
-    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("a");
+fn build_cmd(input: Option<&Path>, output: Option<&Path>) -> ExitCode {
+    let resolved_input: PathBuf = match input {
+        Some(p) => p.to_path_buf(),
+        None => match resolve_project_main(Path::new(".")) {
+            Ok(p) => p,
+            Err(msg) => {
+                eprintln!("phc build: {msg}");
+                return ExitCode::from(1);
+            }
+        },
+    };
+    let stem = resolved_input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("a");
     let default_output: PathBuf = if cfg!(windows) {
         PathBuf::from(format!("{stem}.exe"))
     } else {
         PathBuf::from(stem)
     };
     let output_path = output.unwrap_or(default_output.as_path());
-    let result = build_file(input, output_path);
+    let result = build_file(&resolved_input, output_path);
     for w in &result.warnings {
         eprintln!("warning at {}..{}: {}", w.span.lo, w.span.hi, w.message);
     }
@@ -110,6 +128,88 @@ fn build_cmd(input: &std::path::Path, output: Option<&std::path::Path>) -> ExitC
         eprintln!("phc build: produced `{}`", bin.display());
     }
     ExitCode::SUCCESS
+}
+
+/// Find the file containing `function main()` in the current
+/// project. The project root is the cwd; ./phc.json is read for
+/// validation but not yet enforced for layout. Errors out if no
+/// or multiple files declare `main`.
+fn resolve_project_main(root: &Path) -> Result<PathBuf, String> {
+    let manifest_path = root.join("phc.json");
+    if !manifest_path.exists() {
+        return Err(format!(
+            "no `phc.json` in `{}`. Pass a single source file or run inside a project root.",
+            root.display()
+        ));
+    }
+    let _manifest = read_manifest(&manifest_path)
+        .map_err(|e| format!("cannot read `{}`: {e}", manifest_path.display()))?;
+    let mut session = load_session(root);
+    resolve_cross_pack_uses(&mut session);
+    check_pack_acyclicity(&mut session);
+    if !session.ok() {
+        for d in &session.diagnostics {
+            eprintln!("error at {}..{}: {}", d.span.lo, d.span.hi, d.message);
+        }
+        return Err("project failed to load cleanly; aborting build.".to_string());
+    }
+    let mains: Vec<&phc_build::LoadedFile> = session
+        .files
+        .iter()
+        .filter(|f| {
+            f.ast
+                .items
+                .iter()
+                .any(|item| matches!(item, phc_ast::Item::Function(fd) if fd.name.name == "main"))
+        })
+        .collect();
+    match mains.len() {
+        0 => Err("project has no `function main()` to build.".into()),
+        1 => Ok(mains[0].path.clone()),
+        _ => {
+            let names: Vec<String> = mains.iter().map(|f| f.path.display().to_string()).collect();
+            Err(format!(
+                "project declares `main()` in multiple files: {}",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+fn check_cmd(root: &Path) -> ExitCode {
+    let mut session = load_session(root);
+    resolve_cross_pack_uses(&mut session);
+    check_pack_acyclicity(&mut session);
+    if session.diagnostics.is_empty() {
+        eprintln!(
+            "phc check: {} files, {} packs — no diagnostics",
+            session.files.len(),
+            session.packs.len()
+        );
+        return ExitCode::SUCCESS;
+    }
+    let mut errors = 0usize;
+    let mut warnings = 0usize;
+    for d in &session.diagnostics {
+        let label = match d.severity {
+            phc_errors::Severity::Error => {
+                errors += 1;
+                "error"
+            }
+            phc_errors::Severity::Warning => {
+                warnings += 1;
+                "warning"
+            }
+            phc_errors::Severity::Note => "note",
+        };
+        eprintln!("{label} at {}..{}: {}", d.span.lo, d.span.hi, d.message);
+    }
+    eprintln!("phc check: {errors} error(s), {warnings} warning(s)");
+    if errors > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn run_file(path: &PathBuf) -> ExitCode {
