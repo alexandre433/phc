@@ -64,19 +64,22 @@ Do not contradict these unless the user explicitly changes them:
 - **Types**: static by default; `dyn` for explicit dynamic opt-in; non-nullable by default; `?` for nullable
 - **Errors**: Result-style for domain failures; exceptions/panics only for unrecoverable faults
 - **Function types** (D-024): `fn(T1, T2, ...): R`. New `fn` keyword. Lambdas can be stored, passed, returned via this type.
-- **Stdlib v0a** (Phase 6 partial): string methods (D-025), `list<T>` (D-027), `map<string, V>` (D-028), Result/Option ergonomic methods (D-026). Collections use **reference semantics** (handle-shared mutation), explicitly diverging from D-022's CoW intent until refcounts ship — see [`spec/design-decisions.md`](spec/design-decisions.md) D-027 for the carve-out.
+- **Stdlib v0a** (Phase 6 partial): string methods (D-025); `list<T>` with storage + closure surface (D-027 + D-030 forEach/map/filter + D-037 fold/any/all/find); `map<string, V>` (D-028); `set<string>` (D-031); `result<T, E>` + `option<T>` ergonomic + closure methods (D-026 + D-029); `io::*` namespace (D-032); `assert::*` test helpers (D-033); `int::*` / `float::*` numeric namespaces (D-034); function types `fn(T,...): R` (D-024). Collections use **reference semantics** (handle-shared mutation), explicitly diverging from D-022's CoW intent until refcounts ship — see [`spec/design-decisions.md`](spec/design-decisions.md) D-027 for the carve-out.
 - **Borrow check** (Phase 3 MVP): `:=`/`flip` enforcement, member-assign rule with constructor carve-out, `&flip` on flip-only, per-call aliasing.
 - **Test framework** (Phase 9 v0a, D-021): `phc test <file>` discovers and runs `test "name" { ... }` blocks via the interpreter.
 - **LSP** (Phase 8 minimal): `phc lsp` runs a tower-lsp server over stdio with diagnostics + hover types.
+- **Formatter** (D-035): `phc fmt <file>` token-stream pretty-printer; `--check` mode for CI. Lexer retains `LineComment` / `BlockComment` tokens; parser cursor filters them.
+- **Linter** (D-036): `phc lint <file>` with `unused_local`, `unreachable_after_return`, `class_naming` rules. All `Warning` severity; non-zero exit on any warning.
 
 ## Still Open — Do Not Invent
 
 Phase 1 closed every syntax decision in issue #1's checklist (see `spec/design-decisions.md`, D-008…D-020). Implementation since has added D-023…D-028. The following surfaces remain open and must not be silently expanded:
 
-- **D-021** — Test framework full surface. v0a (`test "name" { ... }` discovery + interp runner) shipped 2026-05-16; assertion helpers, cross-file discovery, filtering, parallel execution are Phase 9 follow-ups.
-- **D-022** — Stdlib core surface. v0a slices D-025 / D-026 / D-027 / D-028 cut concrete pieces; the broader surface (`display`, `from`/`into`, `taskGroup`, full primitive method tables, `set<T>`, generic-key maps, hash-based storage) is Phase 6 work.
+- **D-021** — Test framework full surface. v0a (`test "name" { ... }` discovery + interp runner + assert helpers per D-033) shipped 2026-05-16; cross-file discovery, filtering, parallel execution, custom assertion shapes (`assert::throws`, `assert::approxEq`) are Phase 9 follow-ups.
+- **D-022** — Stdlib core surface. Most v0a slices have shipped (D-025 string, D-026 + D-029 result/option, D-027 + D-030 + D-037 list, D-028 map, D-031 set, D-032 io, D-033 assert, D-034 numeric). Still pending: `display` trait, `from`/`into`, `taskGroup`, generic-key `map<K, V>`, hash-based storage, `map`/`set` iteration, `reduce`/`findIndex`/`partition` on `list<T>`, real HTTP client.
 - **Borrowcheck follow-ups**: aliasing across statements, lifetime / outlives reasoning, lambda capture-mode inference beyond what `:=` already enforces.
 - **Codegen follow-ups**: LLVM/inkwell backend (today is C-emit only); `Ty::Function` enum refactor; generic function types.
+- **Formatter/linter follow-ups (Phase 8)**: AST-aware fmt second pass with long-line reflow / alignment / configurable style; richer lint rules (shadowing, naming for non-types, empty / dead-branch analysis, autofix, per-rule suppression).
 
 Any syntax decision not yet recorded in `spec/`: ask, or offer 2–4 concrete options.
 

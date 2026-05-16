@@ -22,7 +22,7 @@ This repository is **mid-implementation** as of 2026-05-16. Phase 1 (formal spec
 Use the following precedence when deciding what is true:
 
 1. User instructions in the current conversation
-2. Files in `spec/` — canonical design source. Phase 1 locked 2026-05-11; amendments since (D-023 sigils; D-024 fn-types; D-025 strings; D-026 result/option; D-027 list; D-028 map; D-005 aliasing extension; D-021 v0a) are recorded in `spec/design-decisions.md`'s decision list
+2. Files in `spec/` — canonical design source. Phase 1 locked 2026-05-11; amendments since (D-023 sigils, D-024 fn-types, D-025 strings, D-026 + D-029 result/option, D-027 + D-030 + D-037 list, D-028 map, D-031 set, D-032 io, D-033 assert, D-034 numeric, D-035 fmt, D-036 lint, D-005 aliasing extension, D-021 v0a) are recorded in `spec/design-decisions.md`'s decision list
 3. GitHub issue `#1` — historical context only; `spec/` overrides on any conflict
 4. Child phase issues `#2–#11` — implementation roadmap and scope per phase
 5. Issue `#12` — post-v0 roadmap

@@ -14,7 +14,7 @@ This directory holds the formal language specification for PHC v0.
 |------|-------------|
 | [`grammar.ebnf`](./grammar.ebnf) | Formal EBNF grammar |
 | [`language-reference.md`](./language-reference.md) | Developer-facing language reference |
-| [`design-decisions.md`](./design-decisions.md) | Rationale for every locked and provisional decision (D-001…D-028 as of 2026-05-16) |
+| [`design-decisions.md`](./design-decisions.md) | Rationale for every locked and provisional decision (D-001…D-037 as of 2026-05-16) |
 | [`keywords.md`](./keywords.md) | Reserved keyword table |
 | [`operators.md`](./operators.md) | Operator precedence / associativity table |
 
@@ -24,7 +24,7 @@ This directory holds the formal language specification for PHC v0.
 - **Phase 2 (#3)** lexer/parser — implemented. Consumes this directory as input.
 - **Phase 3 (#4)** typecheck + borrowcheck — MVP shipped (D-005 / D-005a / D-012 enforcement, plus D-005 aliasing extension and method-call return-type inference).
 - **Phase 5 (#6)** codegen + runtime — C-emit path live; Result/Option/`?` (C6), inline lambdas (C5a), stored lambdas via D-024.
-- **Phase 6 (#7)** stdlib — first slices shipped: D-025 strings, D-026 result/option methods, D-027 list, D-028 map.
-- **Phase 8 (#9)** LSP minimal — diagnostics + hover live via `phc lsp` over stdio.
-- **Phase 9 (#10)** test framework — MVP via D-021 v0a; `phc test <file>` discovers and runs `test "name" { ... }` blocks.
+- **Phase 6 (#7)** stdlib — D-025 strings, D-026 result/option methods + D-029 closure forms, D-027 list + D-030 closure methods + D-037 fold/any/all/find, D-028 map, D-031 set, D-032 io namespace, D-034 numeric namespaces.
+- **Phase 8 (#9)** tooling — LSP minimal via `phc lsp`, formatter via `phc fmt` (D-035), linter starter ruleset via `phc lint` (D-036).
+- **Phase 9 (#10)** test framework — MVP via D-021 v0a; `phc test <file>` discovers and runs `test "name" { ... }` blocks, with assert helpers via D-033.
 - D-021 (test syntax) and D-022 (stdlib core surface) remain provisional; the v0a slices above are concrete cuts of those decisions, not their final form.
