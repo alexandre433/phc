@@ -56,6 +56,10 @@ enum Command {
         /// Path to a `.phc` source file containing a `function main()`
         file: PathBuf,
     },
+    /// Start the PHC language server over stdio (LSP). Editors that
+    /// speak LSP can spawn `phc lsp` and get diagnostics + hover
+    /// types.
+    Lsp,
     /// Run tests
     Test,
     /// Format source files
@@ -71,6 +75,7 @@ fn main() -> ExitCode {
 
     match cli.command {
         Some(Command::Run { file }) => run_file(&file),
+        Some(Command::Lsp) => run_lsp(),
         Some(Command::Build { file, output }) => build_cmd(file.as_deref(), output.as_deref()),
         Some(Command::Check { root }) => check_cmd(&root),
         Some(Command::Test) => {
@@ -184,6 +189,21 @@ fn check_cmd(root: &Path) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Spin up a tokio runtime and serve the LSP over stdio. Blocks
+/// until the client closes the connection. Errors from the
+/// runtime bubble up as a non-zero exit code.
+fn run_lsp() -> ExitCode {
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("phc lsp: cannot start tokio runtime: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    runtime.block_on(phc_lsp::run_stdio());
+    ExitCode::SUCCESS
 }
 
 fn run_file(path: &PathBuf) -> ExitCode {

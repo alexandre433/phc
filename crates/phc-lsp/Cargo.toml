@@ -11,4 +11,9 @@ description = "PHC Language Server Protocol (LSP) implementation"
 tower-lsp = { workspace = true }
 tokio = { workspace = true }
 phc-ast = { path = "../phc-ast" }
+phc-parser = { path = "../phc-parser" }
+phc-semantic = { path = "../phc-semantic" }
 phc-typecheck = { path = "../phc-typecheck" }
+phc-borrowcheck = { path = "../phc-borrowcheck" }
+phc-span = { path = "../phc-span" }
+phc-errors = { path = "../phc-errors" }
