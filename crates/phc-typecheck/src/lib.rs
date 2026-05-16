@@ -6,6 +6,7 @@
 //! Function signatures, expression inference, and statement checks
 //! land in follow-up commits.
 
+mod exhaustive;
 mod infer;
 mod lower;
 mod sigs;
@@ -13,6 +14,7 @@ mod sigs;
 #[cfg(test)]
 mod tests;
 
+pub use exhaustive::check_exhaustiveness;
 pub use infer::infer_function_bodies;
 pub use lower::lower_type_ref;
 pub use sigs::{collect_function_sigs, FunctionSig, ParamSig};
@@ -195,5 +197,6 @@ pub fn typecheck(file: &SourceFile, resolved: &Resolved) -> Typed {
     let mut typed = Typed::default();
     collect_function_sigs(file, resolved, &mut typed);
     infer_function_bodies(file, resolved, &mut typed);
+    check_exhaustiveness(file, resolved, &mut typed);
     typed
 }

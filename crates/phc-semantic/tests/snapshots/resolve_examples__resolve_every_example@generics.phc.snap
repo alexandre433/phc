@@ -4,11 +4,11 @@ expression: rendered
 input_file: examples/generics.phc
 ---
 === top level ===
-SymbolId(1)  Function  demo  (170..174)
+SymbolId(1)  Function  demo  (140..144)
 SymbolId(0)  Function  max  (45..48)
 
 === uses ===
-  92..94   -> SymbolId(2)  Value  a
-  97..99   -> SymbolId(3)  Value  b
- 119..121  -> SymbolId(2)  Value  a
- 140..142  -> SymbolId(3)  Value  b
+  82..84   -> SymbolId(2)  Value  a
+  87..89   -> SymbolId(3)  Value  b
+ 100..102  -> SymbolId(2)  Value  a
+ 117..119  -> SymbolId(3)  Value  b

@@ -209,11 +209,11 @@ SourceFile {
                 },
                 body: Block {
                     statements: [
-                        Return(
-                            ReturnStmt {
-                                value: Some(
-                                    Match {
-                                        scrutinee: Binary {
+                        If(
+                            IfStmt {
+                                branches: [
+                                    (
+                                        Binary {
                                             op: Gt,
                                             lhs: Var {
                                                 name: Ident {
@@ -222,16 +222,16 @@ SourceFile {
                                                         file: FileId(
                                                             0,
                                                         ),
-                                                        lo: 93,
-                                                        hi: 94,
+                                                        lo: 83,
+                                                        hi: 84,
                                                     },
                                                 },
                                                 span: Span {
                                                     file: FileId(
                                                         0,
                                                     ),
-                                                    lo: 92,
-                                                    hi: 94,
+                                                    lo: 82,
+                                                    hi: 84,
                                                 },
                                             },
                                             rhs: Var {
@@ -241,116 +241,101 @@ SourceFile {
                                                         file: FileId(
                                                             0,
                                                         ),
-                                                        lo: 98,
-                                                        hi: 99,
+                                                        lo: 88,
+                                                        hi: 89,
                                                     },
                                                 },
                                                 span: Span {
                                                     file: FileId(
                                                         0,
                                                     ),
-                                                    lo: 97,
-                                                    hi: 99,
+                                                    lo: 87,
+                                                    hi: 89,
                                                 },
                                             },
                                             span: Span {
                                                 file: FileId(
                                                     0,
                                                 ),
-                                                lo: 92,
-                                                hi: 99,
+                                                lo: 82,
+                                                hi: 89,
                                             },
                                         },
-                                        arms: [
-                                            MatchArm {
-                                                pattern: Literal(
-                                                    BoolLit {
-                                                        value: true,
+                                        Block {
+                                            statements: [
+                                                Return(
+                                                    ReturnStmt {
+                                                        value: Some(
+                                                            Var {
+                                                                name: Ident {
+                                                                    name: "a",
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 101,
+                                                                        hi: 102,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 100,
+                                                                    hi: 102,
+                                                                },
+                                                            },
+                                                        ),
                                                         span: Span {
                                                             file: FileId(
                                                                 0,
                                                             ),
-                                                            lo: 111,
-                                                            hi: 115,
+                                                            lo: 93,
+                                                            hi: 103,
                                                         },
                                                     },
                                                 ),
-                                                guard: None,
-                                                body: Var {
-                                                    name: Ident {
-                                                        name: "a",
-                                                        span: Span {
-                                                            file: FileId(
-                                                                0,
-                                                            ),
-                                                            lo: 120,
-                                                            hi: 121,
-                                                        },
-                                                    },
-                                                    span: Span {
-                                                        file: FileId(
-                                                            0,
-                                                        ),
-                                                        lo: 119,
-                                                        hi: 121,
-                                                    },
-                                                },
-                                                span: Span {
-                                                    file: FileId(
-                                                        0,
-                                                    ),
-                                                    lo: 111,
-                                                    hi: 121,
-                                                },
-                                            },
-                                            MatchArm {
-                                                pattern: Literal(
-                                                    BoolLit {
-                                                        value: false,
-                                                        span: Span {
-                                                            file: FileId(
-                                                                0,
-                                                            ),
-                                                            lo: 131,
-                                                            hi: 136,
-                                                        },
-                                                    },
+                                            ],
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
                                                 ),
-                                                guard: None,
-                                                body: Var {
-                                                    name: Ident {
-                                                        name: "b",
-                                                        span: Span {
-                                                            file: FileId(
-                                                                0,
-                                                            ),
-                                                            lo: 141,
-                                                            hi: 142,
-                                                        },
-                                                    },
-                                                    span: Span {
-                                                        file: FileId(
-                                                            0,
-                                                        ),
-                                                        lo: 140,
-                                                        hi: 142,
-                                                    },
-                                                },
-                                                span: Span {
-                                                    file: FileId(
-                                                        0,
-                                                    ),
-                                                    lo: 131,
-                                                    hi: 142,
-                                                },
+                                                lo: 91,
+                                                hi: 105,
                                             },
-                                        ],
+                                        },
+                                    ),
+                                ],
+                                else_block: None,
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 78,
+                                    hi: 105,
+                                },
+                            },
+                        ),
+                        Return(
+                            ReturnStmt {
+                                value: Some(
+                                    Var {
+                                        name: Ident {
+                                            name: "b",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 118,
+                                                hi: 119,
+                                            },
+                                        },
                                         span: Span {
                                             file: FileId(
                                                 0,
                                             ),
-                                            lo: 85,
-                                            hi: 149,
+                                            lo: 117,
+                                            hi: 119,
                                         },
                                     },
                                 ),
@@ -358,8 +343,8 @@ SourceFile {
                                     file: FileId(
                                         0,
                                     ),
-                                    lo: 78,
-                                    hi: 150,
+                                    lo: 110,
+                                    hi: 120,
                                 },
                             },
                         ),
@@ -369,7 +354,7 @@ SourceFile {
                             0,
                         ),
                         lo: 72,
-                        hi: 152,
+                        hi: 122,
                     },
                 },
                 span: Span {
@@ -377,7 +362,7 @@ SourceFile {
                         0,
                     ),
                     lo: 29,
-                    hi: 152,
+                    hi: 122,
                 },
             },
         ),
@@ -391,8 +376,8 @@ SourceFile {
                         file: FileId(
                             0,
                         ),
-                        lo: 170,
-                        hi: 174,
+                        lo: 140,
+                        hi: 144,
                     },
                 },
                 generic_params: [],
@@ -405,8 +390,8 @@ SourceFile {
                                 file: FileId(
                                     0,
                                 ),
-                                lo: 178,
-                                hi: 181,
+                                lo: 148,
+                                hi: 151,
                             },
                         },
                     ],
@@ -416,8 +401,8 @@ SourceFile {
                         file: FileId(
                             0,
                         ),
-                        lo: 178,
-                        hi: 181,
+                        lo: 148,
+                        hi: 151,
                     },
                 },
                 body: Block {
@@ -433,16 +418,16 @@ SourceFile {
                                                     file: FileId(
                                                         0,
                                                     ),
-                                                    lo: 195,
-                                                    hi: 198,
+                                                    lo: 165,
+                                                    hi: 168,
                                                 },
                                             },
                                             span: Span {
                                                 file: FileId(
                                                     0,
                                                 ),
-                                                lo: 195,
-                                                hi: 198,
+                                                lo: 165,
+                                                hi: 168,
                                             },
                                         },
                                         args: [
@@ -452,8 +437,8 @@ SourceFile {
                                                     file: FileId(
                                                         0,
                                                     ),
-                                                    lo: 199,
-                                                    hi: 200,
+                                                    lo: 169,
+                                                    hi: 170,
                                                 },
                                             },
                                             IntLit {
@@ -462,8 +447,8 @@ SourceFile {
                                                     file: FileId(
                                                         0,
                                                     ),
-                                                    lo: 202,
-                                                    hi: 203,
+                                                    lo: 172,
+                                                    hi: 173,
                                                 },
                                             },
                                         ],
@@ -471,8 +456,8 @@ SourceFile {
                                             file: FileId(
                                                 0,
                                             ),
-                                            lo: 195,
-                                            hi: 204,
+                                            lo: 165,
+                                            hi: 174,
                                         },
                                     },
                                 ),
@@ -480,8 +465,8 @@ SourceFile {
                                     file: FileId(
                                         0,
                                     ),
-                                    lo: 188,
-                                    hi: 205,
+                                    lo: 158,
+                                    hi: 175,
                                 },
                             },
                         ),
@@ -490,16 +475,16 @@ SourceFile {
                         file: FileId(
                             0,
                         ),
-                        lo: 182,
-                        hi: 207,
+                        lo: 152,
+                        hi: 177,
                     },
                 },
                 span: Span {
                     file: FileId(
                         0,
                     ),
-                    lo: 154,
-                    hi: 207,
+                    lo: 124,
+                    hi: 177,
                 },
             },
         ),
@@ -509,6 +494,6 @@ SourceFile {
             0,
         ),
         lo: 0,
-        hi: 208,
+        hi: 178,
     },
 }

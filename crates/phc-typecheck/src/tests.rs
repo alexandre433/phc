@@ -235,6 +235,105 @@ fn unknown_type_for_call_and_member() {
 }
 
 #[test]
+fn enum_match_covering_all_variants_passes() {
+    let typed = typed_for(
+        r#"pack a;
+           public enum Status { Ok, NotFound }
+           function classify(Status $s): int {
+               return match ($s) {
+                   Status::Ok => 0,
+                   Status::NotFound => 404,
+               };
+           }
+           function main(): void {}"#,
+    );
+    assert!(
+        typed
+            .diagnostics
+            .iter()
+            .all(|d| !d.message.contains("non-exhaustive")),
+        "got diagnostics: {:?}",
+        typed.diagnostics
+    );
+}
+
+#[test]
+fn enum_match_missing_variant_is_an_error() {
+    let typed = typed_for(
+        r#"pack a;
+           public enum Status { Ok, NotFound, Gone }
+           function classify(Status $s): int {
+               return match ($s) {
+                   Status::Ok => 0,
+                   Status::NotFound => 404,
+               };
+           }
+           function main(): void {}"#,
+    );
+    assert!(typed.diagnostics.iter().any(|d| d
+        .message
+        .contains("non-exhaustive `match` on enum `Status`")));
+}
+
+#[test]
+fn enum_match_with_wildcard_passes() {
+    let typed = typed_for(
+        r#"pack a;
+           public enum Status { Ok, NotFound, Gone }
+           function classify(Status $s): int {
+               return match ($s) {
+                   Status::Ok => 0,
+                   _ => 1,
+               };
+           }
+           function main(): void {}"#,
+    );
+    assert!(
+        typed
+            .diagnostics
+            .iter()
+            .all(|d| !d.message.contains("non-exhaustive")),
+        "got diagnostics: {:?}",
+        typed.diagnostics
+    );
+}
+
+#[test]
+fn non_enum_match_without_wildcard_is_an_error() {
+    let typed = typed_for(
+        r#"pack a;
+           function f(int $n): int {
+               return match ($n) {
+                   1 => 100,
+                   2 => 200,
+               };
+           }
+           function main(): void {}"#,
+    );
+    assert!(typed
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("a `_` wildcard arm is required")));
+}
+
+#[test]
+fn guarded_catchall_does_not_satisfy_exhaustiveness() {
+    let typed = typed_for(
+        r#"pack a;
+           function f(int $n): int {
+               return match ($n) {
+                   $x if $x > 0 => 1,
+               };
+           }
+           function main(): void {}"#,
+    );
+    assert!(typed
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("non-exhaustive")));
+}
+
+#[test]
 fn class_method_sig_collected() {
     let typed = typed_for(
         r#"pack a;
