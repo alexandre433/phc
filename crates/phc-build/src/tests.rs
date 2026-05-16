@@ -4,7 +4,7 @@
 //! without a C toolchain skips them with a printed note rather
 //! than failing.
 
-use crate::{build_file, load_session, resolve_cross_pack_uses};
+use crate::{build_file, check_pack_acyclicity, load_session, resolve_cross_pack_uses};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -201,6 +201,79 @@ fn cross_pack_grouped_use_resolves_each_name() {
     resolve_cross_pack_uses(&mut session);
     assert!(session.ok(), "diagnostics: {:?}", session.diagnostics);
     assert_eq!(session.cross_uses.len(), 2);
+}
+
+#[test]
+fn pack_acyclicity_passes_for_dag() {
+    let root = project_root("dag");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack core;\npublic function helper(): int { return 1; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app;\nuse core.helper;\nfunction main(): void {}",
+    )
+    .unwrap();
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    check_pack_acyclicity(&mut session);
+    assert!(session.ok(), "diagnostics: {:?}", session.diagnostics);
+}
+
+#[test]
+fn pack_acyclicity_detects_two_pack_cycle() {
+    let root = project_root("cycle2");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack a;\nuse b.thing;\npublic function thing(): int { return 1; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack b;\nuse a.thing;\npublic function thing(): int { return 2; }",
+    )
+    .unwrap();
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    check_pack_acyclicity(&mut session);
+    assert!(!session.ok());
+    assert!(session
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("pack import cycle")));
+}
+
+#[test]
+fn pack_acyclicity_detects_three_pack_cycle() {
+    let root = project_root("cycle3");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack a;\nuse b.x;\npublic function x(): int { return 1; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack b;\nuse c.x;\npublic function x(): int { return 2; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("c.phc"),
+        "pack c;\nuse a.x;\npublic function x(): int { return 3; }",
+    )
+    .unwrap();
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    check_pack_acyclicity(&mut session);
+    assert!(!session.ok());
+    let cycle_count = session
+        .diagnostics
+        .iter()
+        .filter(|d| d.message.contains("pack import cycle"))
+        .count();
+    // Each cycle reported at most once thanks to canonicalisation.
+    assert_eq!(cycle_count, 1);
 }
 
 #[test]

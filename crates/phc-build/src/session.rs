@@ -240,6 +240,137 @@ fn lookup(
     ))
 }
 
+/// Build the pack-level DAG from every file's `use` declarations
+/// and surface a diagnostic for each cycle. A cycle is reported
+/// once, with the participating packs joined by `→` for context.
+pub fn check_pack_acyclicity(session: &mut Session) {
+    use std::collections::BTreeSet;
+    // Adjacency: pack → set of packs it depends on.
+    let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut span_for_pair: HashMap<(String, String), Span> = HashMap::new();
+    for file in &session.files {
+        for use_decl in &file.ast.uses {
+            // Pack name is everything except the last segment for a
+            // single import; the full path for a grouped import.
+            let target_pack = match &use_decl.group {
+                Some(_) => use_decl
+                    .path
+                    .segments
+                    .iter()
+                    .map(|i| i.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("."),
+                None => {
+                    let segs = &use_decl.path.segments;
+                    if segs.len() < 2 {
+                        continue;
+                    }
+                    segs[..segs.len() - 1]
+                        .iter()
+                        .map(|i| i.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".")
+                }
+            };
+            if target_pack == file.pack {
+                continue; // self-import is a no-op, never a cycle.
+            }
+            graph
+                .entry(file.pack.clone())
+                .or_default()
+                .insert(target_pack.clone());
+            span_for_pair
+                .entry((file.pack.clone(), target_pack))
+                .or_insert(use_decl.path.span);
+        }
+    }
+    // Iterative DFS with a colour map. White = unvisited, Gray =
+    // on the current stack, Black = finished. A back-edge to a Gray
+    // node is a cycle.
+    #[derive(Copy, Clone, PartialEq)]
+    enum Color {
+        White,
+        Gray,
+        Black,
+    }
+    let mut color: BTreeMap<String, Color> = graph
+        .keys()
+        .chain(graph.values().flat_map(|s| s.iter()))
+        .map(|p| (p.clone(), Color::White))
+        .collect();
+    let mut reported: BTreeSet<Vec<String>> = BTreeSet::new();
+    fn dfs(
+        node: &str,
+        graph: &BTreeMap<String, BTreeSet<String>>,
+        color: &mut BTreeMap<String, Color>,
+        stack: &mut Vec<String>,
+        span_for_pair: &HashMap<(String, String), Span>,
+        reported: &mut BTreeSet<Vec<String>>,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        color.insert(node.to_string(), Color::Gray);
+        stack.push(node.to_string());
+        if let Some(neighbours) = graph.get(node) {
+            for next in neighbours {
+                match color.get(next).copied().unwrap_or(Color::White) {
+                    Color::White => {
+                        dfs(next, graph, color, stack, span_for_pair, reported, diags);
+                    }
+                    Color::Gray => {
+                        // Found a cycle: stack[start..] + next.
+                        if let Some(start) = stack.iter().position(|p| p == next) {
+                            let mut cycle: Vec<String> = stack[start..].to_vec();
+                            cycle.push(next.clone());
+                            // Canonicalise: rotate so smallest pack
+                            // is first, so we don't double-report
+                            // the same cycle from different starts.
+                            let mut canonical = cycle.clone();
+                            canonical.pop(); // drop trailing duplicate
+                            let min_pos = canonical
+                                .iter()
+                                .enumerate()
+                                .min_by_key(|(_, p)| p.as_str())
+                                .map(|(i, _)| i);
+                            if let Some(i) = min_pos {
+                                canonical.rotate_left(i);
+                            }
+                            if reported.insert(canonical.clone()) {
+                                let span = span_for_pair
+                                    .get(&(node.to_string(), next.clone()))
+                                    .copied()
+                                    .unwrap_or(Span::new(FileId(0), 0, 0));
+                                diags.push(Diagnostic {
+                                    severity: Severity::Error,
+                                    message: format!("pack import cycle: {}", cycle.join(" → ")),
+                                    span,
+                                });
+                            }
+                        }
+                    }
+                    Color::Black => {}
+                }
+            }
+        }
+        color.insert(node.to_string(), Color::Black);
+        stack.pop();
+    }
+    let nodes: Vec<String> = graph.keys().cloned().collect();
+    let mut stack: Vec<String> = Vec::new();
+    for start in nodes {
+        if color.get(&start).copied() == Some(Color::White) {
+            dfs(
+                &start,
+                &graph,
+                &mut color,
+                &mut stack,
+                &span_for_pair,
+                &mut reported,
+                &mut session.diagnostics,
+            );
+        }
+    }
+}
+
 fn diag_error(message: String) -> Diagnostic {
     Diagnostic {
         severity: Severity::Error,
