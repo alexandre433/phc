@@ -115,6 +115,10 @@ Amendments surfaced during Phase 2 parser work (locked 2026-05-15):
 17. D-005a — Member assignment `$obj->field = expr;` is a real Statement on any `->` chain rooted at a `$name` or `$this`, not only inside SetHook bodies. Subsumes the D-018 hook-setter exception and resolves a Phase 2 grammar gap. Bare `$x = expr;` remains illegal — `:=` (with `flip`) is still required for variable reassignment.
 18. D-006a' — Expression-position `?` is no longer deferred. Postfix `?` on a `result<T, E>` or `option<T>` value short-circuits the enclosing function with the failure / `null` case (Rust-style propagation). Type-position `T?` is unchanged.
 
+Locked during Phase 6 stdlib build-out:
+
+19. D-025 — String stdlib v0 method surface (locked 2026-05-16): camelCase methods `len/contains/startsWith/endsWith/trim/upper/lower` plus carry-over `toInt`. Byte-oriented; ASCII case fold; `==` / `!=` on `string` lower to `phc_str_eq`. Multi-byte / Unicode-aware variants deferred.
+
 ---
 
 ## Resolved this phase
@@ -645,3 +649,57 @@ Amendments surfaced during Phase 2 parser work (locked 2026-05-15):
 - **Follow-ups**:
   - `static` keyword for static methods / class constants: deferred to a later edition once user code exposes the need.
   - Optional chaining (`?->`): deferred.
+
+### D-025 — String stdlib method surface (v0)
+- **Decision**: `string` carries a fixed v0 method surface, dispatched
+  via `->` like any instance method (D-023). All names are
+  **camelCase** to match the existing `$str->toInt()` builtin.
+  **Byte-oriented**: `len()` and the substring scan methods operate
+  on UTF-8 bytes, not code points; `upper()`/`lower()` apply ASCII
+  case fold only. Multi-byte-aware variants (`charLen`, full
+  Unicode case fold) land when the runtime grows real Unicode
+  tables and are explicitly out of scope for v0.
+
+  | Method | Signature | Notes |
+  |--------|-----------|-------|
+  | `len` | `(): int` | Length in bytes. |
+  | `contains` | `(string): bool` | Substring containment. |
+  | `startsWith` | `(string): bool` | Prefix check. |
+  | `endsWith` | `(string): bool` | Suffix check. |
+  | `trim` | `(): string` | Strip ASCII whitespace from both ends; returns a fresh owned string. |
+  | `upper` | `(): string` | ASCII case fold. |
+  | `lower` | `(): string` | ASCII case fold. |
+  | `toInt` | `(): result<int, parseError>` | Existing builtin (carried over). |
+
+  String equality (`==`, `!=`) is **byte-wise** and added in the
+  same slice; the codegen lowers both operands typed `string` to
+  the runtime's `phc_str_eq` helper.
+- **Alternatives considered**: snake_case method names (`starts_with`,
+  consistent with the C runtime layer but inconsistent with `toInt`);
+  free-function form (`string::len($s)`) instead of methods; PCRE-
+  style chained predicates; deferring strings until full Unicode
+  support is in.
+- **Rationale**: A small fixed surface unblocks every realistic v0
+  program (validation, simple parsing, log message construction)
+  without committing to a Unicode model. CamelCase matches the
+  existing `toInt` and the broader `$obj->method()` convention.
+  ASCII-only fold keeps the runtime self-contained — the entire
+  set lives in ~80 lines of C.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; UTF-8 / Unicode follow-ups
+  tracked separately.
+- **Implied sub-decisions**:
+  - `string == string` is byte-wise. Locale-aware or
+    case-insensitive comparison is **not** in scope; it would be a
+    later method (e.g. `equalsIgnoreCase`) or a full collator.
+  - All methods that return a `string` allocate a fresh buffer
+    (the runtime does not reuse the input). This matches D-004's
+    CoW intent today; reference-counted sharing lands when the
+    runtime grows it.
+  - Concatenation (`+`) is unchanged (D-019 / D-022): both
+    operands typed `string` already lower to `phc_concat2`.
+- **Open follow-ups**:
+  - `split(string)` — produces `list<string>`. Blocked on the
+    `list<T>` collection type.
+  - `replace`, `indexOf`, `slice`, code-point-iteration methods.
+  - Full Unicode case fold and grapheme-cluster `len`.

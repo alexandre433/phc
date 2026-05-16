@@ -222,6 +222,66 @@ function main(): void {
     );
 }
 
+/// Build + run a program that exercises every D-025 string
+/// method end-to-end. Each branch logs a sentinel only when its
+/// method returned the expected value, so the test asserts on
+/// presence of every sentinel.
+#[test]
+fn build_and_run_string_methods_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_string_methods_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    string $s = "  Hello, PHC!  ";
+    string $t = $s->trim();
+    if ($t->len() == 11) { Logger::info("len ok"); }
+    if ($t->contains("PHC")) { Logger::info("contains ok"); }
+    if ($t->startsWith("Hello")) { Logger::info("starts ok"); }
+    if ($t->endsWith("PHC!")) { Logger::info("ends ok"); }
+    string $u = $t->upper();
+    if ($u == "HELLO, PHC!") { Logger::info("upper ok"); }
+    string $l = $t->lower();
+    if ($l == "hello, phc!") { Logger::info("lower ok"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("string_methods_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("string_methods_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in [
+        "len ok",
+        "contains ok",
+        "starts ok",
+        "ends ok",
+        "upper ok",
+        "lower ok",
+    ] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

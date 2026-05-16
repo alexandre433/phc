@@ -638,10 +638,12 @@ impl<'a> Interp<'a> {
         } = callee
         {
             let recv = self.eval_expr(receiver, env)?;
-            // Builtin method on a string: `$str->toInt()`.
+            // Builtin method on a string: `$str->toInt()` plus the
+            // D-025 stdlib surface (len/contains/starts/ends/trim/
+            // upper/lower).
             if let Value::String(s) = &recv {
-                if field.name == "toInt" && args.is_empty() {
-                    return Ok(string_to_int(s));
+                if let Some(value) = self.try_eval_string_method(s, &field.name, args, env)? {
+                    return Ok(value);
                 }
             }
             return self.invoke_method(recv, &field.name, args, env);
@@ -778,6 +780,98 @@ impl<'a> Interp<'a> {
                 Ok(Some(Value::ResultOk(Box::new(Value::String(format!(
                     "<bytes from {url}>"
                 ))))))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// D-025 + the prior `toInt` builtin. Returns `Ok(Some(value))`
+    /// when the method matched, `Ok(None)` so the caller falls
+    /// through to the general method dispatch path.
+    fn try_eval_string_method(
+        &mut self,
+        s: &str,
+        method: &str,
+        args: &[Expr],
+        env: &mut Env,
+    ) -> EvalResult<Option<Value>> {
+        // toInt is the legacy builtin; keep it on the same path so
+        // there is one place that owns string-method dispatch.
+        if method == "toInt" && args.is_empty() {
+            return Ok(Some(string_to_int(s)));
+        }
+        let arity_check = |expected: usize| -> EvalResult<()> {
+            if args.len() != expected {
+                return Err(rt(format!(
+                    "string method `{method}` takes {expected} argument(s), got {}",
+                    args.len()
+                )));
+            }
+            Ok(())
+        };
+        let needle_arg = |this: &mut Self, env: &mut Env| -> EvalResult<String> {
+            let v = this.eval_expr(&args[0], env)?;
+            match v {
+                Value::String(s) => Ok(s),
+                other => Err(rt(format!(
+                    "string method `{method}` expects a `string` argument, got `{}`",
+                    other.display()
+                ))),
+            }
+        };
+        match method {
+            "len" => {
+                arity_check(0)?;
+                Ok(Some(Value::Int(s.len() as i64)))
+            }
+            "contains" => {
+                arity_check(1)?;
+                let needle = needle_arg(self, env)?;
+                Ok(Some(Value::Bool(s.contains(&needle))))
+            }
+            "startsWith" => {
+                arity_check(1)?;
+                let prefix = needle_arg(self, env)?;
+                Ok(Some(Value::Bool(s.starts_with(&prefix))))
+            }
+            "endsWith" => {
+                arity_check(1)?;
+                let suffix = needle_arg(self, env)?;
+                Ok(Some(Value::Bool(s.ends_with(&suffix))))
+            }
+            "trim" => {
+                arity_check(0)?;
+                Ok(Some(Value::String(s.trim().to_string())))
+            }
+            "upper" => {
+                arity_check(0)?;
+                // ASCII-only fold to match the C runtime; Unicode
+                // case folding lands when the runtime grows it.
+                let out: String = s
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_lowercase() {
+                            c.to_ascii_uppercase()
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+                Ok(Some(Value::String(out)))
+            }
+            "lower" => {
+                arity_check(0)?;
+                let out: String = s
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_uppercase() {
+                            c.to_ascii_lowercase()
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+                Ok(Some(Value::String(out)))
             }
             _ => Ok(None),
         }

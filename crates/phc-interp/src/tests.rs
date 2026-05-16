@@ -640,3 +640,30 @@ fn hello_phc_example_runs_end_to_end() {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["Hello, PHC!"]);
 }
+
+#[test]
+fn string_methods_d025_run_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    string $s = "  Hello, PHC!  ";
+    string $t = $s->trim();
+    if ($t->len() == 11) { Logger::info("len ok"); }
+    if ($t->contains("PHC")) { Logger::info("contains ok"); }
+    if ($t->startsWith("Hello")) { Logger::info("starts ok"); }
+    if ($t->endsWith("PHC!")) { Logger::info("ends ok"); }
+    if ($t->upper() == "HELLO, PHC!") { Logger::info("upper ok"); }
+    if ($t->lower() == "hello, phc!") { Logger::info("lower ok"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let expected = vec![
+        "len ok".to_string(),
+        "contains ok".to_string(),
+        "starts ok".to_string(),
+        "ends ok".to_string(),
+        "upper ok".to_string(),
+        "lower ok".to_string(),
+    ];
+    assert_eq!(out.stdout, expected);
+}

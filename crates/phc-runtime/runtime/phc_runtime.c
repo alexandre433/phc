@@ -102,3 +102,64 @@ phc_string phc_to_string_id(phc_string s) {
      * lands when the runtime grows real CoW. */
     return s;
 }
+
+/* ===== String stdlib (D-025) ===== */
+
+bool phc_str_eq(phc_string a, phc_string b) {
+    if (a.len != b.len) return false;
+    if (a.len == 0) return true;
+    return memcmp(a.data, b.data, a.len) == 0;
+}
+
+int64_t phc_str_len(phc_string s) {
+    return (int64_t)s.len;
+}
+
+bool phc_str_contains(phc_string s, phc_string needle) {
+    if (needle.len == 0) return true;
+    if (needle.len > s.len) return false;
+    for (size_t i = 0; i + needle.len <= s.len; ++i) {
+        if (memcmp(s.data + i, needle.data, needle.len) == 0) return true;
+    }
+    return false;
+}
+
+bool phc_str_starts_with(phc_string s, phc_string prefix) {
+    if (prefix.len > s.len) return false;
+    return memcmp(s.data, prefix.data, prefix.len) == 0;
+}
+
+bool phc_str_ends_with(phc_string s, phc_string suffix) {
+    if (suffix.len > s.len) return false;
+    return memcmp(s.data + (s.len - suffix.len), suffix.data, suffix.len) == 0;
+}
+
+static int phc_is_ws(unsigned char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+phc_string phc_str_trim(phc_string s) {
+    size_t lo = 0;
+    while (lo < s.len && phc_is_ws((unsigned char)s.data[lo])) ++lo;
+    size_t hi = s.len;
+    while (hi > lo && phc_is_ws((unsigned char)s.data[hi - 1])) --hi;
+    return phc_string_owned(s.data + lo, hi - lo);
+}
+
+phc_string phc_str_upper(phc_string s) {
+    phc_string out = phc_string_owned(s.data, s.len);
+    for (size_t i = 0; i < out.len; ++i) {
+        unsigned char c = (unsigned char)out.data[i];
+        if (c >= 'a' && c <= 'z') out.data[i] = (char)(c - 32);
+    }
+    return out;
+}
+
+phc_string phc_str_lower(phc_string s) {
+    phc_string out = phc_string_owned(s.data, s.len);
+    for (size_t i = 0; i < out.len; ++i) {
+        unsigned char c = (unsigned char)out.data[i];
+        if (c >= 'A' && c <= 'Z') out.data[i] = (char)(c + 32);
+    }
+    return out;
+}

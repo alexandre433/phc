@@ -83,6 +83,20 @@ void* phc_alloc(size_t size);
 /* === String ops === */
 phc_string phc_concat2(phc_string a, phc_string b);
 
+/* === String stdlib (D-025) ===
+ * v0 surface: byte-oriented, ASCII-correct case fold + trim.
+ * Multi-byte UTF-8 awareness lands when the runtime grows real
+ * Unicode tables (deferred). Every method that returns a `phc_string`
+ * allocates a fresh buffer; the caller owns it. */
+bool       phc_str_eq(phc_string a, phc_string b);
+int64_t    phc_str_len(phc_string s);
+bool       phc_str_contains(phc_string s, phc_string needle);
+bool       phc_str_starts_with(phc_string s, phc_string prefix);
+bool       phc_str_ends_with(phc_string s, phc_string suffix);
+phc_string phc_str_trim(phc_string s);
+phc_string phc_str_upper(phc_string s);
+phc_string phc_str_lower(phc_string s);
+
 /* === Conversion to phc_string === */
 phc_string phc_to_string_int64(int64_t v);
 phc_string phc_to_string_double(double v);

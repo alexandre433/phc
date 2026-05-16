@@ -1067,8 +1067,18 @@ impl<'a> Emitter<'a> {
             BinOp::Le => "<=",
             BinOp::Gt => ">",
             BinOp::Ge => ">=",
-            BinOp::Eq => "==",
-            BinOp::Neq => "!=",
+            BinOp::Eq => {
+                if both_string {
+                    return format!("phc_str_eq({lhs_c}, {rhs_c})");
+                }
+                "=="
+            }
+            BinOp::Neq => {
+                if both_string {
+                    return format!("(!phc_str_eq({lhs_c}, {rhs_c}))");
+                }
+                "!="
+            }
             BinOp::And => "&&",
             BinOp::Or => "||",
             BinOp::NullCoalesce => {
@@ -1136,6 +1146,19 @@ impl<'a> Emitter<'a> {
             receiver, field, ..
         } = callee
         {
+            // Stdlib string methods (D-025): when the receiver's
+            // static type is `string`, route to the dedicated
+            // runtime function. Lookup happens before class
+            // dispatch so a user-defined `string` symbol can never
+            // shadow these.
+            if matches!(
+                self.typed.expr_types.get(&span_of_expr(receiver)),
+                Some(Ty::Primitive(Primitive::String))
+            ) {
+                if let Some(snippet) = self.try_emit_string_method(receiver, &field.name, args) {
+                    return snippet;
+                }
+            }
             let recv_c = self.emit_expr(receiver);
             // Look up class name via the receiver's typed Ty.
             let class = self.class_of_expr(receiver);
@@ -1172,6 +1195,40 @@ impl<'a> Emitter<'a> {
             "call form not yet supported by the C emitter",
         );
         "phc_panic(\"codegen TODO call\")".into()
+    }
+
+    /// Emit a stdlib string method call (D-025). Returns None when
+    /// `method` is not in the v0 surface so the regular dispatch
+    /// path falls through to a "method not found" diagnostic.
+    fn try_emit_string_method(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+    ) -> Option<String> {
+        let recv_c = self.emit_expr(receiver);
+        let arg_src: Vec<String> = args.iter().map(|a| self.emit_expr(a)).collect();
+        let (cfn, arity) = match method {
+            "len" => ("phc_str_len", 0),
+            "contains" => ("phc_str_contains", 1),
+            "startsWith" => ("phc_str_starts_with", 1),
+            "endsWith" => ("phc_str_ends_with", 1),
+            "trim" => ("phc_str_trim", 0),
+            "upper" => ("phc_str_upper", 0),
+            "lower" => ("phc_str_lower", 0),
+            _ => return None,
+        };
+        if args.len() != arity {
+            let msg = format!(
+                "string method `{method}` takes {arity} argument(s), got {}",
+                args.len()
+            );
+            self.diag(span_of_expr(receiver), &msg);
+            return Some("phc_panic(\"string method arity\")".to_string());
+        }
+        let mut all = vec![recv_c];
+        all.extend(arg_src);
+        Some(format!("{cfn}({})", all.join(", ")))
     }
 
     /// Emit `result::ok / err / option::some` constructor calls.
