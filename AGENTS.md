@@ -15,15 +15,14 @@ PHC is a new compiled programming language focused on:
 
 The compiler and toolchain are written in **Rust**.
 
-This repository is currently in the design and scaffolding stage.
-The repo already contains a Rust workspace skeleton with crate placeholders for each major compiler/toolchain subsystem.
+This repository is **mid-implementation** as of 2026-05-16. Phase 1 (formal spec) is locked. Phases 2 / 3 / 5 / 6 / 8 / 9 have shipped MVP slices — see [`spec/README.md`](./spec/README.md) for the current per-phase status. The Rust workspace's crate stubs have been filled in for every phase listed there; `phc-codegen` emits portable C11 today (LLVM/inkwell deferred).
 
 ## Canonical sources
 
 Use the following precedence when deciding what is true:
 
 1. User instructions in the current conversation
-2. Files in `spec/` — canonical design source as of 2026-05-11 (Phase 1 complete)
+2. Files in `spec/` — canonical design source. Phase 1 locked 2026-05-11; amendments since (D-023 sigils; D-024 fn-types; D-025 strings; D-026 result/option; D-027 list; D-028 map; D-005 aliasing extension; D-021 v0a) are recorded in `spec/design-decisions.md`'s decision list
 3. GitHub issue `#1` — historical context only; `spec/` overrides on any conflict
 4. Child phase issues `#2–#11` — implementation roadmap and scope per phase
 5. Issue `#12` — post-v0 roadmap
@@ -98,12 +97,13 @@ These decisions are already locked unless the user explicitly changes them.
 
 ## What is still open
 
-Phase 1 resolved every syntax item from issue #1's open checklist (see `spec/design-decisions.md`, D-008…D-020). The remaining provisional items are:
+Phase 1 resolved every syntax item from issue #1's open checklist (see `spec/design-decisions.md`, D-008…D-020). Implementation since has added D-023 (sigils) and D-024…D-028 (function types + first stdlib slices). The following surfaces remain open and should not be silently expanded:
 
-- **D-021 — Test syntax** (provisional; finalised in Phase 9 / issue #10)
-- **D-022 — Standard library core surface** (provisional; finalised in Phase 6 / issue #7)
-- **Formatter, linter, LSP details** — Phase 8 (issue #9)
-- **Lockfile, workspaces, features** — Phase 7 (issue #8)
+- **D-021 — Test syntax** — v0a (`phc test`, file-level discovery, interp runner) shipped 2026-05-16. Assertion helpers, cross-file project discovery, filtering, parallel execution remain Phase 9 follow-ups.
+- **D-022 — Standard library core surface** — v0a slices D-025 (string), D-026 (result/option methods), D-027 (`list<T>`), D-028 (`map<string, V>`) cut concrete pieces. The broader surface (`display`, `from`/`into`, `taskGroup`, `set<T>`, generic-key maps, hash-based storage) is still Phase 6.
+- **Formatter, linter** — Phase 8 (issue #9). LSP minimal shipped 2026-05-16 (`phc lsp`).
+- **Lockfile, workspaces, features** — Phase 7 (issue #8).
+- **Borrowcheck follow-ups** — aliasing across statements, lifetime / outlives reasoning, lambda capture-mode beyond `:=` enforcement.
 
 When extending these, record the decision in `spec/design-decisions.md` and update `spec/grammar.ebnf` / `spec/language-reference.md` accordingly. Reflect material changes in `CLAUDE.md` and this file too.
 

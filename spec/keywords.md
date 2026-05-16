@@ -15,6 +15,7 @@ Canonical list. Lexer and formatter consume this directly.
 | `null`  | Null literal (only valid for `T?`) | D-006 |
 | `public` | Cross-pack visibility marker | D-008 |
 | `function` | Function declaration | D-009 |
+| `fn` | Function-type heading (`fn(T, U): R`) | D-024 |
 | `return` | Yield a value from a function | D-009 |
 | `void` | Primitive type for no-value return | D-010 / D-022 |
 | `pack` | Pack declaration at top of source file | D-011 |

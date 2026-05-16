@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-PHC is a new compiled programming language (PHP ergonomics, C speed, Rust memory safety). Compiler and toolchain written in Rust. Currently in design and scaffolding phase.
+PHC is a new compiled programming language (PHP ergonomics, C speed, Rust memory safety). Compiler and toolchain written in Rust. Currently mid-implementation: Phase 1 specs locked, Phases 2/3/5/6/8/9 have shipped MVP slices (see `spec/README.md` for status).
 
 ## Build Commands
 
@@ -33,8 +33,8 @@ Crate responsibilities:
 - `phc-ir` — intermediate representation
 - `phc-lower` — AST → IR lowering
 - `phc-opt` — optimization passes
-- `phc-codegen` — LLVM codegen (inkwell)
-- `phc-runtime` — async, CoW, panic support
+- `phc-codegen` — AST → C source emitter (today). LLVM/inkwell path deferred.
+- `phc-runtime` — strings, lists, maps, result/option, lambdas, panic. C runtime is generated alongside each compiled binary; LLVM/inkwell path is reserved for the future.
 - `phc-build` — build system (pack-level caching, parallel compilation)
 - `phc-pkg` — package manager
 - `phc-fmt` — formatter
@@ -63,13 +63,20 @@ Do not contradict these unless the user explicitly changes them:
 - **Mutability**: immutable by default; `flip` keyword for mutable bindings; `:=` for reassignment; `&name` shared borrow, `&flip name` mutable borrow
 - **Types**: static by default; `dyn` for explicit dynamic opt-in; non-nullable by default; `?` for nullable
 - **Errors**: Result-style for domain failures; exceptions/panics only for unrecoverable faults
+- **Function types** (D-024): `fn(T1, T2, ...): R`. New `fn` keyword. Lambdas can be stored, passed, returned via this type.
+- **Stdlib v0a** (Phase 6 partial): string methods (D-025), `list<T>` (D-027), `map<string, V>` (D-028), Result/Option ergonomic methods (D-026). Collections use **reference semantics** (handle-shared mutation), explicitly diverging from D-022's CoW intent until refcounts ship — see [`spec/design-decisions.md`](spec/design-decisions.md) D-027 for the carve-out.
+- **Borrow check** (Phase 3 MVP): `:=`/`flip` enforcement, member-assign rule with constructor carve-out, `&flip` on flip-only, per-call aliasing.
+- **Test framework** (Phase 9 v0a, D-021): `phc test <file>` discovers and runs `test "name" { ... }` blocks via the interpreter.
+- **LSP** (Phase 8 minimal): `phc lsp` runs a tower-lsp server over stdio with diagnostics + hover types.
 
 ## Still Open — Do Not Invent
 
-Phase 1 closed every syntax decision listed in issue #1's checklist (see `spec/design-decisions.md`, D-008…D-020). Only the following remain provisional and must not be silently expanded:
+Phase 1 closed every syntax decision in issue #1's checklist (see `spec/design-decisions.md`, D-008…D-020). Implementation since has added D-023…D-028. The following surfaces remain open and must not be silently expanded:
 
-- D-021 — Test syntax. Locked enough to reserve the `test` keyword; full surface is Phase 9 work.
-- D-022 — Standard library core surface. Primitive widths, collection method surfaces, `Result`/`Option`/`Display`/`From`/`Into` shapes are Phase 6 work.
+- **D-021** — Test framework full surface. v0a (`test "name" { ... }` discovery + interp runner) shipped 2026-05-16; assertion helpers, cross-file discovery, filtering, parallel execution are Phase 9 follow-ups.
+- **D-022** — Stdlib core surface. v0a slices D-025 / D-026 / D-027 / D-028 cut concrete pieces; the broader surface (`display`, `from`/`into`, `taskGroup`, full primitive method tables, `set<T>`, generic-key maps, hash-based storage) is Phase 6 work.
+- **Borrowcheck follow-ups**: aliasing across statements, lifetime / outlives reasoning, lambda capture-mode inference beyond what `:=` already enforces.
+- **Codegen follow-ups**: LLVM/inkwell backend (today is C-emit only); `Ty::Function` enum refactor; generic function types.
 
 Any syntax decision not yet recorded in `spec/`: ask, or offer 2–4 concrete options.
 

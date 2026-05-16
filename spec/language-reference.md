@@ -56,7 +56,21 @@ Static typing by default (D-006). Dynamic types are opt-in via `dyn`.
 ### 2.4 Nullability
 Types are non-nullable by default. A nullable type is written `T?`. `null` is the only valid value for a `T?` that is empty.
 
-### 2.5 Generics (D-014)
+### 2.5 Function types (D-024)
+A function type is written `fn(<ParamType>, ...): <ReturnType>`. The `fn` keyword heads the type; the colon-then-return-type form mirrors function declarations (D-009) and lambdas (D-016).
+
+```phc
+fn(int, int): int $add = (int $a, int $b): int => $a + $b;
+fn(string, &flip User): result<int, AuthError> $loginCallback;
+fn(): void $tick;
+```
+
+- Empty parameter lists are allowed: `fn(): R`.
+- `?`-suffix at the outermost position marks the **carrier** as nullable: a `fn(int): int? $cb` may be `null`. (Whether the *return* is nullable is part of the inner type — `fn(int): int?` means "a function returning `int?`".)
+- Borrow modifiers in parameter slots (`fn(&User): bool`) parse in v0; lambda-side capture-mode + parameter borrow enforcement land alongside the borrowcheck aliasing slice.
+- Generic function types (`fn<T>(T): T`) are deferred — the call-site inference work overlaps with D-014.
+
+### 2.6 Generics (D-014)
 - Type parameters are listed in angle brackets at the declaration: `function max<T: Ord>(T $a, T $b): T`.
 - Bounds appear inline after `:`. Multiple bounds combine with `+`: `<T: Ord + display>`.
 - **Call sites never pass type arguments.** All generic arguments are inferred from call/expression context: `max(3, 7)`.
@@ -97,6 +111,17 @@ Object-field write uses `=`: `$this->createdAt = instant::now();`, `$user->profi
 
 ### 3.4 Banned operators
 Bitwise assignment operators (`^=`, `&=`, `|=`, etc.) do not exist (D-005).
+
+### 3.5 Borrow checking (Phase 3 MVP, locked 2026-05-16)
+The borrow checker enforces three rules from D-005 / D-005a / D-018:
+
+- **Rule (a)** `:=` reassign LHS must be a `flip` binding.
+- **Rule (b)** `$obj->field = expr;` is legal only when the target field is `flip`. Carve-out: inside a `construct(...)` body, `$this->field = expr;` is initialisation and is allowed even on a non-flip field (D-012).
+- **Rule (c)** `&flip $x` mutable borrow requires `$x` to be `flip`.
+
+Plus the **per-call aliasing rule** (decision-list entry 23, locked 2026-05-16): within a single call's arg list, no two borrows of the same root binding may both be mutable, and a mutable borrow cannot coexist with any other borrow of the same root.
+
+Out of scope for the MVP and explicitly tracked as follow-ups: aliasing across statements, lifetime / outlives reasoning, lambda capture-mode inference beyond what rule (a) already enforces.
 
 ## 4. Ownership, lifetimes, and copy-on-write
 - Memory safety via ownership and borrowing.
@@ -374,21 +399,68 @@ PHC v0 has two visibility levels:
 - Conversion failures follow D-019: `as` is for proven-total casts only; fallible conversions return `result<T, E>` or `T?` via methods.
 - **Postfix `?` propagation (D-006a', 2026-05-15)**: a trailing `?` after any expression of type `result<T, E>` or `option<T>` short-circuits the enclosing function with the failure case (`return result::err(e);` / `return option::none;`) and otherwise yields the success payload. Sits at the tightest precedence level alongside `->`, `::`, `()`, `[]`. The enclosing function's return type must be compatible.
 
-## 13. Standard prelude (provisional, D-022)
-The complete prelude is owned by Phase 6. Names referenced elsewhere in this document:
+## 13. Standard prelude (D-022 provisional, with v0a slices below)
+The complete prelude is owned by Phase 6. Names referenced elsewhere in this document, plus the surfaces locked so far:
 
-- **Primitives**: `int`, `float`, `byte`, `bytes`, `bool`, `string`, `void`. Polymorphic-storage rules in §2.2.
-- **Collections** (CoW): `list<T>`, `map<K, V>`, `set<T>`. `array<T>` is an alias for `list<T>`.
-- **Errors**: `result<T, E>`. `T?` covers the optional case; an explicit `option<T>` remains open.
-- **Formatting**: `display`-shaped trait drives string interpolation.
-- **Conversion**: `from<T>` / `into<T>` shape backs `as` and `.toX()` methods.
-- **Async**: `taskGroup`, structured concurrency primitives.
+### 13.1 Primitives
+`int`, `float`, `byte`, `bytes`, `bool`, `string`, `void`. Polymorphic-storage rules in §2.2.
 
-## 14. Tests (provisional, D-021)
-Tests are declared in any source file with the `test` keyword. Phase 9 finalises the runtime contract. Example:
+### 13.2 Strings (D-025, locked 2026-05-16)
+camelCase methods on `string`, byte-oriented, ASCII case fold:
+
+| Method | Signature |
+|--------|-----------|
+| `len` | `(): int` |
+| `contains` | `(string): bool` |
+| `startsWith` | `(string): bool` |
+| `endsWith` | `(string): bool` |
+| `trim` | `(): string` |
+| `upper` | `(): string` |
+| `lower` | `(): string` |
+| `toInt` | `(): result<int, parseError>` |
+
+`string == string` and `!=` are byte-wise.
+
+### 13.3 Collections — `list<T>` (D-027 v0a, locked 2026-05-16)
+- Construct with `list()`; element type from the binding annotation.
+- Methods: `len(): int`, `push(T): void`, `at(int): T` (panics on out-of-bounds).
+- Indexing: `$xs[i]` is sugar for `$xs->at(i)`.
+- Iteration: `for (T $x in $xs) { ... }`.
+- **Reference semantics in v0a** — handle is shared between bindings; mutation through method calls is allowed regardless of the handle's `flip`. CoW (per D-022) lands when the runtime grows refcounts.
+
+### 13.4 Collections — `map<string, V>` (D-028 v0a, locked 2026-05-16)
+- Construct with `map()`; value type from the binding annotation. **String keys only in v0a.**
+- Methods: `len(): int`, `has(string): bool`, `get(string): option<V>`, `set(string, V): void`.
+- Same reference semantics as `list<T>`.
+- `set<T>` and generic-key `map` deferred.
+
+### 13.5 Result / Option (D-026, locked 2026-05-16)
+- `result<T, E>` methods: `isOk(): bool`, `isErr(): bool`, `unwrapOr(T): T`.
+- `option<T>` methods: `isSome(): bool`, `isNone(): bool`, `unwrapOr(T): T`, `orElse(option<T>): option<T>`.
+- `result::ok(v)`, `result::err(e)`, `option::some(v)`, `option::none` constructors.
+- Postfix `?` propagation works on both (D-006a').
+- `map / andThen / unwrap / okOr` deferred (closure forms wait on D-024 → now unblocked, will land as a follow-up slice).
+
+### 13.6 Function values (D-024, locked 2026-05-16)
+Lambdas may now be stored, passed, and returned via the `fn(...): R` type (§2.5).
+
+### 13.7 Pending surfaces
+- Formatting: `display`-shaped trait drives string interpolation. Not yet implemented end-to-end.
+- Conversion: `from<T>` / `into<T>` shape backs `as` and `.toX()` methods. Not yet implemented.
+- Async: `taskGroup`, structured concurrency primitives. Not yet implemented.
+- Stdlib I/O surface (`Logger::info` is a placeholder builtin): real `print` / `eprint` / `readLine` deferred.
+
+## 14. Tests (D-021 v0a, Phase 9 MVP, locked 2026-05-16)
+Tests are declared at file top-level with the `test` keyword:
 
 ```phc
 test "addition is commutative" {
-    assert::eq(add(2, 3), add(3, 2));
+    int $a = add(2, 3);
+    int $b = add(3, 2);
+    if ($a != $b) { panic("commutativity failed"); }
 }
 ```
+
+A test passes when its body completes without a runtime error; any panic or `?` propagation that escapes the body is a failure. Run via `phc test <file>` — sequential execution, per-test stdout capture, exit non-zero on any failure or pipeline diagnostic.
+
+Out of scope for v0a: dedicated assertion helpers (`assert::eq`, etc.), cross-file project discovery, filtering, parallel execution.

@@ -12,7 +12,21 @@
 
 ## Status
 
-PHC is in early design and scaffolding phase. See [issue #1](https://github.com/alexandre433/phc/issues/1) for all locked language design decisions and the open decisions still being resolved.
+Mid-implementation. Phase 1 (formal spec) is locked; Phases 2 / 3 / 5 / 6 / 8 / 9 have shipped MVP slices since.
+
+Today you can:
+- Compile a `.phc` source to a native binary (`phc build <file>` → `cc` → ELF/PE).
+- Run a `.phc` source through a tree-walking interpreter (`phc run <file>`).
+- Run tests in a `.phc` source (`phc test <file>` discovers `test "name" { ... }` blocks).
+- Get diagnostics + hover types in any LSP-speaking editor (`phc lsp` over stdio).
+
+Implemented language surface (compiled and interpreted in lockstep):
+- Functions, classes (with `construct`, methods, fields, hooks), enums, interfaces, traits.
+- Pattern `match` with exhaustiveness; lambdas (inline + stored via `fn(...): R` types per D-024).
+- Mutability + borrows enforced (D-005 / D-005a / D-018, plus per-call aliasing).
+- Stdlib v0a: string methods (D-025), `list<T>` with indexing + `for` (D-027), `map<string, V>` (D-028), Result/Option ergonomic methods (D-026), postfix `?` propagation.
+
+See [`spec/`](./spec/) for canonical decisions and [`spec/design-decisions.md`](./spec/design-decisions.md) for the full list (D-001…D-028 plus amendments).
 
 ## Roadmap
 
@@ -59,7 +73,7 @@ phc/
 ## Built With
 
 - [Rust](https://www.rust-lang.org/)
-- [LLVM](https://llvm.org/) (via `inkwell`)
+- A C compiler (`cc` / `gcc` / `clang`) — codegen emits portable C11 today; LLVM/inkwell path reserved for later.
 - [logos](https://github.com/maciejhirsz/logos) — fast lexer
 - [miette](https://github.com/zkat/miette) — rich diagnostics
 - [tower-lsp](https://github.com/ebkalderon/tower-lsp) — LSP server

@@ -49,7 +49,9 @@ Dot            = "." ;        (* path separator only (D-023) *)
 
 (* ===== Types ===== *)
 
-Type            = TypePath [ TypeArgs ] [ Nullable ] ;
+Type            = FunctionType | NamedType ;
+NamedType       = TypePath [ TypeArgs ] [ Nullable ] ;
+FunctionType    = "fn" "(" [ Type { "," Type } ] ")" ":" Type [ Nullable ] ;
 TypePath        = Identifier { "." Identifier } ;
 TypeArgs        = "<" Type { "," Type } ">" ;
 
