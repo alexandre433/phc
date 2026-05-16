@@ -18,6 +18,7 @@ fn type_ref(path: &[&str], args: Vec<TypeRef>, nullable: bool) -> TypeRef {
         path: path.iter().map(|s| ident(s)).collect(),
         args,
         nullable,
+        fn_return: None,
         span: Span::new(FileId(0), 0, 0),
     }
 }

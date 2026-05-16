@@ -762,3 +762,26 @@ function main(): void {
         ]
     );
 }
+
+#[test]
+fn d024_fn_type_stored_lambda_invocation() {
+    // Lambdas now have a type — bind, pass through, return,
+    // invoke. Interp side has no new code (Value::Lambda already
+    // exists); test mostly guards that parse + typecheck + interp
+    // accept the new `fn(...): R` annotation shape.
+    let src = r#"pack demo;
+function main(): void {
+    fn(int): int $double = (int $n): int => $n * 2;
+    int $r = $double(7);
+    if ($r == 14) { Logger::info("stored lambda call"); }
+    fn(int, int): int $add = (int $a, int $b): int => $a + $b;
+    if ($add(20, 22) == 42) { Logger::info("two-arg call"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(
+        out.stdout,
+        vec!["stored lambda call".to_string(), "two-arg call".to_string()]
+    );
+}

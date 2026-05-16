@@ -22,6 +22,10 @@ use crate::Cursor;
 /// missing leading identifier; partial recovery on the inner
 /// `TypeArgs` still surfaces a usable `TypeRef`.
 pub(crate) fn parse_type(cursor: &mut Cursor<'_>) -> Option<TypeRef> {
+    // D-024 function type: `fn(T, U): R`.
+    if matches!(cursor.peek_token(), Some(Token::Fn)) {
+        return parse_fn_type(cursor);
+    }
     let path = parse_type_path(cursor)?;
     let lo = path.first().map(|s| s.span.lo).expect("non-empty path");
     let mut hi = path.last().map(|s| s.span.hi).expect("non-empty path");
@@ -48,7 +52,49 @@ pub(crate) fn parse_type(cursor: &mut Cursor<'_>) -> Option<TypeRef> {
         path,
         args,
         nullable,
+        fn_return: None,
         span: Span::new(cursor.file(), lo, hi),
+    })
+}
+
+/// Parse a function type starting at the `fn` keyword (D-024).
+/// Shape: `fn(T1, T2, ...): R`. Empty param list is allowed
+/// (`fn(): R`). Borrow modifiers in params land alongside the
+/// borrowcheck capture-mode work (task #62); v0 accepts any
+/// bare `Type` per parameter slot.
+fn parse_fn_type(cursor: &mut Cursor<'_>) -> Option<TypeRef> {
+    let fn_kw = cursor.expect(&Token::Fn, "`fn`").ok()?;
+    cursor.expect(&Token::LParen, "`(` after `fn`").ok()?;
+    let mut params = Vec::new();
+    if !matches!(cursor.peek_token(), Some(Token::RParen)) {
+        params.push(parse_type(cursor)?);
+        while matches!(cursor.peek_token(), Some(Token::Comma)) {
+            cursor.advance();
+            if matches!(cursor.peek_token(), Some(Token::RParen)) {
+                break;
+            }
+            params.push(parse_type(cursor)?);
+        }
+    }
+    cursor.expect(&Token::RParen, "`)`").ok()?;
+    cursor.expect(&Token::Colon, "`:` after `fn(...)`").ok()?;
+    let ret = parse_type(cursor)?;
+    let hi = ret.span.hi;
+    let nullable = if matches!(cursor.peek_token(), Some(Token::Question)) {
+        cursor.advance();
+        true
+    } else {
+        false
+    };
+    Some(TypeRef {
+        path: vec![Ident {
+            name: "fn".to_string(),
+            span: fn_kw,
+        }],
+        args: params,
+        nullable,
+        fn_return: Some(Box::new(ret)),
+        span: Span::new(cursor.file(), fn_kw.lo, hi),
     })
 }
 

@@ -80,6 +80,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -136,6 +137,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -159,6 +161,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -169,6 +172,7 @@ SourceFile {
                         },
                     ],
                     nullable: false,
+                    fn_return: None,
                     span: Span {
                         file: FileId(
                             0,
@@ -321,6 +325,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -364,6 +369,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -420,6 +426,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -443,6 +450,7 @@ SourceFile {
                             ],
                             args: [],
                             nullable: false,
+                            fn_return: None,
                             span: Span {
                                 file: FileId(
                                     0,
@@ -453,6 +461,7 @@ SourceFile {
                         },
                     ],
                     nullable: false,
+                    fn_return: None,
                     span: Span {
                         file: FileId(
                             0,
@@ -481,6 +490,7 @@ SourceFile {
                                     ],
                                     args: [],
                                     nullable: false,
+                                    fn_return: None,
                                     span: Span {
                                         file: FileId(
                                             0,
@@ -585,6 +595,7 @@ SourceFile {
                                     ],
                                     args: [],
                                     nullable: false,
+                                    fn_return: None,
                                     span: Span {
                                         file: FileId(
                                             0,

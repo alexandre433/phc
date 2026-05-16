@@ -122,6 +122,12 @@ impl<'a> Emitter<'a> {
     /// `option<T>` containers (lowered to uniform tagged-union
     /// structs in the runtime).
     fn c_type_for(&self, t: &phc_ast::TypeRef) -> String {
+        // D-024 function type: lowered to `phc_lambda` at the C
+        // boundary. The signature (params + return) is recovered at
+        // each call site from the binding's TypeRef args.
+        if t.fn_return.is_some() {
+            return "phc_lambda".into();
+        }
         if t.path.len() != 1 {
             return "phc_value".into();
         }
@@ -135,6 +141,7 @@ impl<'a> Emitter<'a> {
             "result" => "phc_result".into(),
             "option" => "phc_option".into(),
             "list" => "phc_list".into(),
+            "fn" => "phc_lambda".into(),
             _ => {
                 if self.is_class(name) {
                     format!("phc_obj_{name}*")
@@ -170,6 +177,8 @@ impl<'a> Emitter<'a> {
                     format!("phc_enum_{name}")
                 } else if name == "list" {
                     "phc_list".into()
+                } else if name == "fn" {
+                    "phc_lambda".into()
                 } else {
                     "int64_t".into()
                 }
@@ -194,7 +203,8 @@ impl<'a> Emitter<'a> {
                 Primitive::Void => "i64",
             },
             Ty::Path { path, .. }
-                if path.len() == 1 && (self.is_class(&path[0]) || path[0] == "list") =>
+                if path.len() == 1
+                    && (self.is_class(&path[0]) || path[0] == "list" || path[0] == "fn") =>
             {
                 "ptr"
             }
@@ -714,6 +724,80 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Emit a `phc_lambda` value for an `Expr::Lambda` that escapes
+    /// the inline-invoke shortcut (D-024 stored lambdas). Allocates
+    /// the env struct, copies captures, and returns a compound
+    /// literal pairing the lifted fn pointer with the env pointer.
+    /// No-capture lambdas skip the alloc and pair the fn with NULL.
+    fn emit_lambda_value(&mut self, lam: &Expr) -> String {
+        let lo = span_of_expr(lam).lo;
+        let captures = self.compute_captures(lam);
+        let fn_addr = format!("(void*)&__phc_lam_{lo}");
+        if captures.is_empty() {
+            return format!("(phc_lambda){{.fn = {fn_addr}, .env = (void*)0}}");
+        }
+        let mut body = String::new();
+        body.push_str(&format!(
+            "struct __phc_lam_env_{lo}* __env = phc_alloc(sizeof(*__env)); "
+        ));
+        for cap in &captures {
+            body.push_str(&format!(
+                "__env->{name} = phc_var_{name}; ",
+                name = mangle(&cap.name)
+            ));
+        }
+        body.push_str(&format!(
+            "(phc_lambda){{.fn = {fn_addr}, .env = (void*)__env}}; "
+        ));
+        format!("({{ {body} }})")
+    }
+
+    /// Emit a call whose callee is an `Expr::Var` typed `fn(...)`
+    /// (D-024 stored-lambda invocation). The receiver type carries
+    /// the param/return types so the codegen can cast the stored
+    /// fn pointer to its precise signature. Returns None when the
+    /// callee type is not a function type, so the regular call
+    /// dispatch can run.
+    fn try_emit_stored_lambda_call(&mut self, callee: &Expr, args: &[Expr]) -> Option<String> {
+        let callee_ty = self.typed.expr_types.get(&span_of_expr(callee))?;
+        let Ty::Path {
+            path,
+            args: ty_args,
+            ..
+        } = callee_ty
+        else {
+            return None;
+        };
+        if path.len() != 1 || path[0] != "fn" {
+            return None;
+        }
+        // args[0] = return type, args[1..] = param types.
+        let ret_ty = ty_args.first()?.clone();
+        let param_tys: Vec<Ty> = ty_args.iter().skip(1).cloned().collect();
+        let ret_c = self.ty_to_c(&ret_ty);
+        let param_c: Vec<String> = param_tys.iter().map(|t| self.ty_to_c(t)).collect();
+        let fn_ptr_ty = if param_c.is_empty() {
+            format!("{ret_c}(*)(void*)")
+        } else {
+            format!("{ret_c}(*)(void*, {})", param_c.join(", "))
+        };
+        let callee_c = self.emit_expr(callee);
+        let arg_src: Vec<String> = args.iter().map(|a| self.emit_expr(a)).collect();
+        let call_args = if arg_src.is_empty() {
+            "__l.env".to_string()
+        } else {
+            format!("__l.env, {}", arg_src.join(", "))
+        };
+        let _ = span_of_expr(callee).lo;
+        // Bind the lambda once so a side-effecting callee runs
+        // exactly once and both `.fn` and `.env` see the same value.
+        // The trailing call IS the stmt-expr value — GCC takes the
+        // final expression's value as the construct's result.
+        Some(format!(
+            "({{ phc_lambda __l = {callee_c}; (({fn_ptr_ty})(__l.fn))({call_args}); }})"
+        ))
+    }
+
     /// Emit a call whose callee is an inline `Expr::Lambda` (possibly
     /// wrapped in `Expr::Paren`). Allocates a capture struct, copies
     /// every captured value in, then invokes the lifted body via a
@@ -975,6 +1059,11 @@ impl<'a> Emitter<'a> {
             } => self.emit_match(scrutinee, arms, expr),
             Expr::Try { value, .. } => self.emit_try(value),
             Expr::Index { target, index, .. } => self.emit_index(target, index, expr),
+            // D-024: a lambda reaching emit_expr (not handled by the
+            // inline-call shortcut in emit_call) materialises as a
+            // `phc_lambda` value. Stored in a binding, passed as an
+            // arg, or returned from a function.
+            Expr::Lambda { .. } => self.emit_lambda_value(expr),
             other => {
                 self.diag(
                     span_of_expr(other),
@@ -1139,6 +1228,12 @@ impl<'a> Emitter<'a> {
             if let Some(snippet) = self.emit_lambda_inline_call(callee, args) {
                 return snippet;
             }
+        }
+        // D-024 stored-lambda call: callee is any expression whose
+        // static type resolves to `fn(...): R`. Covers `$f(x)`,
+        // `$obj->fn_field(x)`, `getCallback()(x)`.
+        if let Some(snippet) = self.try_emit_stored_lambda_call(callee, args) {
+            return snippet;
         }
         // Builtin: `Logger::info(string)` → phc_print(...).
         if let Expr::Static { ty, member, .. } = callee {

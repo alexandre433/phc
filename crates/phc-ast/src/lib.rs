@@ -65,6 +65,11 @@ pub struct TypeRef {
     pub path: Vec<Ident>,
     pub args: Vec<TypeRef>,
     pub nullable: bool,
+    /// When `Some`, this TypeRef is a function type written
+    /// `fn(args...): R` (D-024). `path` is `["fn"]`, `args` is the
+    /// parameter type list, and `fn_return` is `R`. None for every
+    /// non-function type, which is the common case.
+    pub fn_return: Option<Box<TypeRef>>,
     pub span: Span,
 }
 

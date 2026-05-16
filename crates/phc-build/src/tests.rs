@@ -486,6 +486,55 @@ function main(): void {
     }
 }
 
+/// Build + run a program that exercises D-024 stored lambdas:
+/// bind a lambda to a `fn(...): R`-typed local, then invoke it.
+/// Without D-024 this would fail to parse (no fn-type annotation
+/// available) and fail to codegen (no path to lower a stored
+/// lambda value to phc_lambda).
+#[test]
+fn build_and_run_stored_lambda_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_stored_lambda_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    fn(int): int $double = (int $n): int => $n * 2;
+    if ($double(7) == 14) { Logger::info("stored lambda call"); }
+    fn(int, int): int $add = (int $a, int $b): int => $a + $b;
+    if ($add(20, 22) == 42) { Logger::info("two-arg call"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("stored_lambda_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("stored_lambda_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "stored-lambda binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in ["stored lambda call", "two-arg call"] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

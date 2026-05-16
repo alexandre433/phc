@@ -120,6 +120,7 @@ Locked during Phase 6 stdlib build-out:
 19. D-025 — String stdlib v0 method surface (locked 2026-05-16): camelCase methods `len/contains/startsWith/endsWith/trim/upper/lower` plus carry-over `toInt`. Byte-oriented; ASCII case fold; `==` / `!=` on `string` lower to `phc_str_eq`. Multi-byte / Unicode-aware variants deferred.
 20. D-027 — `list<T>` collection v0a (locked 2026-05-16): `list()` ctor (type from binding annotation), `push/len/at` methods, `$xs[i]` indexing, `for (T $x in $xs)` iteration. **Reference semantics** (handle-shared mutation), explicitly diverges from D-022's CoW pending refcounts. OOB aborts; fallible variants deferred. `list` is a reserved name.
 21. D-026 — Result/Option ergonomic methods (locked 2026-05-16): `result` gets `isOk/isErr/unwrapOr`; `option` gets `isSome/isNone/unwrapOr/orElse`. Inline statement-expression lowering for `unwrapOr/orElse`; `map/andThen/unwrap/okOr` deferred (the closure forms wait on D-024).
+22. D-024 — Function type syntax (locked 2026-05-16): `fn(T1, T2, ...): R` heads a function type. `fn` reserved keyword. Additive AST (`fn_return: Option<Box<TypeRef>>`) lowered to `Ty::Path { path:["fn"], args:[R, P1, ...] }`; codegen maps to `phc_lambda`. Stored lambdas now legal: bind, pass, return. Generic fn-types and the `Ty::Function` enum refactor deferred.
 
 ---
 
@@ -806,3 +807,60 @@ Locked during Phase 6 stdlib build-out:
   `$o->orElse(other)->unwrapOr(0)` build through the interpreter
   but not through codegen; split through a typed local for now.
   Lifting this is a typecheck improvement, not a D-026 change.
+
+### D-024 — Function type syntax (`fn(T, U): R`)
+- **Decision**: A function type is written `fn(T1, T2, ...): R`.
+  - `fn` is a reserved keyword; uses the same name as the runtime
+    `phc_lambda` value but stays visually distinct from the
+    `function` declaration keyword so a reader can tell at a glance
+    whether they are looking at a declaration or a type.
+  - The colon-then-return-type shape matches function declarations
+    (D-009) and lambdas (D-016), so the syntactic family is
+    consistent: a thing that produces a value of type `R` is
+    written `... : R`.
+  - Empty parameter list is allowed: `fn(): R`.
+  - Nullable suffix is allowed at the outermost position:
+    `fn(int): int?` (the return is nullable) and `fn(int): int?` 
+    bound to a `?`-suffixed local is two distinct concepts; the
+    function-type carrier itself can be wrapped in `?` for
+    null-allowed callbacks. v0 keeps that to the outermost.
+  - Borrow modifiers in parameter slots (`fn(&User): bool`) parse
+    in v0 only at the bare-type level — the parser accepts any
+    `Type` per slot. Lambda capture-mode + parameter borrow
+    enforcement lands with the borrowcheck aliasing slice (task
+    #62), not here.
+  - Generic function types (`fn<T>(T): T`) are **deferred**;
+    parsing them needs disambiguation work that overlaps with
+    D-014 call-site inference and is best landed there.
+- **AST representation**: additive. `TypeRef` gains a single
+  optional field `fn_return: Option<Box<TypeRef>>`. When `Some`,
+  `path == ["fn"]`, `args` is the parameter type list, and
+  `fn_return` is `R`. Lowered to `Ty::Path { path: ["fn"],
+  args: [R, P1, ..., Pn], nullable }` so consumers can recover the
+  return type as `args[0]`. A dedicated `Ty::Function` is a future
+  refactor; the additive shape ships D-024 in one slice without
+  touching every AST consumer.
+- **Codegen**: `fn(...): R` lowers to `phc_lambda` at the C
+  boundary. An `Expr::Lambda` that escapes the inline-invoke
+  shortcut (i.e. used as a value) materialises as a `phc_lambda`
+  compound literal pairing the lifted body's address with its
+  capture env. Calling a stored lambda casts `__l.fn` to its
+  precise function-pointer signature (recovered from the callee's
+  static `fn(...): R` type) and invokes through `__l.env`.
+- **Alternatives considered**: `(T, U) -> R` (Rust shape — needs
+  lexer disambiguation since `->` already means D-023 instance
+  member access); `fn<R, T, U>` (reuses generics surface, no new
+  tokens, but the first arg is the return type which is awkward to
+  read); `callable` opaque type (no static arity / signature info,
+  loses the value of having types at all).
+- **Rationale**: The colon-then-return-type form is the smallest
+  surface that delivers stored / passed / returned lambdas without
+  inventing a new return-type punctuation. `fn` keyword is short,
+  obviously distinct from `function`, and matches the visual rhyme
+  in `(params) =>` lambdas where the type-position version reads as
+  "the type of one of those". Additive AST keeps the slice small —
+  the enum refactor is honest follow-up work, not a prerequisite.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; enum-based AST refactor,
+  generic function types, and borrow-aware parameter parsing
+  tracked separately.

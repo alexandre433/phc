@@ -317,6 +317,17 @@ fn record(typed: &mut Typed, span: Span, ty: Ty) {
 /// Compute a Call expression's return type from its callee shape.
 /// See the matching comment at the call site for the three cases.
 fn call_return_ty(callee: &Expr, resolved: &Resolved, typed: &Typed) -> Ty {
+    // D-024 stored-lambda call: callee's static type is `fn(...): R`,
+    // lowered to `Ty::Path { path:["fn"], args:[R, P1, ..., Pn] }`.
+    // Return type is args[0]. Checked before the syntactic dispatch
+    // so a `Var` / `Member` callee typed as `fn` routes correctly.
+    if let Some(Ty::Path { path, args, .. }) = typed.expr_types.get(&span_of(callee)) {
+        if path.len() == 1 && path[0] == "fn" {
+            if let Some(ret) = args.first() {
+                return ret.clone();
+            }
+        }
+    }
     match callee {
         Expr::TypeName { name, .. } => resolved
             .top_level

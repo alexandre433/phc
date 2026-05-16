@@ -311,6 +311,11 @@ pub enum Token {
     Public,
     #[token("function")]
     Function,
+    /// `fn` keyword — heads a function-type written `fn(T, U): R`
+    /// (D-024). Distinct from the `function` declaration keyword
+    /// to keep declarations and type references easy to skim apart.
+    #[token("fn")]
+    Fn,
     #[token("return")]
     Return,
     #[token("void")]
