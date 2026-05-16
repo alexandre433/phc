@@ -126,6 +126,7 @@ Locked during Phase 6 stdlib build-out:
 25. D-021 v0a (Phase 9 MVP, 2026-05-16): `test "name" { ... }` blocks at file top-level are discovered by `phc-test` and run sequentially through the interpreter. Pass = body completes without runtime error; fail = any panic or `?` propagation. `phc test <file>` reports pass/fail counts and exits non-zero on any failure. Assertion helpers (`assertEq`, etc.), cross-file project discovery, filtering, and parallel execution deferred.
 26. D-029 — Result/Option closure methods (locked 2026-05-16): `result<T,E>` gets `map(fn(T):U)→result<U,E>`, `andThen(fn(T):result<U,E>)→result<U,E>`, `unwrap()→T` (panics on err). `option<T>` gets `map`, `andThen` (option-shaped), `okOr(E)→result<T,E>`, `unwrap()` (panics on none). Codegen lowers each to a stmt-expr that invokes the stored `phc_lambda` on the unwrapped payload and packs the result. Closure return type recovered from the arg's `fn(T):U` static type; typecheck lambda inference now also seeds lambda params and records `fn(...):R` on every lambda expression.
 27. D-030 — `list<T>` closure methods (locked 2026-05-16): `forEach(fn(T):void)→void`, `map(fn(T):U)→list<U>`, `filter(fn(T):bool)→list<T>`. Same stmt-expr + `phc_lambda` invocation pattern as D-029, looped over `phc_list_at`/`phc_list_push`. No new runtime functions.
+28. D-031 — `set<string>` collection v0a (locked 2026-05-16): `set()` ctor, `add(string)→bool` (true on insert, false if dup), `has(string)→bool`, `remove(string)→bool`, `len()→int`. String keys only; linear-scan storage parallel to map. Distinct `phc_set` C type. Generic keys / hash storage / iteration deferred.
 
 ---
 
@@ -1003,3 +1004,39 @@ Locked during Phase 6 stdlib build-out:
 - **Date**: 2026-05-16.
 - **Status**: locked for v0 surface; `reduce` / `fold` /
   `find` / `any` / `all` tracked separately.
+
+### D-031 — `set<string>` collection (v0a)
+- **Decision**: Adds the third collection per D-022 in the same
+  v0a shape as `list<T>` (D-027) and `map<string, V>` (D-028):
+  string-only keys, linear-scan storage, reference semantics
+  (handle shared between bindings; mutation through methods
+  updates the shared backing storage).
+
+  | Method | Signature | Notes |
+  |--------|-----------|-------|
+  | `set()` | `(): set<string>` | Reserved-name ctor; T from binding annotation. |
+  | `add` | `(string): bool` | True on insert, false if key already present. |
+  | `has` | `(string): bool` | Membership test. |
+  | `remove` | `(string): bool` | True if a key was removed, false otherwise. |
+  | `len` | `(): int` | Number of distinct keys. |
+
+  Runtime is a `phc_set` opaque pointer wrapping a `phc_string[]`
+  with len + cap doubling, identical in structure to `phc_map`
+  but without the value slot. Removal compacts by swapping the
+  last entry into the hole (insertion-order is not preserved,
+  matching most v0 expectations for sets).
+
+  `set` is a reserved name: a user-defined free function or
+  class named `set` is shadowed by the built-in constructor.
+- **Alternatives considered**: piggyback on `map<string, void>`
+  (saves a runtime type but conflates two concepts at the user
+  level); hash-based storage from day one (couples to a hasher
+  decision before user code surfaces what they need).
+- **Rationale**: rounds out the D-022 collection trio with the
+  smallest surface that lets a real program model membership.
+  Same pattern as `list` and `map` makes the codegen + interp
+  + typecheck wiring almost mechanical.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0a surface; generic-key sets, hash
+  storage, iteration (`forEach`/`toList`), and set operations
+  (`union`/`intersect`/`difference`) tracked separately.

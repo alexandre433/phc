@@ -91,6 +91,18 @@ phc_option  phc_map_get(phc_map m, phc_string key);
 bool        phc_map_has(phc_map m, phc_string key);
 int64_t     phc_map_len(phc_map m);
 
+/* Set value (D-031). String-only in v0a, same reference-semantics
+ * + linear-scan storage as `phc_map`. Distinct C type so codegen
+ * cannot accidentally cross-cast a `phc_map` and a `phc_set`. */
+struct phc_set_s;
+typedef struct phc_set_s* phc_set;
+
+phc_set     phc_set_new(void);
+bool        phc_set_add(phc_set s, phc_string key);  /* true on insert, false if already present */
+bool        phc_set_has(phc_set s, phc_string key);
+bool        phc_set_remove(phc_set s, phc_string key); /* true if removed */
+int64_t     phc_set_len(phc_set s);
+
 /* Lambda value: function pointer + heap-alloc'd capture environment.
  * The codegen emits `fn` as the lifted-body symbol's address and
  * `env` as a malloc'd struct holding every variable the body

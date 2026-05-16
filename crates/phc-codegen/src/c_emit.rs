@@ -142,6 +142,7 @@ impl<'a> Emitter<'a> {
             "option" => "phc_option".into(),
             "list" => "phc_list".into(),
             "map" => "phc_map".into(),
+            "set" => "phc_set".into(),
             "fn" => "phc_lambda".into(),
             _ => {
                 if self.is_class(name) {
@@ -180,6 +181,8 @@ impl<'a> Emitter<'a> {
                     "phc_list".into()
                 } else if name == "map" {
                     "phc_map".into()
+                } else if name == "set" {
+                    "phc_set".into()
                 } else if name == "fn" {
                     "phc_lambda".into()
                 } else {
@@ -210,6 +213,7 @@ impl<'a> Emitter<'a> {
                     && (self.is_class(&path[0])
                         || path[0] == "list"
                         || path[0] == "map"
+                        || path[0] == "set"
                         || path[0] == "fn") =>
             {
                 "ptr"
@@ -1312,6 +1316,15 @@ impl<'a> Emitter<'a> {
                     }
                 }
             }
+            // Stdlib set<string> methods (D-031).
+            if let Some(Ty::Path { path, .. }) = self.typed.expr_types.get(&span_of_expr(receiver))
+            {
+                if path.len() == 1 && path[0] == "set" {
+                    if let Some(snippet) = self.try_emit_set_method(receiver, &field.name, args) {
+                        return snippet;
+                    }
+                }
+            }
             // Stdlib result<T, E> / option<T> methods (D-026).
             if let Some(Ty::Path {
                 path, args: targs, ..
@@ -1355,6 +1368,10 @@ impl<'a> Emitter<'a> {
             // Same precedence rule for `map()` (D-028).
             if name.name == "map" && args.is_empty() {
                 return "phc_map_new()".into();
+            }
+            // Same precedence rule for `set()` (D-031).
+            if name.name == "set" && args.is_empty() {
+                return "phc_set_new()".into();
             }
         }
         // User-defined free function call OR class construction.
@@ -1400,6 +1417,34 @@ impl<'a> Emitter<'a> {
             "indexing only supported on `list<T>` in v0",
         );
         "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit a stdlib `set<string>` method call (D-031). String-key
+    /// only in v0a; runtime is opaque-pointer `phc_set` with
+    /// linear-scan storage.
+    fn try_emit_set_method(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+    ) -> Option<String> {
+        let recv_c = self.emit_expr(receiver);
+        match (method, args.len()) {
+            ("len", 0) => Some(format!("phc_set_len({recv_c})")),
+            ("add", 1) => {
+                let key = self.emit_expr(&args[0]);
+                Some(format!("phc_set_add({recv_c}, {key})"))
+            }
+            ("has", 1) => {
+                let key = self.emit_expr(&args[0]);
+                Some(format!("phc_set_has({recv_c}, {key})"))
+            }
+            ("remove", 1) => {
+                let key = self.emit_expr(&args[0]);
+                Some(format!("phc_set_remove({recv_c}, {key})"))
+            }
+            _ => None,
+        }
     }
 
     /// Emit a stdlib `map<string, V>` method call (D-028). v0a

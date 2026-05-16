@@ -287,3 +287,61 @@ bool phc_map_has(phc_map m, phc_string key) {
 int64_t phc_map_len(phc_map m) {
     return (int64_t)m->len;
 }
+
+/* ===== Set stdlib (D-031) ===== */
+
+struct phc_set_s {
+    size_t len;
+    size_t cap;
+    phc_string* items;
+};
+
+phc_set phc_set_new(void) {
+    phc_set s = (phc_set)phc_alloc(sizeof(struct phc_set_s));
+    s->len = 0;
+    s->cap = 0;
+    s->items = NULL;
+    return s;
+}
+
+bool phc_set_add(phc_set s, phc_string key) {
+    for (size_t i = 0; i < s->len; ++i) {
+        if (phc_string_eq(s->items[i], key)) return false;
+    }
+    if (s->len == s->cap) {
+        size_t new_cap = s->cap == 0 ? 4 : s->cap * 2;
+        phc_string* grown =
+            (phc_string*)realloc(s->items, new_cap * sizeof(phc_string));
+        if (!grown) {
+            fputs("phc runtime: out of memory growing set\n", stderr);
+            abort();
+        }
+        s->items = grown;
+        s->cap = new_cap;
+    }
+    s->items[s->len++] = key;
+    return true;
+}
+
+bool phc_set_has(phc_set s, phc_string key) {
+    for (size_t i = 0; i < s->len; ++i) {
+        if (phc_string_eq(s->items[i], key)) return true;
+    }
+    return false;
+}
+
+bool phc_set_remove(phc_set s, phc_string key) {
+    for (size_t i = 0; i < s->len; ++i) {
+        if (phc_string_eq(s->items[i], key)) {
+            /* Compact by swapping the last entry into the hole. */
+            s->items[i] = s->items[s->len - 1];
+            s->len--;
+            return true;
+        }
+    }
+    return false;
+}
+
+int64_t phc_set_len(phc_set s) {
+    return (int64_t)s->len;
+}

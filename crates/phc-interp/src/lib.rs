@@ -72,6 +72,9 @@ pub enum Value {
     /// reflects that. Generic-key maps land when key hashing is
     /// speced.
     Map(Rc<RefCell<Vec<(String, Value)>>>),
+    /// `set<string>` value (D-031). Same shape rules as Map; only
+    /// the entry stores no payload.
+    Set(Rc<RefCell<Vec<String>>>),
 }
 
 /// Owned lambda payload. Stored behind an Rc so cloning a Value is
@@ -112,6 +115,10 @@ impl Value {
                     .map(|(k, v)| format!("{k}: {}", v.display()))
                     .collect();
                 format!("{{{}}}", parts.join(", "))
+            }
+            Value::Set(keys) => {
+                let parts: Vec<String> = keys.borrow().iter().cloned().collect();
+                format!("#{{{}}}", parts.join(", "))
             }
         }
     }
@@ -779,6 +786,14 @@ impl<'a> Interp<'a> {
                     return Ok(value);
                 }
             }
+            // D-031 set method dispatch.
+            if let Value::Set(keys) = &recv {
+                if let Some(value) =
+                    self.try_eval_set_method(keys.clone(), &field.name, args, env)?
+                {
+                    return Ok(value);
+                }
+            }
             // D-026 result/option method dispatch.
             if matches!(
                 recv,
@@ -802,6 +817,10 @@ impl<'a> Interp<'a> {
             // Same precedence rule for `map()` (D-028).
             if name.name == "map" && args.is_empty() {
                 return Ok(Value::Map(Rc::new(RefCell::new(Vec::new()))));
+            }
+            // Same precedence rule for `set()` (D-031).
+            if name.name == "set" && args.is_empty() {
+                return Ok(Value::Set(Rc::new(RefCell::new(Vec::new()))));
             }
         }
         // Class construction or free function: `name(args)` parses
@@ -1034,6 +1053,68 @@ impl<'a> Interp<'a> {
     }
 
     /// D-028 map method dispatch. v0a only supports string keys.
+    /// D-031 set method dispatch. v0a only supports string keys.
+    fn try_eval_set_method(
+        &mut self,
+        keys: Rc<RefCell<Vec<String>>>,
+        method: &str,
+        args: &[Expr],
+        env: &mut Env,
+    ) -> EvalResult<Option<Value>> {
+        let arity_check = |expected: usize| -> EvalResult<()> {
+            if args.len() != expected {
+                return Err(rt(format!(
+                    "set method `{method}` takes {expected} argument(s), got {}",
+                    args.len()
+                )));
+            }
+            Ok(())
+        };
+        let key_arg = |this: &mut Self, env: &mut Env| -> EvalResult<String> {
+            let v = this.eval_expr(&args[0], env)?;
+            match v {
+                Value::String(s) => Ok(s),
+                other => Err(rt(format!(
+                    "set method `{method}` expects a `string` key, got `{}`",
+                    other.display()
+                ))),
+            }
+        };
+        match method {
+            "len" => {
+                arity_check(0)?;
+                Ok(Some(Value::Int(keys.borrow().len() as i64)))
+            }
+            "has" => {
+                arity_check(1)?;
+                let k = key_arg(self, env)?;
+                Ok(Some(Value::Bool(keys.borrow().iter().any(|x| x == &k))))
+            }
+            "add" => {
+                arity_check(1)?;
+                let k = key_arg(self, env)?;
+                let mut v = keys.borrow_mut();
+                if v.iter().any(|x| x == &k) {
+                    return Ok(Some(Value::Bool(false)));
+                }
+                v.push(k);
+                Ok(Some(Value::Bool(true)))
+            }
+            "remove" => {
+                arity_check(1)?;
+                let k = key_arg(self, env)?;
+                let mut v = keys.borrow_mut();
+                if let Some(pos) = v.iter().position(|x| x == &k) {
+                    v.swap_remove(pos);
+                    Ok(Some(Value::Bool(true)))
+                } else {
+                    Ok(Some(Value::Bool(false)))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn try_eval_map_method(
         &mut self,
         entries: Rc<RefCell<Vec<(String, Value)>>>,

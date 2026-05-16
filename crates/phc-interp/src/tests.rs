@@ -907,3 +907,34 @@ function main(): void {
     ];
     assert_eq!(out.stdout, expected);
 }
+
+#[test]
+fn set_d031_runs_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    set<string> $s = set();
+    if ($s->add("ada")) { Logger::info("add new"); }
+    if (!$s->add("ada")) { Logger::info("add dup"); }
+    $s->add("alan");
+    if ($s->len() == 2) { Logger::info("len ok"); }
+    if ($s->has("ada")) { Logger::info("has ok"); }
+    if (!$s->has("grace")) { Logger::info("miss ok"); }
+    if ($s->remove("ada")) { Logger::info("remove ok"); }
+    if (!$s->has("ada")) { Logger::info("post-remove miss"); }
+    if ($s->len() == 1) { Logger::info("len post-remove"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let expected = vec![
+        "add new".to_string(),
+        "add dup".to_string(),
+        "len ok".to_string(),
+        "has ok".to_string(),
+        "miss ok".to_string(),
+        "remove ok".to_string(),
+        "post-remove miss".to_string(),
+        "len post-remove".to_string(),
+    ];
+    assert_eq!(out.stdout, expected);
+}

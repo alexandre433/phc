@@ -749,6 +749,65 @@ function main(): void {
     );
 }
 
+/// Build + run D-031 set<string> v0a: add (with dedup signal),
+/// has, remove, len.
+#[test]
+fn build_and_run_set_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_set_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    set<string> $s = set();
+    if ($s->add("ada")) { Logger::info("add new"); }
+    if (!$s->add("ada")) { Logger::info("add dup"); }
+    $s->add("alan");
+    if ($s->len() == 2) { Logger::info("len ok"); }
+    if ($s->has("ada")) { Logger::info("has ok"); }
+    if (!$s->has("grace")) { Logger::info("miss ok"); }
+    if ($s->remove("ada")) { Logger::info("remove ok"); }
+    if (!$s->has("ada")) { Logger::info("post-remove miss"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("set_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("set_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "set binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in [
+        "add new",
+        "add dup",
+        "len ok",
+        "has ok",
+        "miss ok",
+        "remove ok",
+        "post-remove miss",
+    ] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

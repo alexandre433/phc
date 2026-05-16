@@ -502,6 +502,11 @@ fn stdlib_method_return_ty(
                         nullable: false,
                     })
                 }
+                // D-031: set<string> methods.
+                ("set", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
+                ("set", "add") | ("set", "has") | ("set", "remove") => {
+                    Some(Ty::Primitive(crate::Primitive::Bool))
+                }
                 ("result", "isOk") | ("result", "isErr") => {
                     Some(Ty::Primitive(crate::Primitive::Bool))
                 }
