@@ -277,6 +277,46 @@ fn pack_acyclicity_detects_three_pack_cycle() {
 }
 
 #[test]
+fn cross_pack_default_visibility_is_rejected() {
+    let root = project_root("vis_default");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack core;\nfunction helper(): int { return 1; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app;\nuse core.helper;\nfunction main(): void {}",
+    )
+    .unwrap();
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    assert!(!session.ok());
+    assert!(session
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("pack-scoped")));
+}
+
+#[test]
+fn cross_pack_public_item_is_importable() {
+    let root = project_root("vis_public");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack core;\npublic function helper(): int { return 1; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app;\nuse core.helper;\nfunction main(): void {}",
+    )
+    .unwrap();
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    assert!(session.ok(), "diagnostics: {:?}", session.diagnostics);
+}
+
+#[test]
 fn cross_pack_unresolved_import_is_an_error() {
     let root = project_root("cross_pack_unresolved");
     std::fs::write(

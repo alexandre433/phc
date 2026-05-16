@@ -51,12 +51,24 @@ pub enum SymbolKind {
     Value,
 }
 
+/// Visibility marker recorded on every top-level / member symbol so
+/// cross-pack `use` resolution can reject default-visibility
+/// (pack-scoped) imports per D-008.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Visibility {
+    /// Pack-scoped — visible only inside its declaring pack.
+    Default,
+    /// Cross-pack — visible to any pack that imports it.
+    Public,
+}
+
 /// One named entity in the program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Symbol {
     pub id: SymbolId,
     pub name: String,
     pub kind: SymbolKind,
+    pub visibility: Visibility,
     /// Span of the definition (the identifier token, not the whole
     /// declaration). Used by IDE go-to-definition.
     pub def_span: Span,

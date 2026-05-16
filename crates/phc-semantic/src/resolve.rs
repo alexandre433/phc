@@ -95,6 +95,10 @@ fn intro(resolved: &mut Resolved, name: &Ident, kind: SymbolKind) -> SymbolId {
         id,
         name: name.name.clone(),
         kind,
+        // Body-level introducers (params, locals, $this) are
+        // pack-scoped by construction; visibility is meaningless
+        // off the top level but Default keeps the field uniform.
+        visibility: crate::Visibility::Default,
         def_span: name.span,
     });
     id
@@ -106,6 +110,7 @@ fn intro_synthetic(resolved: &mut Resolved, name: &str, def_span: Span) -> Symbo
         id,
         name: name.to_string(),
         kind: SymbolKind::Value,
+        visibility: crate::Visibility::Default,
         def_span,
     });
     id

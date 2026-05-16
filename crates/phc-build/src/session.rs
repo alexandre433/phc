@@ -11,7 +11,7 @@ use phc_ast::{SourceFile, UseDecl};
 use phc_errors::{Diagnostic, Severity};
 use phc_parser::parse;
 use phc_pkg::discover_sources;
-use phc_semantic::{resolve, Resolved, SymbolId};
+use phc_semantic::{resolve, Resolved, SymbolId, Visibility};
 use phc_span::{FileId, Span};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -228,10 +228,17 @@ fn lookup(
         .get(pack)
         .ok_or_else(|| format!("no pack named `{pack}` in this project"))?;
     for (file_idx, resolved) in entries {
-        if let Some(sym) = resolved.top_level.get(item).copied() {
+        if let Some(sym_id) = resolved.top_level.get(item).copied() {
+            // D-008: only `public` items cross pack boundaries.
+            // The pack-default form exists but is not importable.
+            if resolved.symbol(sym_id).visibility != Visibility::Public {
+                return Err(format!(
+                    "item `{item}` in pack `{pack}` is pack-scoped; mark it `public` to import across packs"
+                ));
+            }
             return Ok(ImportTarget {
                 file_idx: *file_idx,
-                symbol: sym,
+                symbol: sym_id,
             });
         }
     }
