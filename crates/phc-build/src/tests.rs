@@ -4,7 +4,7 @@
 //! without a C toolchain skips them with a printed note rather
 //! than failing.
 
-use crate::{build_file, load_session};
+use crate::{build_file, load_session, resolve_cross_pack_uses};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -159,6 +159,85 @@ fn session_loads_files_and_groups_by_pack() {
     assert_eq!(session.packs.len(), 2);
     assert_eq!(session.packs.get("app.auth").map(Vec::len), Some(2));
     assert_eq!(session.packs.get("app.db").map(Vec::len), Some(1));
+}
+
+#[test]
+fn cross_pack_use_resolves_to_target() {
+    let root = project_root("cross_pack_ok");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack core;\npublic function helper(): int { return 1; }",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app;\nuse core.helper;\nfunction main(): int { return 0; }",
+    )
+    .unwrap();
+
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    assert!(session.ok(), "diagnostics: {:?}", session.diagnostics);
+    assert_eq!(session.cross_uses.len(), 1);
+}
+
+#[test]
+fn cross_pack_grouped_use_resolves_each_name() {
+    let root = project_root("cross_pack_group");
+    std::fs::write(
+        root.join("a.phc"),
+        r#"pack core;
+           public function one(): int { return 1; }
+           public function two(): int { return 2; }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app;\nuse core.{one, two};\nfunction main(): void {}",
+    )
+    .unwrap();
+
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    assert!(session.ok(), "diagnostics: {:?}", session.diagnostics);
+    assert_eq!(session.cross_uses.len(), 2);
+}
+
+#[test]
+fn cross_pack_unresolved_import_is_an_error() {
+    let root = project_root("cross_pack_unresolved");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack app;\nuse missing.foo;\nfunction main(): void {}",
+    )
+    .unwrap();
+
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    assert!(!session.ok());
+    assert!(session
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("no pack named `missing`")));
+}
+
+#[test]
+fn cross_pack_missing_item_is_an_error() {
+    let root = project_root("cross_pack_missing_item");
+    std::fs::write(root.join("a.phc"), "pack core;").unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app;\nuse core.absent;\nfunction main(): void {}",
+    )
+    .unwrap();
+
+    let mut session = load_session(&root);
+    resolve_cross_pack_uses(&mut session);
+    assert!(!session.ok());
+    assert!(session
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("does not export an item named `absent`")));
 }
 
 #[test]

@@ -13,7 +13,7 @@
 //! handles a single file.
 
 mod session;
-pub use session::{load_session, LoadedFile, Session};
+pub use session::{load_session, resolve_cross_pack_uses, ImportTarget, LoadedFile, Session};
 
 use phc_codegen::emit_c;
 use phc_errors::{Diagnostic, Severity};

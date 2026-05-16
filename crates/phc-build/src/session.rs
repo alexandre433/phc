@@ -7,13 +7,13 @@
 //! enforcement live in follow-up commits; this module's job is
 //! just to get the corpus loaded and indexed.
 
-use phc_ast::SourceFile;
+use phc_ast::{SourceFile, UseDecl};
 use phc_errors::{Diagnostic, Severity};
 use phc_parser::parse;
 use phc_pkg::discover_sources;
-use phc_semantic::{resolve, Resolved};
+use phc_semantic::{resolve, Resolved, SymbolId};
 use phc_span::{FileId, Span};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// One parsed source file, plus its per-file resolver output.
@@ -28,6 +28,14 @@ pub struct LoadedFile {
     pub pack: String,
 }
 
+/// One side of a resolved cross-pack import: which file owns the
+/// imported item and its SymbolId in that file's table.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct ImportTarget {
+    pub file_idx: usize,
+    pub symbol: SymbolId,
+}
+
 /// All files in the project plus their by-pack grouping.
 #[derive(Debug, Default)]
 pub struct Session {
@@ -35,6 +43,10 @@ pub struct Session {
     /// Pack name → indices into `files`. Sorted on insert so iteration
     /// is deterministic.
     pub packs: BTreeMap<String, Vec<usize>>,
+    /// Each `use` site span → the resolved import target. Populated
+    /// by [`resolve_cross_pack_uses`]; filled in for grouped imports
+    /// with one entry per imported name.
+    pub cross_uses: HashMap<Span, ImportTarget>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -115,6 +127,117 @@ pub fn load_session(root: &Path) -> Session {
             .push(idx);
     }
     session
+}
+
+/// Walk every file's `use` declarations and resolve them against
+/// the session's pack table. Each imported (pack, name) lands in
+/// [`Session::cross_uses`] keyed by the use-site span. Unresolved
+/// imports surface as error diagnostics.
+pub fn resolve_cross_pack_uses(session: &mut Session) {
+    // Snapshot the by-name lookup tables we need so we can mutate
+    // session.cross_uses + diagnostics without a borrow conflict.
+    let pack_index: BTreeMap<String, Vec<(usize, &Resolved)>> = session
+        .packs
+        .iter()
+        .map(|(pack, indices)| {
+            let entries: Vec<(usize, &Resolved)> = indices
+                .iter()
+                .map(|i| (*i, &session.files[*i].resolved))
+                .collect();
+            (pack.clone(), entries)
+        })
+        .collect();
+    let mut imports: Vec<(Span, Result<ImportTarget, String>)> = Vec::new();
+    for file in &session.files {
+        for use_decl in &file.ast.uses {
+            collect_imports(&pack_index, use_decl, &mut imports);
+        }
+    }
+    for (span, result) in imports {
+        match result {
+            Ok(target) => {
+                session.cross_uses.insert(span, target);
+            }
+            Err(message) => {
+                session.diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    message,
+                    span,
+                });
+            }
+        }
+    }
+}
+
+fn collect_imports(
+    packs: &BTreeMap<String, Vec<(usize, &Resolved)>>,
+    use_decl: &UseDecl,
+    out: &mut Vec<(Span, Result<ImportTarget, String>)>,
+) {
+    match &use_decl.group {
+        // Grouped: `use a.b.{X, Y};` — pack is path verbatim, items
+        // are the group entries.
+        Some(names) => {
+            let pack = use_decl
+                .path
+                .segments
+                .iter()
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            for ident in names {
+                let result = lookup(packs, &pack, &ident.name);
+                out.push((ident.span, result));
+            }
+        }
+        // Single: `use a.b.C;` — pack is everything except the last
+        // segment; item is the last segment.
+        None => {
+            let segs = &use_decl.path.segments;
+            if segs.len() < 2 {
+                out.push((
+                    use_decl.path.span,
+                    Err(format!(
+                        "single-item `use` needs at least pack.item shape, got `{}`",
+                        segs.iter()
+                            .map(|i| i.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(".")
+                    )),
+                ));
+                return;
+            }
+            let item = &segs[segs.len() - 1];
+            let pack = segs[..segs.len() - 1]
+                .iter()
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            let result = lookup(packs, &pack, &item.name);
+            out.push((item.span, result));
+        }
+    }
+}
+
+fn lookup(
+    packs: &BTreeMap<String, Vec<(usize, &Resolved)>>,
+    pack: &str,
+    item: &str,
+) -> Result<ImportTarget, String> {
+    let entries = packs
+        .get(pack)
+        .ok_or_else(|| format!("no pack named `{pack}` in this project"))?;
+    for (file_idx, resolved) in entries {
+        if let Some(sym) = resolved.top_level.get(item).copied() {
+            return Ok(ImportTarget {
+                file_idx: *file_idx,
+                symbol: sym,
+            });
+        }
+    }
+    Err(format!(
+        "pack `{pack}` does not export an item named `{item}`"
+    ))
 }
 
 fn diag_error(message: String) -> Diagnostic {
