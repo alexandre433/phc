@@ -94,8 +94,10 @@ impl<'a> Emitter<'a> {
     }
 
     /// Map a phc TypeRef to the C type the emitter will use. Single-
-    /// segment paths recognise stdlib primitives and class names from
-    /// the resolver; everything else falls back to `phc_value`.
+    /// segment paths recognise stdlib primitives, class names from
+    /// the resolver, enum names, plus the stdlib `result<T, E>` and
+    /// `option<T>` containers (lowered to uniform tagged-union
+    /// structs in the runtime).
     fn c_type_for(&self, t: &phc_ast::TypeRef) -> String {
         if t.path.len() != 1 {
             return "phc_value".into();
@@ -107,6 +109,8 @@ impl<'a> Emitter<'a> {
             "bool" => "bool".into(),
             "string" => "phc_string".into(),
             "void" => "void".into(),
+            "result" => "phc_result".into(),
+            "option" => "phc_option".into(),
             _ => {
                 if self.is_class(name) {
                     format!("phc_obj_{name}*")
@@ -145,6 +149,26 @@ impl<'a> Emitter<'a> {
                 }
             }
             _ => "int64_t".into(),
+        }
+    }
+
+    /// Pick the phc_payload union member to use for a given Ty.
+    /// Defaults to `ptr` (opaque pointer) for class instances and
+    /// any unrecognised type so the cell still round-trips through
+    /// the runtime; primitives use their dedicated members.
+    fn payload_member(&self, ty: &Ty) -> &'static str {
+        match ty {
+            Ty::Primitive(p) => match p {
+                Primitive::Int => "i64",
+                Primitive::Float => "f64",
+                Primitive::Bool => "b",
+                Primitive::String => "s",
+                Primitive::Bytes => "s",
+                Primitive::Byte => "i64",
+                Primitive::Void => "i64",
+            },
+            Ty::Path { path, .. } if path.len() == 1 && self.is_class(&path[0]) => "ptr",
+            _ => "ptr",
         }
     }
 
@@ -554,6 +578,11 @@ impl<'a> Emitter<'a> {
                     if self.is_enum(&name.name) {
                         return format!("phc_enum_{}_{}", name.name, member.name);
                     }
+                    // Stdlib singleton: `option::none` (no-args) is
+                    // a value, not a constructor call.
+                    if name.name == "option" && member.name == "none" {
+                        return "((phc_option){.kind = 1})".into();
+                    }
                 }
                 self.diag(
                     span_of_expr(expr),
@@ -564,6 +593,7 @@ impl<'a> Emitter<'a> {
             Expr::Match {
                 scrutinee, arms, ..
             } => self.emit_match(scrutinee, arms, expr),
+            Expr::Try { value, .. } => self.emit_try(value),
             other => {
                 self.diag(
                     span_of_expr(other),
@@ -725,6 +755,12 @@ impl<'a> Emitter<'a> {
                     );
                     return "phc_panic(\"Logger::info arity\")".into();
                 }
+                // result::ok(v), result::err(e), option::some(v).
+                if let Some(snippet) =
+                    self.try_emit_result_option_ctor(&name.name, &member.name, args)
+                {
+                    return snippet;
+                }
             }
         }
         // Method call: $obj->method(args).
@@ -768,6 +804,83 @@ impl<'a> Emitter<'a> {
             "call form not yet supported by the C emitter",
         );
         "phc_panic(\"codegen TODO call\")".into()
+    }
+
+    /// Emit `result::ok / err / option::some` constructor calls.
+    /// Returns None when the (type, member) pair is not a known
+    /// stdlib constructor so the regular dispatch path takes over.
+    fn try_emit_result_option_ctor(
+        &mut self,
+        type_name: &str,
+        member: &str,
+        args: &[Expr],
+    ) -> Option<String> {
+        if args.len() != 1 {
+            return None;
+        }
+        let value_c = self.emit_expr(&args[0]);
+        let arg_ty = self
+            .typed
+            .expr_types
+            .get(&span_of_expr(&args[0]))
+            .cloned()
+            .unwrap_or(Ty::Unknown);
+        let member_name = self.payload_member(&arg_ty);
+        match (type_name, member) {
+            ("result", "ok") => Some(format!(
+                "((phc_result){{.kind = 0, .ok.{member_name} = {value_c}}})"
+            )),
+            ("result", "err") => Some(format!(
+                "((phc_result){{.kind = 1, .err.{member_name} = {value_c}}})"
+            )),
+            ("option", "some") => Some(format!(
+                "((phc_option){{.kind = 0, .some.{member_name} = {value_c}}})"
+            )),
+            _ => None,
+        }
+    }
+
+    /// Emit `expr?` as a GCC statement-expression that early-returns
+    /// the operand on the failure variant and yields the unwrapped
+    /// payload on success. The enclosing function's return type
+    /// must be the same Result/Option shape, which the typechecker
+    /// already enforces.
+    fn emit_try(&mut self, value: &Expr) -> String {
+        let value_c = self.emit_expr(value);
+        let value_ty = self
+            .typed
+            .expr_types
+            .get(&span_of_expr(value))
+            .cloned()
+            .unwrap_or(Ty::Unknown);
+        // Recover T from result<T, E> / option<T> for the union
+        // member to read on success.
+        let success_member = match &value_ty {
+            Ty::Path { path, args, .. }
+                if path.len() == 1 && (path[0] == "result" || path[0] == "option") =>
+            {
+                args.first()
+                    .map(|t| self.payload_member(t))
+                    .unwrap_or("ptr")
+            }
+            _ => "ptr",
+        };
+        let lo = span_of_expr(value).lo;
+        match &value_ty {
+            Ty::Path { path, .. } if path.len() == 1 && path[0] == "result" => format!(
+                "({{ phc_result __phc_try_{lo} = {value_c}; if (__phc_try_{lo}.kind != 0) {{ return __phc_try_{lo}; }} __phc_try_{lo}.ok.{success_member}; }})"
+            ),
+            Ty::Path { path, .. } if path.len() == 1 && path[0] == "option" => format!(
+                "({{ phc_option __phc_try_{lo} = {value_c}; if (__phc_try_{lo}.kind != 0) {{ return __phc_try_{lo}; }} __phc_try_{lo}.some.{success_member}; }})"
+            ),
+            _ => {
+                self.diag(
+                    span_of_expr(value),
+                    "postfix `?` operand must be result<T, E> or option<T>",
+                );
+                "phc_panic(\"codegen TODO ? on unknown type\")".into()
+            }
+        }
     }
 
     /// Best-effort class lookup for a method-call receiver. Reads

@@ -219,7 +219,20 @@ fn walk_expr(expr: &Expr, resolved: &Resolved, bindings: &mut BindingTypes, type
             for a in args {
                 walk_expr(a, resolved, bindings, typed);
             }
-            record(typed, *span, Ty::Unknown);
+            // Call return type: when the callee resolves to a known
+            // free function, look up its FunctionSig's return type.
+            // Otherwise stay Unknown.
+            let ret_ty = match callee.as_ref() {
+                Expr::TypeName { name, .. } => resolved
+                    .top_level
+                    .get(&name.name)
+                    .copied()
+                    .and_then(|sid| typed.function_sigs.get(&sid))
+                    .map(|sig| sig.return_ty.clone())
+                    .unwrap_or(Ty::Unknown),
+                _ => Ty::Unknown,
+            };
+            record(typed, *span, ret_ty);
             return;
         }
         Expr::Index {

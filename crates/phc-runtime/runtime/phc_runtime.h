@@ -27,6 +27,30 @@ typedef struct {
     int kind; /* 0 = null, 1 = void */
 } phc_value;
 
+/* Generic payload union shared by phc_result and phc_option. The
+ * codegen emits the right .<member> access at each call site
+ * based on the static T it knows. */
+typedef union {
+    int64_t i64;
+    double  f64;
+    int     b; /* C `bool` accessed via `int` to avoid alignment surprises */
+    phc_string s;
+    void*   ptr; /* instances, lambdas, anything boxed */
+} phc_payload;
+
+/* Tagged success/failure cell for `result<T, E>`. kind == 0 → ok. */
+typedef struct {
+    int kind;
+    phc_payload ok;
+    phc_payload err;
+} phc_result;
+
+/* Tagged optional cell for `option<T>`. kind == 0 → some. */
+typedef struct {
+    int kind;
+    phc_payload some;
+} phc_option;
+
 /* === Constructors === */
 phc_string phc_string_lit(const char* s);
 phc_string phc_string_owned(const char* s, size_t len);

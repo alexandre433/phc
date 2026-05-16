@@ -126,6 +126,53 @@ function main(): void {
     );
 }
 
+/// Build + run a Result/Option program. Exercises result::ok,
+/// result::err, option::some, option::none, and ? propagation
+/// across function boundaries.
+#[test]
+fn build_and_run_result_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_result_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function ok_path(int $n): result<int, string> {
+    return result::ok($n + 10);
+}
+
+function caller(int $n): result<int, string> {
+    int $v = ok_path($n)?;
+    return result::ok($v + 1);
+}
+
+function main(): void {
+    Logger::info("compiled with result + ?");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("result_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("result_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("compiled with result + ?"));
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.
