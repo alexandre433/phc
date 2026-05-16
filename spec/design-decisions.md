@@ -124,6 +124,7 @@ Locked during Phase 6 stdlib build-out:
 23. D-005 aliasing extension (locked 2026-05-16): within a single call's arg list, no two borrows of the same root binding may both be mutable, and a mutable borrow cannot coexist with any other borrow of the same root. Broader aliasing (across statements, through intermediate bindings) needs a full liveness pass and stays out of scope for v0.
 24. D-028 — `map<string, V>` collection v0a (locked 2026-05-16): `map()` ctor (V from binding annotation), `set/get/has/len` methods. String keys only; linear-scan storage. Reference semantics like list. `map` is a reserved name. Generic keys, hash storage, `remove`/iteration deferred.
 25. D-021 v0a (Phase 9 MVP, 2026-05-16): `test "name" { ... }` blocks at file top-level are discovered by `phc-test` and run sequentially through the interpreter. Pass = body completes without runtime error; fail = any panic or `?` propagation. `phc test <file>` reports pass/fail counts and exits non-zero on any failure. Assertion helpers (`assertEq`, etc.), cross-file project discovery, filtering, and parallel execution deferred.
+26. D-029 — Result/Option closure methods (locked 2026-05-16): `result<T,E>` gets `map(fn(T):U)→result<U,E>`, `andThen(fn(T):result<U,E>)→result<U,E>`, `unwrap()→T` (panics on err). `option<T>` gets `map`, `andThen` (option-shaped), `okOr(E)→result<T,E>`, `unwrap()` (panics on none). Codegen lowers each to a stmt-expr that invokes the stored `phc_lambda` on the unwrapped payload and packs the result. Closure return type recovered from the arg's `fn(T):U` static type; typecheck lambda inference now also seeds lambda params and records `fn(...):R` on every lambda expression.
 
 ---
 
@@ -906,3 +907,64 @@ Locked during Phase 6 stdlib build-out:
   tracked separately.
 
 ---
+
+### D-029 — Result/Option closure methods (v0)
+- **Decision**: Adds the closure forms that were deferred from
+  D-026 pending D-024 (function-type syntax, now locked).
+
+  **Result methods**:
+
+  | Method | Signature |
+  |--------|-----------|
+  | `map` | `(fn(T): U): result<U, E>` |
+  | `andThen` | `(fn(T): result<U, E>): result<U, E>` |
+  | `unwrap` | `(): T` — panics on `result::err(_)` |
+
+  **Option methods**:
+
+  | Method | Signature |
+  |--------|-----------|
+  | `map` | `(fn(T): U): option<U>` |
+  | `andThen` | `(fn(T): option<U>): option<U>` |
+  | `okOr` | `(E): result<T, E>` |
+  | `unwrap` | `(): T` — panics on `option::none` |
+
+  Codegen lowers each closure form to a GCC statement-expression
+  that binds the receiver once, branches on the tagged-union
+  `kind`, invokes the stored `phc_lambda` (`map`/`andThen`) on
+  the unwrapped payload, and packs the returned value back into
+  the appropriate carrier with the right `phc_payload` union
+  member. `okOr` does not need the callback machinery — it just
+  re-tags the receiver, picking the err-side member from the
+  argument's static type. `unwrap` is the simplest: a `kind != 0`
+  check that calls `phc_panic` with a clear message.
+
+  Closure return type recovery: the callback argument's static
+  type is `fn(T): U`, which lowers (D-024) to
+  `Ty::Path { path: ["fn"], args: [U, T] }`. The new
+  `lambda_return_ty` helper plucks `U = args[0]` for `map` /
+  `andThen` payload-member selection.
+
+  Typecheck improvement bundled with this slice: the lambda
+  inferer now (a) seeds the lambda's own parameters into the
+  binding-type table before walking the body, and (b) records
+  the lambda expression as `fn(P1, ..., Pn): R` (return type
+  from explicit `: T` annotation, falling back to the
+  Expr-body's recorded type). Without (a) a `result::ok($n + 1)`
+  inside a lambda body would record the binary as `Unknown` and
+  the codegen would pick the wrong payload member. Without (b)
+  `$xs->map($double)` couldn't infer U because the lambda's
+  static type would be `Ty::Unknown`.
+- **Alternatives considered**: keep these deferred until a
+  full generics + bound-resolution pass (delays every realistic
+  result-pipeline program); ship without `unwrap` (matches
+  Rust's "panics are loud" spirit but blocks the common
+  "I checked, give me the value" pattern); fold into D-026
+  (rewrites a locked decision instead of layering).
+- **Rationale**: small surface; orthogonal to the rest of D-022;
+  same dispatch + payload-member pattern D-025 / D-027 / D-028
+  already use, plus the stored-lambda invocation pattern from
+  D-024. Unblocks every realistic result-pipeline program.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; collection closure methods
+  (`forEach` / `map` / `filter` on `list<T>`) tracked separately.

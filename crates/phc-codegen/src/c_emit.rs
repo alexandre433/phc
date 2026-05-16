@@ -1482,6 +1482,119 @@ impl<'a> Emitter<'a> {
                     "({{ phc_option __o_{lo} = {recv_c}; __o_{lo}.kind == 0 ? __o_{lo} : ({fallback}); }})"
                 ))
             }
+            // D-029 closure forms.
+            ("result", "map", 1) => Some(self.emit_result_map(receiver, inner_ty, &args[0])),
+            ("result", "andThen", 1) => {
+                Some(self.emit_result_and_then(receiver, inner_ty, &args[0]))
+            }
+            ("result", "unwrap", 0) => {
+                let pm = self.payload_member(inner_ty);
+                let lo = span_of_expr(receiver).lo;
+                Some(format!(
+                    "({{ phc_result __r_{lo} = {recv_c}; if (__r_{lo}.kind != 0) {{ phc_panic(\"unwrap on result::err\"); }} __r_{lo}.ok.{pm}; }})"
+                ))
+            }
+            ("option", "map", 1) => Some(self.emit_option_map(receiver, inner_ty, &args[0])),
+            ("option", "andThen", 1) => {
+                Some(self.emit_option_and_then(receiver, inner_ty, &args[0]))
+            }
+            ("option", "okOr", 1) => Some(self.emit_option_ok_or(receiver, inner_ty, &args[0])),
+            ("option", "unwrap", 0) => {
+                let pm = self.payload_member(inner_ty);
+                let lo = span_of_expr(receiver).lo;
+                Some(format!(
+                    "({{ phc_option __o_{lo} = {recv_c}; if (__o_{lo}.kind != 0) {{ phc_panic(\"unwrap on option::none\"); }} __o_{lo}.some.{pm}; }})"
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// Emit `result<T,E>.map(fn(T): U)`. Builds a stmt-expr that
+    /// invokes the closure on the ok payload (with the right
+    /// payload member from T) and packs the U result into a fresh
+    /// `phc_result` whose payload member matches U. Err pass-through.
+    fn emit_result_map(&mut self, receiver: &Expr, t_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(t_ty);
+        let c_t = self.ty_to_c(t_ty);
+        let u_ty = self.lambda_return_ty(closure).unwrap_or(Ty::Unknown);
+        let pm_u = self.payload_member(&u_ty);
+        let c_u = self.ty_to_c(&u_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_result __r_{lo} = {recv_c}; phc_result __out_{lo}; if (__r_{lo}.kind == 0) {{ phc_lambda __cb_{lo} = {cb_c}; {c_u} __u_{lo} = (({c_u}(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __r_{lo}.ok.{pm_t}); __out_{lo}.kind = 0; __out_{lo}.ok.{pm_u} = __u_{lo}; }} else {{ __out_{lo} = __r_{lo}; }} __out_{lo}; }})"
+        )
+    }
+
+    /// `result.andThen(closure)`: closure returns `phc_result`
+    /// directly; assign the call result straight into the output.
+    fn emit_result_and_then(&mut self, receiver: &Expr, t_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(t_ty);
+        let c_t = self.ty_to_c(t_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_result __r_{lo} = {recv_c}; phc_result __out_{lo}; if (__r_{lo}.kind == 0) {{ phc_lambda __cb_{lo} = {cb_c}; __out_{lo} = ((phc_result(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __r_{lo}.ok.{pm_t}); }} else {{ __out_{lo} = __r_{lo}; }} __out_{lo}; }})"
+        )
+    }
+
+    /// `option<T>.map(fn(T): U)` — same shape as result.map but on
+    /// `.some` and falling back to `none` on the empty branch.
+    fn emit_option_map(&mut self, receiver: &Expr, t_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(t_ty);
+        let c_t = self.ty_to_c(t_ty);
+        let u_ty = self.lambda_return_ty(closure).unwrap_or(Ty::Unknown);
+        let pm_u = self.payload_member(&u_ty);
+        let c_u = self.ty_to_c(&u_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_option __o_{lo} = {recv_c}; phc_option __out_{lo}; if (__o_{lo}.kind == 0) {{ phc_lambda __cb_{lo} = {cb_c}; {c_u} __u_{lo} = (({c_u}(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __o_{lo}.some.{pm_t}); __out_{lo}.kind = 0; __out_{lo}.some.{pm_u} = __u_{lo}; }} else {{ __out_{lo}.kind = 1; }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_option_and_then(&mut self, receiver: &Expr, t_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(t_ty);
+        let c_t = self.ty_to_c(t_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_option __o_{lo} = {recv_c}; phc_option __out_{lo}; if (__o_{lo}.kind == 0) {{ phc_lambda __cb_{lo} = {cb_c}; __out_{lo} = ((phc_option(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __o_{lo}.some.{pm_t}); }} else {{ __out_{lo}.kind = 1; }} __out_{lo}; }})"
+        )
+    }
+
+    /// `option<T>.okOr(E)` — convert to `result<T, E>`. E's static
+    /// type from the arg determines the err-side payload member.
+    fn emit_option_ok_or(&mut self, receiver: &Expr, t_ty: &Ty, err_expr: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let err_c = self.emit_expr(err_expr);
+        let pm_t = self.payload_member(t_ty);
+        let err_ty = self
+            .typed
+            .expr_types
+            .get(&span_of_expr(err_expr))
+            .cloned()
+            .unwrap_or(Ty::Unknown);
+        let pm_e = self.payload_member(&err_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_option __o_{lo} = {recv_c}; phc_result __out_{lo}; if (__o_{lo}.kind == 0) {{ __out_{lo}.kind = 0; __out_{lo}.ok.{pm_t} = __o_{lo}.some.{pm_t}; }} else {{ __out_{lo}.kind = 1; __out_{lo}.err.{pm_e} = ({err_c}); }} __out_{lo}; }})"
+        )
+    }
+
+    /// Extract `U` from a closure argument typed `fn(T): U`. The
+    /// fn-type lowering puts the return first in `args` so it's
+    /// just `args[0]`.
+    fn lambda_return_ty(&self, expr: &Expr) -> Option<Ty> {
+        match self.typed.expr_types.get(&span_of_expr(expr))? {
+            Ty::Path { path, args, .. } if path.len() == 1 && path[0] == "fn" => {
+                args.first().cloned()
+            }
             _ => None,
         }
     }

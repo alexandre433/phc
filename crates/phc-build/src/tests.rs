@@ -587,6 +587,96 @@ function main(): void {
     }
 }
 
+/// Build + run D-029 closure methods on result/option end-to-end:
+/// map / andThen / okOr / unwrap, plus the err / none pass-through
+/// branches. Each branch logs a sentinel.
+#[test]
+fn build_and_run_result_option_closure_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_result_option_closure_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    result<int, string> $ok = result::ok(20);
+    result<int, string> $err = result::err("nope");
+
+    fn(int): int $double = (int $n): int => $n * 2;
+    result<int, string> $mapped = $ok->map($double);
+    if ($mapped->unwrapOr(0) == 40) { Logger::info("result.map ok"); }
+    result<int, string> $mapErr = $err->map($double);
+    if ($mapErr->isErr()) { Logger::info("result.map passthrough"); }
+
+    fn(int): result<int, string> $half = (int $n): result<int, string> =>
+        result::ok($n + 1);
+    result<int, string> $chained = $ok->andThen($half);
+    if ($chained->unwrapOr(0) == 21) { Logger::info("result.andThen ok"); }
+
+    if ($ok->unwrap() == 20) { Logger::info("result.unwrap ok"); }
+
+    option<int> $some = option::some(7);
+    option<int> $none = option::none;
+
+    fn(int): int $inc = (int $n): int => $n + 1;
+    option<int> $mappedOpt = $some->map($inc);
+    if ($mappedOpt->unwrapOr(0) == 8) { Logger::info("option.map ok"); }
+    option<int> $mappedNone = $none->map($inc);
+    if ($mappedNone->isNone()) { Logger::info("option.map none"); }
+
+    fn(int): option<int> $doubleSome = (int $n): option<int> =>
+        option::some($n * 2);
+    option<int> $chainedOpt = $some->andThen($doubleSome);
+    if ($chainedOpt->unwrapOr(0) == 14) { Logger::info("option.andThen ok"); }
+
+    result<int, string> $promoted = $some->okOr("missing");
+    if ($promoted->unwrapOr(0) == 7) { Logger::info("option.okOr some"); }
+    result<int, string> $demoted = $none->okOr("missing");
+    if ($demoted->isErr()) { Logger::info("option.okOr none"); }
+
+    if ($some->unwrap() == 7) { Logger::info("option.unwrap ok"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("result_option_closure_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("result_option_closure_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "closure-method binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in [
+        "result.map ok",
+        "result.map passthrough",
+        "result.andThen ok",
+        "result.unwrap ok",
+        "option.map ok",
+        "option.map none",
+        "option.andThen ok",
+        "option.okOr some",
+        "option.okOr none",
+        "option.unwrap ok",
+    ] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

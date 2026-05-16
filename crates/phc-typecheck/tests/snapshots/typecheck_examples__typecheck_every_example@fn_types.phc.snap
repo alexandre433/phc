@@ -9,18 +9,18 @@ SymbolId(1)() -> void
 
 === expr types ===
  248..253  : bool
- 272..306  : <unknown>
- 295..297  : <unknown>
+ 272..306  : fn<string, string>
+ 295..297  : string
  295..304  : <unknown>
- 295..306  : <unknown>
- 325..359  : <unknown>
- 348..350  : <unknown>
+ 295..306  : string
+ 325..359  : fn<string, string>
+ 348..350  : string
  348..357  : <unknown>
- 348..359  : <unknown>
- 424..456  : <unknown>
- 449..451  : <unknown>
- 449..456  : <unknown>
- 454..456  : <unknown>
+ 348..359  : string
+ 424..456  : fn<int, int, int>
+ 449..451  : int
+ 449..456  : int
+ 454..456  : int
  466..470  : fn<int, int, int>
  466..478  : int
  466..484  : bool

@@ -233,7 +233,7 @@ fn walk_expr(expr: &Expr, resolved: &Resolved, bindings: &mut BindingTypes, type
             // 3. Stdlib method: receiver typed `string`, `list<T>`,
             //    `result<T, E>`, or `option<T>`. Hardcoded surface
             //    matching D-025 / D-026 / D-027.
-            let ret_ty = call_return_ty(callee, resolved, typed);
+            let ret_ty = call_return_ty(callee, args, resolved, typed);
             record(typed, *span, ret_ty);
             return;
         }
@@ -270,12 +270,47 @@ fn walk_expr(expr: &Expr, resolved: &Resolved, bindings: &mut BindingTypes, type
             record(typed, *span, Ty::Unknown);
             return;
         }
-        Expr::Lambda { body, span, .. } => {
+        Expr::Lambda {
+            params, body, span, ..
+        } => {
+            // Seed the lambda's own parameters into the binding-type
+            // table before walking the body so a `$n` inside refers
+            // to its declared type, not Ty::Unknown. Each lambda
+            // param carries a fresh SymbolId so no outer binding is
+            // shadowed by the insert.
+            for p in params {
+                if let Some(sid) = symbol_at_def(resolved, p.name.span) {
+                    bindings.insert(sid, lower_type_ref(&p.ty));
+                }
+            }
             match body {
                 phc_ast::LambdaBody::Expr(e) => walk_expr(e, resolved, bindings, typed),
                 phc_ast::LambdaBody::Block(b) => walk_block(b, resolved, bindings, typed),
             }
-            record(typed, *span, Ty::Unknown);
+            // Record the lambda expression itself as the function
+            // type `fn(P1, ..., Pn): R` so a callee like `($f)(args)`
+            // for an inline lambda — or the lambda value used as an
+            // argument to a higher-order method — has a concrete
+            // static type to dispatch on. Inferred return type comes
+            // from the explicit annotation (best signal); body-type
+            // inference is a follow-up.
+            let ret_ty = match return_type_ty(expr) {
+                Some(t) => t,
+                None => lambda_body_ty(body, typed).unwrap_or(Ty::Unknown),
+            };
+            let mut fn_args = vec![ret_ty];
+            for p in params {
+                fn_args.push(lower_type_ref(&p.ty));
+            }
+            record(
+                typed,
+                *span,
+                Ty::Path {
+                    path: vec!["fn".to_string()],
+                    args: fn_args,
+                    nullable: false,
+                },
+            );
             return;
         }
     };
@@ -314,9 +349,34 @@ fn record(typed: &mut Typed, span: Span, ty: Ty) {
     typed.expr_types.insert(span, ty);
 }
 
+/// Extract the explicit `: T` return type annotation off a
+/// `Expr::Lambda`, lowered. Returns None when omitted.
+fn return_type_ty(expr: &Expr) -> Option<Ty> {
+    match expr {
+        Expr::Lambda {
+            return_type: Some(rt),
+            ..
+        } => Some(lower_type_ref(rt)),
+        _ => None,
+    }
+}
+
+/// Best-effort lambda body type when there is no explicit return
+/// annotation. Block bodies are not statically reduced today — the
+/// inferer doesn't yet walk `return` statements to pick one type —
+/// so a Block body falls back to `Ty::Unknown` and the caller
+/// records that. Expression bodies use the body expression's
+/// recorded type.
+fn lambda_body_ty(body: &phc_ast::LambdaBody, typed: &Typed) -> Option<Ty> {
+    match body {
+        phc_ast::LambdaBody::Expr(e) => typed.expr_types.get(&span_of(e)).cloned(),
+        phc_ast::LambdaBody::Block(_) => None,
+    }
+}
+
 /// Compute a Call expression's return type from its callee shape.
 /// See the matching comment at the call site for the three cases.
-fn call_return_ty(callee: &Expr, resolved: &Resolved, typed: &Typed) -> Ty {
+fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typed) -> Ty {
     // D-024 stored-lambda call: callee's static type is `fn(...): R`,
     // lowered to `Ty::Path { path:["fn"], args:[R, P1, ..., Pn] }`.
     // Return type is args[0]. Checked before the syntactic dispatch
@@ -344,7 +404,10 @@ fn call_return_ty(callee: &Expr, resolved: &Resolved, typed: &Typed) -> Ty {
                 None => return Ty::Unknown,
             };
             // 1. Stdlib method on a primitive / generic container.
-            if let Some(t) = stdlib_method_return_ty(recv_ty, &field.name) {
+            //    Some methods (D-029 closure forms) need the call
+            //    args to recover the closure's return type, so the
+            //    helper takes the args slice too.
+            if let Some(t) = stdlib_method_return_ty(recv_ty, &field.name, args, typed) {
                 return t;
             }
             // 2. Class method: walk the resolver's members for the
@@ -372,8 +435,33 @@ fn call_return_ty(callee: &Expr, resolved: &Resolved, typed: &Typed) -> Ty {
 
 /// Map a stdlib method to its return type given the receiver's
 /// static type. Mirrors the codegen / interpreter dispatch tables
-/// for D-025 (string), D-026 (result/option), D-027 (list).
-fn stdlib_method_return_ty(recv_ty: &Ty, method: &str) -> Option<Ty> {
+/// for D-025 (string), D-026 (result/option non-closure), D-027
+/// (list), D-028 (map), D-029 (result/option closure forms).
+///
+/// `call_args` is the Call expression's argument list; the
+/// closure-form methods (`map`, `andThen`, `okOr`) pull the
+/// transformed type out of the callback argument's static type
+/// (`fn(T): U` lowers to `Ty::Path { path:["fn"], args:[U, T] }`
+/// so the U is `args[0]`).
+fn stdlib_method_return_ty(
+    recv_ty: &Ty,
+    method: &str,
+    call_args: &[Expr],
+    typed: &Typed,
+) -> Option<Ty> {
+    let lambda_return = |idx: usize| -> Option<Ty> {
+        let a = call_args.get(idx)?;
+        match typed.expr_types.get(&span_of(a))? {
+            Ty::Path { path, args, .. } if path.len() == 1 && path[0] == "fn" => {
+                args.first().cloned()
+            }
+            _ => None,
+        }
+    };
+    let arg_static_ty = |idx: usize| -> Option<Ty> {
+        let a = call_args.get(idx)?;
+        typed.expr_types.get(&span_of(a)).cloned()
+    };
     match recv_ty {
         Ty::Primitive(crate::Primitive::String) => match method {
             "len" => Some(Ty::Primitive(crate::Primitive::Int)),
@@ -385,6 +473,7 @@ fn stdlib_method_return_ty(recv_ty: &Ty, method: &str) -> Option<Ty> {
         },
         Ty::Path { path, args, .. } if path.len() == 1 => {
             let elem = args.first().cloned();
+            let err = args.get(1).cloned();
             match (path[0].as_str(), method) {
                 ("list", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("list", "push") => Some(Ty::Primitive(crate::Primitive::Void)),
@@ -405,11 +494,49 @@ fn stdlib_method_return_ty(recv_ty: &Ty, method: &str) -> Option<Ty> {
                     Some(Ty::Primitive(crate::Primitive::Bool))
                 }
                 ("result", "unwrapOr") => elem,
+                // D-029: result<T,E>.map(fn(T): U) → result<U, E>.
+                ("result", "map") => {
+                    let u = lambda_return(0).unwrap_or(Ty::Unknown);
+                    let e = err.unwrap_or(Ty::Unknown);
+                    Some(Ty::Path {
+                        path: vec!["result".to_string()],
+                        args: vec![u, e],
+                        nullable: false,
+                    })
+                }
+                // andThen: closure already returns result<U, E>, so
+                // the receiver's return type is just the closure's
+                // return type.
+                ("result", "andThen") => Some(lambda_return(0).unwrap_or(Ty::Unknown)),
+                ("result", "unwrap") => elem,
                 ("option", "isSome") | ("option", "isNone") => {
                     Some(Ty::Primitive(crate::Primitive::Bool))
                 }
                 ("option", "unwrapOr") => elem,
                 ("option", "orElse") => Some(recv_ty.clone()),
+                // D-029: option<T>.map(fn(T): U) → option<U>.
+                ("option", "map") => {
+                    let u = lambda_return(0).unwrap_or(Ty::Unknown);
+                    Some(Ty::Path {
+                        path: vec!["option".to_string()],
+                        args: vec![u],
+                        nullable: false,
+                    })
+                }
+                // option.andThen: closure returns option<U>; pass
+                // through verbatim.
+                ("option", "andThen") => Some(lambda_return(0).unwrap_or(Ty::Unknown)),
+                // option<T>.okOr(E) → result<T, E>; E from arg type.
+                ("option", "okOr") => {
+                    let e = arg_static_ty(0).unwrap_or(Ty::Unknown);
+                    let t = elem.unwrap_or(Ty::Unknown);
+                    Some(Ty::Path {
+                        path: vec!["result".to_string()],
+                        args: vec![t, e],
+                        nullable: false,
+                    })
+                }
+                ("option", "unwrap") => elem,
                 _ => None,
             }
         }

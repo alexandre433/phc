@@ -812,3 +812,62 @@ function main(): void {
         ]
     );
 }
+
+#[test]
+fn result_option_d029_closure_methods_run_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    result<int, string> $ok = result::ok(20);
+    result<int, string> $err = result::err("nope");
+
+    fn(int): int $double = (int $n): int => $n * 2;
+    result<int, string> $mapped = $ok->map($double);
+    if ($mapped->unwrapOr(0) == 40) { Logger::info("result.map ok"); }
+    result<int, string> $mapErr = $err->map($double);
+    if ($mapErr->isErr()) { Logger::info("result.map passthrough"); }
+
+    fn(int): result<int, string> $half = (int $n): result<int, string> =>
+        result::ok($n + 1);
+    result<int, string> $chained = $ok->andThen($half);
+    if ($chained->unwrapOr(0) == 21) { Logger::info("result.andThen ok"); }
+
+    if ($ok->unwrap() == 20) { Logger::info("result.unwrap ok"); }
+
+    option<int> $some = option::some(7);
+    option<int> $none = option::none;
+
+    fn(int): int $inc = (int $n): int => $n + 1;
+    option<int> $mappedOpt = $some->map($inc);
+    if ($mappedOpt->unwrapOr(0) == 8) { Logger::info("option.map ok"); }
+    if ($none->map($inc)->isNone()) { Logger::info("option.map none"); }
+
+    fn(int): option<int> $doubleSome = (int $n): option<int> =>
+        option::some($n * 2);
+    if ($some->andThen($doubleSome)->unwrapOr(0) == 14) {
+        Logger::info("option.andThen ok");
+    }
+
+    result<int, string> $promoted = $some->okOr("missing");
+    if ($promoted->unwrapOr(0) == 7) { Logger::info("option.okOr some"); }
+    result<int, string> $demoted = $none->okOr("missing");
+    if ($demoted->isErr()) { Logger::info("option.okOr none"); }
+
+    if ($some->unwrap() == 7) { Logger::info("option.unwrap ok"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let expected = vec![
+        "result.map ok".to_string(),
+        "result.map passthrough".to_string(),
+        "result.andThen ok".to_string(),
+        "result.unwrap ok".to_string(),
+        "option.map ok".to_string(),
+        "option.map none".to_string(),
+        "option.andThen ok".to_string(),
+        "option.okOr some".to_string(),
+        "option.okOr none".to_string(),
+        "option.unwrap ok".to_string(),
+    ];
+    assert_eq!(out.stdout, expected);
+}

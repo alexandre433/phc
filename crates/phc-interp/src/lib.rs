@@ -1165,8 +1165,139 @@ impl<'a> Interp<'a> {
                 arity_check(1)?;
                 Ok(Some(self.eval_expr(&args[0], env)?))
             }
+            // D-029 closure forms. Each one evaluates the callback
+            // expression (must yield a Value::Lambda) and invokes
+            // it with the unwrapped payload.
+            (Value::ResultOk(v), "map") => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let mapped = self.invoke_lambda_with(&lam, vec![(**v).clone()])?;
+                Ok(Some(Value::ResultOk(Box::new(mapped))))
+            }
+            (Value::ResultErr(_), "map") => {
+                arity_check(1)?;
+                // Evaluate the callback (preserves any side effects
+                // a user might rely on), then pass the err through.
+                let _ = self.eval_lambda_arg(&args[0], env)?;
+                Ok(Some(recv.clone()))
+            }
+            (Value::ResultOk(v), "andThen") => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                Ok(Some(self.invoke_lambda_with(&lam, vec![(**v).clone()])?))
+            }
+            (Value::ResultErr(_), "andThen") => {
+                arity_check(1)?;
+                let _ = self.eval_lambda_arg(&args[0], env)?;
+                Ok(Some(recv.clone()))
+            }
+            (Value::ResultOk(v), "unwrap") => {
+                arity_check(0)?;
+                Ok(Some((**v).clone()))
+            }
+            (Value::ResultErr(e), "unwrap") => {
+                arity_check(0)?;
+                Err(rt(format!("unwrap on result::err({})", e.display())))
+            }
+            (Value::OptionSome(v), "map") => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let mapped = self.invoke_lambda_with(&lam, vec![(**v).clone()])?;
+                Ok(Some(Value::OptionSome(Box::new(mapped))))
+            }
+            (Value::OptionNone, "map") => {
+                arity_check(1)?;
+                let _ = self.eval_lambda_arg(&args[0], env)?;
+                Ok(Some(Value::OptionNone))
+            }
+            (Value::OptionSome(v), "andThen") => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                Ok(Some(self.invoke_lambda_with(&lam, vec![(**v).clone()])?))
+            }
+            (Value::OptionNone, "andThen") => {
+                arity_check(1)?;
+                let _ = self.eval_lambda_arg(&args[0], env)?;
+                Ok(Some(Value::OptionNone))
+            }
+            (Value::OptionSome(v), "okOr") => {
+                arity_check(1)?;
+                let _ = self.eval_expr(&args[0], env)?;
+                Ok(Some(Value::ResultOk(v.clone())))
+            }
+            (Value::OptionNone, "okOr") => {
+                arity_check(1)?;
+                let e = self.eval_expr(&args[0], env)?;
+                Ok(Some(Value::ResultErr(Box::new(e))))
+            }
+            (Value::OptionSome(v), "unwrap") => {
+                arity_check(0)?;
+                Ok(Some((**v).clone()))
+            }
+            (Value::OptionNone, "unwrap") => {
+                arity_check(0)?;
+                Err(rt("unwrap on option::none".to_string()))
+            }
             _ => Ok(None),
         }
+    }
+
+    /// Evaluate an expression that must produce a `Value::Lambda`
+    /// (used by D-029 closure methods). Returns the Rc-shared
+    /// LambdaValue or a runtime error if the value is not a lambda.
+    fn eval_lambda_arg(&mut self, expr: &Expr, env: &mut Env) -> EvalResult<Rc<LambdaValue>> {
+        match self.eval_expr(expr, env)? {
+            Value::Lambda(lam) => Ok(lam),
+            other => Err(rt(format!(
+                "expected a `fn(...): R` callback, got `{}`",
+                other.display()
+            ))),
+        }
+    }
+
+    /// Invoke a lambda with already-evaluated argument values
+    /// instead of an `[Expr]` slice. The existing `invoke_lambda`
+    /// re-evaluates from AST nodes; this variant lets the D-029
+    /// methods pass the unwrapped payload straight through.
+    fn invoke_lambda_with(
+        &mut self,
+        lam: &LambdaValue,
+        arg_values: Vec<Value>,
+    ) -> EvalResult<Value> {
+        if arg_values.len() != lam.params.len() {
+            return Err(rt(format!(
+                "lambda expects {} arguments, got {}",
+                lam.params.len(),
+                arg_values.len()
+            )));
+        }
+        let mut env = Env::default();
+        env.enter();
+        for (id, value) in &lam.captures {
+            env.bind(*id, value.clone());
+        }
+        for (param, value) in lam.params.iter().zip(arg_values) {
+            if let Some(sid) = self.symbol_at_def(param.name.span) {
+                env.bind(sid, value);
+            }
+        }
+        let result = match &lam.body {
+            LambdaBody::Expr(e) => self.eval_expr(e, &mut env),
+            LambdaBody::Block(b) => {
+                let inner = self.eval_block_body(&b.statements, &mut env);
+                match inner {
+                    Ok(Flow::Return(v)) => Ok(v),
+                    Ok(Flow::Normal) => Ok(Value::Void),
+                    Ok(Flow::Break) | Ok(Flow::Continue) => {
+                        Err(rt("`break`/`continue` escaped a lambda body".to_string()))
+                    }
+                    Err(EvalError::Propagate(v)) => Ok(v),
+                    Err(e) => Err(e),
+                }
+            }
+        };
+        env.leave();
+        result
     }
 
     /// D-027 list method dispatch. Returns Ok(Some) when the method
