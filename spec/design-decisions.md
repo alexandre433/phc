@@ -119,6 +119,7 @@ Locked during Phase 6 stdlib build-out:
 
 19. D-025 — String stdlib v0 method surface (locked 2026-05-16): camelCase methods `len/contains/startsWith/endsWith/trim/upper/lower` plus carry-over `toInt`. Byte-oriented; ASCII case fold; `==` / `!=` on `string` lower to `phc_str_eq`. Multi-byte / Unicode-aware variants deferred.
 20. D-027 — `list<T>` collection v0a (locked 2026-05-16): `list()` ctor (type from binding annotation), `push/len/at` methods, `$xs[i]` indexing, `for (T $x in $xs)` iteration. **Reference semantics** (handle-shared mutation), explicitly diverges from D-022's CoW pending refcounts. OOB aborts; fallible variants deferred. `list` is a reserved name.
+21. D-026 — Result/Option ergonomic methods (locked 2026-05-16): `result` gets `isOk/isErr/unwrapOr`; `option` gets `isSome/isNone/unwrapOr/orElse`. Inline statement-expression lowering for `unwrapOr/orElse`; `map/andThen/unwrap/okOr` deferred (the closure forms wait on D-024).
 
 ---
 
@@ -758,3 +759,50 @@ Locked during Phase 6 stdlib build-out:
   shallow-copies the struct (same `data` pointer). Safe today
   because v0 never frees; will need a real ownership story before
   drops are introduced.
+
+### D-026 — Result/Option ergonomic methods (v0)
+- **Decision**: Adds the smallest method surface needed to consume
+  `result<T, E>` and `option<T>` without falling back to `match` for
+  every check. CamelCase per D-025.
+
+  **Result methods**:
+
+  | Method | Signature | Returns |
+  |--------|-----------|---------|
+  | `isOk` | `(): bool` | true if the receiver is `result::ok(_)`. |
+  | `isErr` | `(): bool` | true if the receiver is `result::err(_)`. |
+  | `unwrapOr` | `(T): T` | The ok payload, or the fallback when err. |
+
+  **Option methods**:
+
+  | Method | Signature | Returns |
+  |--------|-----------|---------|
+  | `isSome` | `(): bool` | true if the receiver is `option::some(_)`. |
+  | `isNone` | `(): bool` | true if the receiver is `option::none`. |
+  | `unwrapOr` | `(T): T` | The some payload, or the fallback when none. |
+  | `orElse` | `(option<T>): option<T>` | The receiver if some, else the alternative option. |
+
+  Predicates lower to runtime helpers (`phc_result_is_ok`, etc.).
+  `unwrapOr` and `orElse` are emitted inline as GCC
+  statement-expressions that bind the receiver once and select the
+  payload union member at the call site from the static T — same
+  payload-dispatch pattern D-025 / D-027 use.
+- **Alternatives considered**: `unwrap()` (panic on err/none — kept
+  for a later slice; `unwrapOr` covers the common case without
+  inviting panics in well-formed code); `okOr(E)` to convert option
+  to result (deferred — simpler to add when conversion patterns
+  surface in real code); `map`/`andThen` (require lambdas as values,
+  blocked on D-024).
+- **Rationale**: Closes the readability gap between "match every
+  result by hand" and "ignore the failure variant entirely". Picks
+  the methods that have a known type-inference path through codegen
+  today (no closure needed, payload type comes from the static
+  receiver type), so the slice doesn't sit on D-024.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; `map` / `andThen` / `unwrap` /
+  `okOr` tracked separately.
+- **Known limitation**: typecheck does not yet infer return types
+  for method calls (only free functions). Chains like
+  `$o->orElse(other)->unwrapOr(0)` build through the interpreter
+  but not through codegen; split through a typed local for now.
+  Lifting this is a typecheck improvement, not a D-026 change.

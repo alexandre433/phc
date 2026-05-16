@@ -714,6 +714,17 @@ impl<'a> Interp<'a> {
                     return Ok(value);
                 }
             }
+            // D-026 result/option method dispatch.
+            if matches!(
+                recv,
+                Value::ResultOk(_) | Value::ResultErr(_) | Value::OptionSome(_) | Value::OptionNone
+            ) {
+                if let Some(value) =
+                    self.try_eval_result_option_method(&recv, &field.name, args, env)?
+                {
+                    return Ok(value);
+                }
+            }
             return self.invoke_method(recv, &field.name, args, env);
         }
         // Stdlib `list()` constructor (D-027). Reserved name —
@@ -948,6 +959,73 @@ impl<'a> Interp<'a> {
                     })
                     .collect();
                 Ok(Some(Value::String(out)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// D-026 Result/Option method dispatch. Receiver is one of the
+    /// four tagged-union Value variants; method picks the predicate
+    /// or the unwrap/orElse branch.
+    fn try_eval_result_option_method(
+        &mut self,
+        recv: &Value,
+        method: &str,
+        args: &[Expr],
+        env: &mut Env,
+    ) -> EvalResult<Option<Value>> {
+        let arity_check = |expected: usize| -> EvalResult<()> {
+            if args.len() != expected {
+                return Err(rt(format!(
+                    "method `{method}` takes {expected} argument(s), got {}",
+                    args.len()
+                )));
+            }
+            Ok(())
+        };
+        match (recv, method) {
+            (Value::ResultOk(_), "isOk") | (Value::ResultErr(_), "isOk") => {
+                arity_check(0)?;
+                Ok(Some(Value::Bool(matches!(recv, Value::ResultOk(_)))))
+            }
+            (Value::ResultOk(_), "isErr") | (Value::ResultErr(_), "isErr") => {
+                arity_check(0)?;
+                Ok(Some(Value::Bool(matches!(recv, Value::ResultErr(_)))))
+            }
+            (Value::ResultOk(v), "unwrapOr") => {
+                arity_check(1)?;
+                let _ = self.eval_expr(&args[0], env)?;
+                Ok(Some((**v).clone()))
+            }
+            (Value::ResultErr(_), "unwrapOr") => {
+                arity_check(1)?;
+                Ok(Some(self.eval_expr(&args[0], env)?))
+            }
+            (Value::OptionSome(_), "isSome") | (Value::OptionNone, "isSome") => {
+                arity_check(0)?;
+                Ok(Some(Value::Bool(matches!(recv, Value::OptionSome(_)))))
+            }
+            (Value::OptionSome(_), "isNone") | (Value::OptionNone, "isNone") => {
+                arity_check(0)?;
+                Ok(Some(Value::Bool(matches!(recv, Value::OptionNone))))
+            }
+            (Value::OptionSome(v), "unwrapOr") => {
+                arity_check(1)?;
+                let _ = self.eval_expr(&args[0], env)?;
+                Ok(Some((**v).clone()))
+            }
+            (Value::OptionNone, "unwrapOr") => {
+                arity_check(1)?;
+                Ok(Some(self.eval_expr(&args[0], env)?))
+            }
+            (Value::OptionSome(_), "orElse") => {
+                arity_check(1)?;
+                let _ = self.eval_expr(&args[0], env)?;
+                Ok(Some(recv.clone()))
+            }
+            (Value::OptionNone, "orElse") => {
+                arity_check(1)?;
+                Ok(Some(self.eval_expr(&args[0], env)?))
             }
             _ => Ok(None),
         }

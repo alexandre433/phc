@@ -164,6 +164,13 @@ phc_string phc_str_lower(phc_string s) {
     return out;
 }
 
+/* ===== Result / Option ergonomic methods (D-026) ===== */
+
+bool phc_result_is_ok(phc_result r) { return r.kind == 0; }
+bool phc_result_is_err(phc_result r) { return r.kind != 0; }
+bool phc_option_is_some(phc_option o) { return o.kind == 0; }
+bool phc_option_is_none(phc_option o) { return o.kind != 0; }
+
 /* ===== List stdlib (D-027) ===== */
 
 struct phc_list_s {

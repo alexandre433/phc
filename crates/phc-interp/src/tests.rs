@@ -695,3 +695,39 @@ function main(): void {
     ];
     assert_eq!(out.stdout, expected);
 }
+
+#[test]
+fn result_option_d026_runs_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    result<int, string> $ok = result::ok(42);
+    result<int, string> $err = result::err("nope");
+    if ($ok->isOk()) { Logger::info("ok-isOk"); }
+    if ($err->isErr()) { Logger::info("err-isErr"); }
+    if ($ok->unwrapOr(0) == 42) { Logger::info("ok-unwrap"); }
+    if ($err->unwrapOr(99) == 99) { Logger::info("err-unwrap"); }
+
+    option<int> $some = option::some(7);
+    option<int> $none = option::none;
+    if ($some->isSome()) { Logger::info("some-isSome"); }
+    if ($none->isNone()) { Logger::info("none-isNone"); }
+    if ($some->unwrapOr(0) == 7) { Logger::info("some-unwrap"); }
+    if ($none->unwrapOr(99) == 99) { Logger::info("none-unwrap"); }
+    if ($none->orElse(option::some(5))->unwrapOr(0) == 5) { Logger::info("orElse"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let expected = vec![
+        "ok-isOk".to_string(),
+        "err-isErr".to_string(),
+        "ok-unwrap".to_string(),
+        "err-unwrap".to_string(),
+        "some-isSome".to_string(),
+        "none-isNone".to_string(),
+        "some-unwrap".to_string(),
+        "none-unwrap".to_string(),
+        "orElse".to_string(),
+    ];
+    assert_eq!(out.stdout, expected);
+}

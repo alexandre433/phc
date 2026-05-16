@@ -1196,6 +1196,24 @@ impl<'a> Emitter<'a> {
                     }
                 }
             }
+            // Stdlib result<T, E> / option<T> methods (D-026).
+            if let Some(Ty::Path {
+                path, args: targs, ..
+            }) = self.typed.expr_types.get(&span_of_expr(receiver))
+            {
+                if path.len() == 1 && (path[0] == "result" || path[0] == "option") {
+                    let inner_ty = targs.first().cloned().unwrap_or(Ty::Unknown);
+                    if let Some(snippet) = self.try_emit_result_option_method(
+                        receiver,
+                        &path[0],
+                        &field.name,
+                        args,
+                        &inner_ty,
+                    ) {
+                        return snippet;
+                    }
+                }
+            }
             let recv_c = self.emit_expr(receiver);
             // Look up class name via the receiver's typed Ty.
             let class = self.class_of_expr(receiver);
@@ -1262,6 +1280,56 @@ impl<'a> Emitter<'a> {
             "indexing only supported on `list<T>` in v0",
         );
         "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit a stdlib `result<T, E>` or `option<T>` method call
+    /// (D-026). `kind` is the receiver's path head (`"result"` or
+    /// `"option"`); `inner_ty` is T (used to pick the payload union
+    /// member for `unwrapOr`). Returns None when the method is not
+    /// in the v0 surface so the regular dispatch path can take over.
+    fn try_emit_result_option_method(
+        &mut self,
+        receiver: &Expr,
+        kind: &str,
+        method: &str,
+        args: &[Expr],
+        inner_ty: &Ty,
+    ) -> Option<String> {
+        let recv_c = self.emit_expr(receiver);
+        match (kind, method, args.len()) {
+            ("result", "isOk", 0) => Some(format!("phc_result_is_ok({recv_c})")),
+            ("result", "isErr", 0) => Some(format!("phc_result_is_err({recv_c})")),
+            ("option", "isSome", 0) => Some(format!("phc_option_is_some({recv_c})")),
+            ("option", "isNone", 0) => Some(format!("phc_option_is_none({recv_c})")),
+            ("result", "unwrapOr", 1) => {
+                let pm = self.payload_member(inner_ty);
+                let fallback = self.emit_expr(&args[0]);
+                // Statement-expression so the receiver is bound once
+                // (avoids re-evaluating side-effecting expressions).
+                let lo = span_of_expr(receiver).lo;
+                Some(format!(
+                    "({{ phc_result __r_{lo} = {recv_c}; __r_{lo}.kind == 0 ? __r_{lo}.ok.{pm} : ({fallback}); }})"
+                ))
+            }
+            ("option", "unwrapOr", 1) => {
+                let pm = self.payload_member(inner_ty);
+                let fallback = self.emit_expr(&args[0]);
+                let lo = span_of_expr(receiver).lo;
+                Some(format!(
+                    "({{ phc_option __o_{lo} = {recv_c}; __o_{lo}.kind == 0 ? __o_{lo}.some.{pm} : ({fallback}); }})"
+                ))
+            }
+            ("option", "orElse", 1) => {
+                // Returns the receiver when some, else the fallback.
+                // Both operands are full phc_option structs.
+                let fallback = self.emit_expr(&args[0]);
+                let lo = span_of_expr(receiver).lo;
+                Some(format!(
+                    "({{ phc_option __o_{lo} = {recv_c}; __o_{lo}.kind == 0 ? __o_{lo} : ({fallback}); }})"
+                ))
+            }
+            _ => None,
+        }
     }
 
     /// Emit a stdlib `list<T>` method call (D-027). The element

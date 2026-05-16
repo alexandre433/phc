@@ -51,6 +51,15 @@ typedef struct {
     phc_payload some;
 } phc_option;
 
+/* === Result / Option ergonomic methods (D-026) ===
+ * Predicates only — `unwrapOr` is dispatched at the call site by
+ * picking the right phc_payload union member from the static T,
+ * so it does not need a runtime helper. */
+bool phc_result_is_ok(phc_result r);
+bool phc_result_is_err(phc_result r);
+bool phc_option_is_some(phc_option o);
+bool phc_option_is_none(phc_option o);
+
 /* List value (D-027). Heap-allocated; the C-level type is an opaque
  * pointer so passing a `phc_list` around is a handle copy, not a
  * deep copy. Two handles to the same list see each other's
