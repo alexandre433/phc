@@ -1923,8 +1923,71 @@ impl<'a> Emitter<'a> {
             ("forEach", 1) => Some(self.emit_list_for_each(receiver, elem_ty, &args[0])),
             ("map", 1) => Some(self.emit_list_map(receiver, elem_ty, &args[0])),
             ("filter", 1) => Some(self.emit_list_filter(receiver, elem_ty, &args[0])),
+            // D-037 closure forms with accumulator / boolean shape.
+            ("fold", 2) => Some(self.emit_list_fold(receiver, elem_ty, &args[0], &args[1])),
+            ("any", 1) => Some(self.emit_list_any(receiver, elem_ty, &args[0])),
+            ("all", 1) => Some(self.emit_list_all(receiver, elem_ty, &args[0])),
+            ("find", 1) => Some(self.emit_list_find(receiver, elem_ty, &args[0])),
             _ => None,
         }
+    }
+
+    fn emit_list_fold(
+        &mut self,
+        receiver: &Expr,
+        elem_ty: &Ty,
+        init: &Expr,
+        closure: &Expr,
+    ) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let init_c = self.emit_expr(init);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let u_ty = self
+            .typed
+            .expr_types
+            .get(&span_of_expr(init))
+            .cloned()
+            .unwrap_or(Ty::Unknown);
+        let c_u = self.ty_to_c(&u_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; {c_u} __acc_{lo} = {init_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ __acc_{lo} = (({c_u}(*)(void*, {c_u}, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __acc_{lo}, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}); }} __acc_{lo}; }})"
+        )
+    }
+
+    fn emit_list_any(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); bool __hit_{lo} = false; for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo} && !__hit_{lo}; ++__i_{lo}) {{ if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t})) {{ __hit_{lo} = true; }} }} __hit_{lo}; }})"
+        )
+    }
+
+    fn emit_list_all(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); bool __ok_{lo} = true; for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo} && __ok_{lo}; ++__i_{lo}) {{ if (!((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t})) {{ __ok_{lo} = false; }} }} __ok_{lo}; }})"
+        )
+    }
+
+    fn emit_list_find(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; phc_option __out_{lo}; __out_{lo}.kind = 1; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo} && __out_{lo}.kind != 0; ++__i_{lo}) {{ {c_t} __t_{lo} = phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}; if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __t_{lo})) {{ __out_{lo}.kind = 0; __out_{lo}.some.{pm_t} = __t_{lo}; }} }} __out_{lo}; }})"
+        )
     }
 
     fn emit_list_for_each(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {

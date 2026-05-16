@@ -1043,3 +1043,38 @@ function main(): void {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["numeric ok".to_string()]);
 }
+
+#[test]
+fn list_d037_fold_any_all_find_run_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+    $xs->push(4);
+
+    fn(int, int): int $sum = (int $acc, int $x): int => $acc + $x;
+    assert::eq($xs->fold(0, $sum), 10);
+
+    fn(int): bool $isEven = (int $n): bool => (($n + ($n / 2 * -2)) == 0);
+    assert::isTrue($xs->any($isEven));
+
+    fn(int): bool $isPositive = (int $n): bool => $n > 0;
+    assert::isTrue($xs->all($isPositive));
+
+    fn(int): bool $eqThree = (int $n): bool => $n == 3;
+    option<int> $found = $xs->find($eqThree);
+    assert::eq($found->unwrapOr(0), 3);
+
+    fn(int): bool $eqHundred = (int $n): bool => $n == 100;
+    option<int> $miss = $xs->find($eqHundred);
+    assert::isTrue($miss->isNone());
+
+    io::println("d037 ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["d037 ok".to_string()]);
+}

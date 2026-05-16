@@ -1686,6 +1686,77 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
             }
+            // D-037 fold / any / all / find.
+            "fold" => {
+                if args.len() != 2 {
+                    return Err(rt(format!(
+                        "list method `fold` takes 2 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let init = self.eval_expr(&args[0], env)?;
+                let lam = self.eval_lambda_arg(&args[1], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let mut acc = init;
+                for v in snapshot {
+                    acc = self.invoke_lambda_with(&lam, vec![acc, v])?;
+                }
+                Ok(Some(acc))
+            }
+            "any" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                for v in snapshot {
+                    match self.invoke_lambda_with(&lam, vec![v])? {
+                        Value::Bool(true) => return Ok(Some(Value::Bool(true))),
+                        Value::Bool(false) => {}
+                        other => {
+                            return Err(rt(format!(
+                                "list `any` predicate must return `bool`, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::Bool(false)))
+            }
+            "all" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                for v in snapshot {
+                    match self.invoke_lambda_with(&lam, vec![v])? {
+                        Value::Bool(true) => {}
+                        Value::Bool(false) => return Ok(Some(Value::Bool(false))),
+                        other => {
+                            return Err(rt(format!(
+                                "list `all` predicate must return `bool`, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::Bool(true)))
+            }
+            "find" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                for v in snapshot {
+                    match self.invoke_lambda_with(&lam, vec![v.clone()])? {
+                        Value::Bool(true) => return Ok(Some(Value::OptionSome(Box::new(v)))),
+                        Value::Bool(false) => {}
+                        other => {
+                            return Err(rt(format!(
+                                "list `find` predicate must return `bool`, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::OptionNone))
+            }
             _ => Ok(None),
         }
     }

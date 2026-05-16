@@ -557,6 +557,16 @@ fn stdlib_method_return_ty(
                 }
                 // list<T>.filter(fn(T): bool) → list<T>.
                 ("list", "filter") => Some(recv_ty.clone()),
+                // D-037: fold returns U (from init's static type
+                // — arg[0]); any/all return bool; find returns
+                // option<T>.
+                ("list", "fold") => arg_static_ty(0),
+                ("list", "any") | ("list", "all") => Some(Ty::Primitive(crate::Primitive::Bool)),
+                ("list", "find") => Some(Ty::Path {
+                    path: vec!["option".to_string()],
+                    args: vec![elem.clone().unwrap_or(Ty::Unknown)],
+                    nullable: false,
+                }),
                 ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
                 ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),

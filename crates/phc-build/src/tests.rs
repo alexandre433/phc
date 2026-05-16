@@ -951,6 +951,63 @@ function main(): void {
     assert!(stdout.contains("numeric ok"), "stdout: {stdout:?}");
 }
 
+/// Build + run D-037 list<T> closure surface (fold/any/all/find)
+/// through codegen + cc + run.
+#[test]
+fn build_and_run_list_fold_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_list_fold_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+    $xs->push(4);
+
+    fn(int, int): int $sum = (int $acc, int $x): int => $acc + $x;
+    assert::eq($xs->fold(0, $sum), 10);
+
+    fn(int): bool $isPositive = (int $n): bool => $n > 0;
+    assert::isTrue($xs->all($isPositive));
+
+    fn(int): bool $gtThree = (int $n): bool => $n > 3;
+    assert::isTrue($xs->any($gtThree));
+
+    fn(int): bool $eqTwo = (int $n): bool => $n == 2;
+    option<int> $found = $xs->find($eqTwo);
+    assert::eq($found->unwrapOr(0), 2);
+
+    io::println("fold ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("list_fold_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("list_fold_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "list-fold binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("fold ok"), "stdout: {stdout:?}");
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

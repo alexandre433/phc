@@ -132,6 +132,7 @@ Locked during Phase 6 stdlib build-out:
 31. D-034 — numeric stdlib namespaces (locked 2026-05-16): `int::parse(string)→result<int, parseError>`, `int::min/max(int,int)→int`, `int::abs(int)→int`; `float::parse(string)→result<float, parseError>`, `float::min/max(float,float)→float`, `float::abs(float)→float`, `float::isNaN(float)→bool`. Replaces the ad-hoc `$str->toInt()` builtin for the parse case; `toInt` retained as legacy. Codegen routes via static-call dispatch to `phc_int_*` / `phc_float_*` runtime helpers.
 32. D-035 — `phc fmt` MVP (locked 2026-05-16): token-stream pretty-printer. Lexer now retains `LineComment` / `BlockComment` tokens; parser cursor filters them before grammar productions so the change is transparent for every other consumer. Fmt walks the unfiltered token stream and emits canonical whitespace + 4-space indentation with comments round-tripped. `phc fmt <file>` rewrites in place; `--check` prints to stdout and exits non-zero when changes are needed.
 33. D-036 — `phc lint` MVP starter ruleset (locked 2026-05-16): three rules, all `Warning` severity. `unused_local` (declared but never referenced, suppressed via `_`-prefix); `unreachable_after_return` (stmts after a `return` in the same block); `class_naming` (class / enum / interface / trait names must be PascalCase per D-006a). `phc lint <file>` exits non-zero on any warning or setup error. Naming rules for functions / methods / fields / locals, shadowing, empty-block / dead-branch analysis, autofix, and per-rule suppression deferred.
+34. D-037 — `list<T>` closure surface continues (locked 2026-05-16): `fold(U $init, fn(U, T): U) → U`, `any(fn(T): bool) → bool`, `all(fn(T): bool) → bool`, `find(fn(T): bool) → option<T>`. Same stmt-expr + `phc_lambda` cast pattern as D-030. `fold`'s `U` is recovered from `$init`'s static type. `reduce` (no-init fold) deferred until a clear use case picks the empty-list semantics.
 
 ---
 
@@ -1266,3 +1267,48 @@ Locked during Phase 6 stdlib build-out:
 - **Date**: 2026-05-16.
 - **Status**: locked for v0a surface; richer rules + autofix +
   per-rule suppression attributes tracked separately.
+
+### D-037 — `list<T>` fold / any / all / find (v0)
+- **Decision**: Completes the v0 `list<T>` closure surface that
+  D-030 began.
+
+  | Method | Signature |
+  |--------|-----------|
+  | `fold` | `(U, fn(U, T): U): U` |
+  | `any` | `(fn(T): bool): bool` |
+  | `all` | `(fn(T): bool): bool` |
+  | `find` | `(fn(T): bool): option<T>` |
+
+  Codegen reuses the D-030 stmt-expr + `phc_lambda` cast pattern,
+  with two new shapes:
+  - **fold**: walks the list and threads an accumulator of type
+    `U`, recovered from `$init`'s static type. The callback's
+    signature is `<U>(*)(void*, <U>, <T>)`. Empty list → returns
+    `$init` verbatim.
+  - **any / all / find**: short-circuit via a loop-condition flag
+    (`__hit_<lo>`, `__ok_<lo>`, or the option's `kind != 0`
+    sentinel). All three skip remaining elements once the
+    outcome is determined.
+
+  Interp mirrors the surface via the D-029 `eval_lambda_arg` /
+  `invoke_lambda_with` helpers, snapshotting the list before
+  iteration to match the D-030 invariant.
+
+  **`reduce` deferred**: a no-init fold needs an answer for the
+  empty-list case (panic? `option<T>`?) and the v0 use cases all
+  start with an explicit `$init`. Picking the empty-list shape
+  later is cheaper than rewriting it once usage clarifies what
+  callers actually want.
+- **Alternatives considered**: ship `reduce` alongside (forces
+  the empty-list decision before any user code surfaces a
+  preference); generic `iterate(fn(T): bool)` that stops on
+  false (cute, but `forEach` already covers "do this for every
+  element" and the closure-return-bool shape is what `find` /
+  `any` / `all` already are — adding `iterate` is redundant).
+- **Rationale**: Round out the list closure surface so realistic
+  programs can sum / search / validate without falling back to
+  hand-rolled `for` loops. Same dispatch + payload-member
+  pattern D-030 and D-029 already validated.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; `reduce`, `findIndex`,
+  `take`/`drop`, `zip`/`unzip`, `partition` tracked separately.
