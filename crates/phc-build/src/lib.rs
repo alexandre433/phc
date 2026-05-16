@@ -17,6 +17,7 @@ pub use session::{
     check_pack_acyclicity, load_session, resolve_cross_pack_uses, ImportTarget, LoadedFile, Session,
 };
 
+use phc_ast::{Ident, PackDecl, PackPath, SourceFile};
 use phc_codegen::emit_c;
 use phc_errors::{Diagnostic, Severity};
 use phc_parser::parse;
@@ -154,6 +155,125 @@ pub fn build_file(input: &Path, output: &Path) -> BuildResult {
     }
 
     result
+}
+
+/// Build an entire project rooted at `root` into a single binary
+/// at `output`. Drives the full multi-file pipeline: load + cross-
+/// pack uses + acyclicity, then concatenates every file's items
+/// into a single combined SourceFile so the existing codegen can
+/// emit one C translation unit. Names are global at C level
+/// (every emitted symbol is prefixed `phc_<...>`), so cross-pack
+/// dispatch works without separate compilation.
+pub fn build_project(root: &Path, output: &Path) -> BuildResult {
+    let mut result = BuildResult::default();
+    let mut session = load_session(root);
+    resolve_cross_pack_uses(&mut session);
+    check_pack_acyclicity(&mut session);
+    if !session.ok() {
+        result.errors.extend(session.diagnostics.iter().cloned());
+        return result;
+    }
+    let combined = combine_session(&session);
+    let resolved = resolve(&combined);
+    if !resolved.diagnostics.is_empty() {
+        result.errors.extend(resolved.diagnostics);
+        return result;
+    }
+    let typed = typecheck(&combined, &resolved);
+    if !typed.diagnostics.is_empty() {
+        result.errors.extend(typed.diagnostics);
+        return result;
+    }
+    let codegen = emit_c(&combined, &resolved, &typed);
+    result.warnings.extend(codegen.diagnostics.iter().cloned());
+
+    let stem = root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("project");
+    let scratch = match scratch_dir_named(stem) {
+        Ok(dir) => dir,
+        Err(e) => {
+            result.errors.push(diag_error(e));
+            return result;
+        }
+    };
+    if let Err(e) = invoke_cc(&scratch, &codegen.c_source, output) {
+        result.errors.push(diag_error(e));
+        return result;
+    }
+    result.binary = Some(output.to_path_buf());
+    result
+}
+
+/// Collapse every file's items into one synthetic SourceFile.
+/// The pack declaration is irrelevant for codegen because every
+/// emitted symbol is mangled with its source name; the resolver
+/// only needs a complete top_level table.
+fn combine_session(session: &Session) -> SourceFile {
+    let mut items = Vec::new();
+    for file in &session.files {
+        items.extend(file.ast.items.clone());
+    }
+    let synthetic_span = Span::new(FileId(0), 0, 0);
+    SourceFile {
+        pack: PackDecl {
+            path: PackPath {
+                segments: vec![Ident {
+                    name: "project".to_string(),
+                    span: synthetic_span,
+                }],
+                span: synthetic_span,
+            },
+            span: synthetic_span,
+        },
+        // Drop cross-file `use` decls — combined file has every
+        // name in scope already. Unresolved imports were already
+        // surfaced by resolve_cross_pack_uses.
+        uses: Vec::new(),
+        items,
+        span: synthetic_span,
+    }
+}
+
+fn scratch_dir_named(stem: &str) -> Result<PathBuf, String> {
+    let dir = PathBuf::from("target").join("phc-build").join(stem);
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("cannot create scratch dir `{}`: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+/// Write program.c + runtime sources to `scratch` and invoke the
+/// C compiler. Shared by build_file and build_project so the
+/// invocation flags + error mapping stay in lock-step.
+fn invoke_cc(scratch: &Path, c_source: &str, output: &Path) -> Result<(), String> {
+    let program_c = scratch.join("program.c");
+    let runtime_c = scratch.join(phc_runtime::SOURCE_NAME);
+    let runtime_h = scratch.join(phc_runtime::HEADER_NAME);
+    fs::write(&program_c, c_source)
+        .map_err(|e| format!("cannot write `{}`: {e}", program_c.display()))?;
+    fs::write(&runtime_c, phc_runtime::SOURCE)
+        .map_err(|e| format!("cannot write `{}`: {e}", runtime_c.display()))?;
+    fs::write(&runtime_h, phc_runtime::HEADER)
+        .map_err(|e| format!("cannot write `{}`: {e}", runtime_h.display()))?;
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let status = Command::new(&cc)
+        .args(["-std=c11", "-O2"])
+        .arg(format!("-I{}", scratch.display()))
+        .arg("-o")
+        .arg(output)
+        .arg(&program_c)
+        .arg(&runtime_c)
+        .output()
+        .map_err(|e| format!("failed to invoke `{cc}`: {e}"))?;
+    if !status.status.success() {
+        let stderr = String::from_utf8_lossy(&status.stderr);
+        return Err(format!(
+            "C compiler failed (exit {}):\n{stderr}",
+            status.status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(())
 }
 
 fn scratch_dir_for(input: &Path) -> Result<PathBuf, String> {

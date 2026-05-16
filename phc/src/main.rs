@@ -6,7 +6,9 @@
 //! The other subcommands are still stubbed.
 
 use clap::Parser;
-use phc_build::{build_file, check_pack_acyclicity, load_session, resolve_cross_pack_uses};
+use phc_build::{
+    build_file, build_project, check_pack_acyclicity, load_session, resolve_cross_pack_uses,
+};
 use phc_interp::{run as interp_run, RunOutput, Value};
 use phc_parser::parse as parse_source;
 use phc_pkg::read_manifest;
@@ -94,27 +96,44 @@ fn main() -> ExitCode {
 }
 
 fn build_cmd(input: Option<&Path>, output: Option<&Path>) -> ExitCode {
-    let resolved_input: PathBuf = match input {
-        Some(p) => p.to_path_buf(),
-        None => match resolve_project_main(Path::new(".")) {
-            Ok(p) => p,
-            Err(msg) => {
-                eprintln!("phc build: {msg}");
+    let result = match input {
+        Some(file) => {
+            let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("a");
+            let default_output: PathBuf = if cfg!(windows) {
+                PathBuf::from(format!("{stem}.exe"))
+            } else {
+                PathBuf::from(stem)
+            };
+            let output_path = output.unwrap_or(default_output.as_path());
+            build_file(file, output_path)
+        }
+        None => {
+            let root = Path::new(".");
+            let manifest_path = root.join("phc.json");
+            if !manifest_path.exists() {
+                eprintln!(
+                    "phc build: no `phc.json` in `{}`. Pass a single source file or run inside a project root.",
+                    root.display()
+                );
                 return ExitCode::from(1);
             }
-        },
+            let manifest = match read_manifest(&manifest_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("phc build: cannot read `{}`: {e}", manifest_path.display());
+                    return ExitCode::from(1);
+                }
+            };
+            let stem = &manifest.name;
+            let default_output: PathBuf = if cfg!(windows) {
+                PathBuf::from(format!("{stem}.exe"))
+            } else {
+                PathBuf::from(stem)
+            };
+            let output_path = output.unwrap_or(default_output.as_path());
+            build_project(root, output_path)
+        }
     };
-    let stem = resolved_input
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("a");
-    let default_output: PathBuf = if cfg!(windows) {
-        PathBuf::from(format!("{stem}.exe"))
-    } else {
-        PathBuf::from(stem)
-    };
-    let output_path = output.unwrap_or(default_output.as_path());
-    let result = build_file(&resolved_input, output_path);
     for w in &result.warnings {
         eprintln!("warning at {}..{}: {}", w.span.lo, w.span.hi, w.message);
     }
@@ -128,52 +147,6 @@ fn build_cmd(input: Option<&Path>, output: Option<&Path>) -> ExitCode {
         eprintln!("phc build: produced `{}`", bin.display());
     }
     ExitCode::SUCCESS
-}
-
-/// Find the file containing `function main()` in the current
-/// project. The project root is the cwd; ./phc.json is read for
-/// validation but not yet enforced for layout. Errors out if no
-/// or multiple files declare `main`.
-fn resolve_project_main(root: &Path) -> Result<PathBuf, String> {
-    let manifest_path = root.join("phc.json");
-    if !manifest_path.exists() {
-        return Err(format!(
-            "no `phc.json` in `{}`. Pass a single source file or run inside a project root.",
-            root.display()
-        ));
-    }
-    let _manifest = read_manifest(&manifest_path)
-        .map_err(|e| format!("cannot read `{}`: {e}", manifest_path.display()))?;
-    let mut session = load_session(root);
-    resolve_cross_pack_uses(&mut session);
-    check_pack_acyclicity(&mut session);
-    if !session.ok() {
-        for d in &session.diagnostics {
-            eprintln!("error at {}..{}: {}", d.span.lo, d.span.hi, d.message);
-        }
-        return Err("project failed to load cleanly; aborting build.".to_string());
-    }
-    let mains: Vec<&phc_build::LoadedFile> = session
-        .files
-        .iter()
-        .filter(|f| {
-            f.ast
-                .items
-                .iter()
-                .any(|item| matches!(item, phc_ast::Item::Function(fd) if fd.name.name == "main"))
-        })
-        .collect();
-    match mains.len() {
-        0 => Err("project has no `function main()` to build.".into()),
-        1 => Ok(mains[0].path.clone()),
-        _ => {
-            let names: Vec<String> = mains.iter().map(|f| f.path.display().to_string()).collect();
-            Err(format!(
-                "project declares `main()` in multiple files: {}",
-                names.join(", ")
-            ))
-        }
-    }
 }
 
 fn check_cmd(root: &Path) -> ExitCode {

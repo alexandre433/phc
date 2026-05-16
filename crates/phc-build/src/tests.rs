@@ -4,7 +4,9 @@
 //! without a C toolchain skips them with a printed note rather
 //! than failing.
 
-use crate::{build_file, check_pack_acyclicity, load_session, resolve_cross_pack_uses};
+use crate::{
+    build_file, build_project, check_pack_acyclicity, load_session, resolve_cross_pack_uses,
+};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -121,6 +123,53 @@ function main(): void {
             "classify(0) -> zero",
             "classify(-3) -> negative",
         ]
+    );
+}
+
+/// Build + run a 2-pack project end-to-end. Confirms multi-file
+/// codegen flattens the corpus into one C unit and produces a
+/// binary that calls cross-pack into the public helper.
+#[test]
+fn build_and_run_two_pack_project() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_two_pack_project: no C compiler on PATH");
+        return;
+    }
+    let root = project_root("two_pack_build");
+    std::fs::write(
+        root.join("core.phc"),
+        r#"pack core;
+public function welcome(): string { return "hello, project"; }
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("main.phc"),
+        r#"pack app;
+use core.welcome;
+function main(): void {
+    Logger::info(welcome());
+}
+"#,
+    )
+    .unwrap();
+    let output = output_path("two_pack");
+    let result = build_project(&root, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(
+        stdout.contains("hello, project"),
+        "unexpected stdout: {stdout:?}"
     );
 }
 
