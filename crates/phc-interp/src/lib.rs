@@ -232,6 +232,50 @@ impl Env {
 
 /// Driver: resolve `main` in the file, evaluate its body, return
 /// what came out.
+/// Run a single `test "name" { ... }` body and report the outcome.
+/// Used by the test framework (D-021) to drive each discovered
+/// `Item::Test` independently. Any runtime error is the test's
+/// failure; clean exit is a pass. Captured stdout flows through
+/// the returned [`RunOutput`] so the runner can print or attach it
+/// to a per-test report.
+pub fn run_test_block(
+    file: &SourceFile,
+    resolved: &Resolved,
+    typed: &Typed,
+    test_body: &phc_ast::Block,
+) -> RunOutput {
+    let mut interp = Interp {
+        file,
+        resolved,
+        typed,
+        out: RunOutput::default(),
+    };
+    let mut env = Env::default();
+    env.enter();
+    let flow = interp.eval_block_body(&test_body.statements, &mut env);
+    env.leave();
+    match flow {
+        Ok(Flow::Return(v)) => {
+            interp.out.result = Some(v);
+        }
+        Ok(Flow::Normal) => {
+            interp.out.result = Some(Value::Void);
+        }
+        Ok(Flow::Break) | Ok(Flow::Continue) => {
+            interp.out.errors.push(RuntimeError {
+                message: "`break`/`continue` outside loop".to_string(),
+            });
+        }
+        Err(EvalError::Runtime(e)) => {
+            interp.out.errors.push(e);
+        }
+        Err(EvalError::Propagate(v)) => {
+            interp.out.result = Some(v);
+        }
+    }
+    interp.out
+}
+
 pub fn run(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> RunOutput {
     let mut out = RunOutput::default();
     let main_id = match resolved.top_level.get("main").copied() {

@@ -60,8 +60,11 @@ enum Command {
     /// speak LSP can spawn `phc lsp` and get diagnostics + hover
     /// types.
     Lsp,
-    /// Run tests
-    Test,
+    /// Run every `test "name" { ... }` block in a `.phc` file
+    Test {
+        /// Path to a `.phc` source file whose tests should be run
+        file: PathBuf,
+    },
     /// Format source files
     Fmt,
     /// Run the linter
@@ -78,10 +81,7 @@ fn main() -> ExitCode {
         Some(Command::Lsp) => run_lsp(),
         Some(Command::Build { file, output }) => build_cmd(file.as_deref(), output.as_deref()),
         Some(Command::Check { root }) => check_cmd(&root),
-        Some(Command::Test) => {
-            eprintln!("phc test: not yet implemented");
-            ExitCode::from(1)
-        }
+        Some(Command::Test { file }) => test_cmd(&file),
         Some(Command::Fmt) => {
             eprintln!("phc fmt: not yet implemented");
             ExitCode::from(1)
@@ -188,6 +188,56 @@ fn check_cmd(root: &Path) -> ExitCode {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+/// Run every `test "name" { ... }` block in `path` and print a
+/// pass/fail report. Exit non-zero on any failure or pipeline
+/// diagnostic so CI scripts can branch on outcome.
+fn test_cmd(path: &Path) -> ExitCode {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("phc test: cannot read `{}`: {e}", path.display());
+            return ExitCode::from(2);
+        }
+    };
+    let report = phc_test::run_source(&source);
+    for d in &report.setup_diagnostics {
+        eprintln!(
+            "{kind} at {}..{}: {}",
+            d.span.lo,
+            d.span.hi,
+            d.message,
+            kind = match d.severity {
+                phc_errors::Severity::Error => "error",
+                phc_errors::Severity::Warning => "warning",
+                phc_errors::Severity::Note => "note",
+            }
+        );
+    }
+    if !report.setup_diagnostics.is_empty() {
+        eprintln!("phc test: setup diagnostics present, no tests run");
+        return ExitCode::from(1);
+    }
+    for r in &report.results {
+        if r.passed {
+            println!("PASS  {}", r.name);
+        } else {
+            println!("FAIL  {}", r.name);
+            for e in &r.errors {
+                println!("        {}", e.message);
+            }
+        }
+    }
+    println!(
+        "\nphc test: {} passed, {} failed",
+        report.passed, report.failed
+    );
+    if report.ok() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
     }
 }
 

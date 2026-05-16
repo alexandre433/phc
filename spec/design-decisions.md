@@ -123,6 +123,7 @@ Locked during Phase 6 stdlib build-out:
 22. D-024 — Function type syntax (locked 2026-05-16): `fn(T1, T2, ...): R` heads a function type. `fn` reserved keyword. Additive AST (`fn_return: Option<Box<TypeRef>>`) lowered to `Ty::Path { path:["fn"], args:[R, P1, ...] }`; codegen maps to `phc_lambda`. Stored lambdas now legal: bind, pass, return. Generic fn-types and the `Ty::Function` enum refactor deferred.
 23. D-005 aliasing extension (locked 2026-05-16): within a single call's arg list, no two borrows of the same root binding may both be mutable, and a mutable borrow cannot coexist with any other borrow of the same root. Broader aliasing (across statements, through intermediate bindings) needs a full liveness pass and stays out of scope for v0.
 24. D-028 — `map<string, V>` collection v0a (locked 2026-05-16): `map()` ctor (V from binding annotation), `set/get/has/len` methods. String keys only; linear-scan storage. Reference semantics like list. `map` is a reserved name. Generic keys, hash storage, `remove`/iteration deferred.
+25. D-021 v0a (Phase 9 MVP, 2026-05-16): `test "name" { ... }` blocks at file top-level are discovered by `phc-test` and run sequentially through the interpreter. Pass = body completes without runtime error; fail = any panic or `?` propagation. `phc test <file>` reports pass/fail counts and exits non-zero on any failure. Assertion helpers (`assertEq`, etc.), cross-file project discovery, filtering, and parallel execution deferred.
 
 ---
 

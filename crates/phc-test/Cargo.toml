@@ -9,3 +9,10 @@ description = "PHC testing framework and test runner"
 
 [dependencies]
 phc-ast = { path = "../phc-ast" }
+phc-borrowcheck = { path = "../phc-borrowcheck" }
+phc-errors = { path = "../phc-errors" }
+phc-interp = { path = "../phc-interp" }
+phc-parser = { path = "../phc-parser" }
+phc-semantic = { path = "../phc-semantic" }
+phc-span = { path = "../phc-span" }
+phc-typecheck = { path = "../phc-typecheck" }

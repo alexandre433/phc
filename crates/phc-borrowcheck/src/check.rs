@@ -36,6 +36,7 @@ pub(crate) fn run(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> Borr
                     ctx.check_block(&m.body);
                 }
             }
+            Item::Test(t) => ctx.check_block(&t.body),
             _ => {}
         }
     }
@@ -399,6 +400,7 @@ fn collect_mutable_bindings(
                     collect_in_function(m, resolved, &mut record, &mut out);
                 }
             }
+            Item::Test(t) => collect_in_block(&t.body, resolved, &mut record, &mut out),
             _ => {}
         }
     }
