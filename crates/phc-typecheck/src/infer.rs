@@ -396,7 +396,8 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
             .and_then(|sid| typed.function_sigs.get(&sid))
             .map(|sig| sig.return_ty.clone())
             .unwrap_or(Ty::Unknown),
-        // D-032: `io::<member>(...)` is a stdlib static call.
+        // D-032 / D-033: stdlib static calls return predictable
+        // shapes that we hardcode here.
         Expr::Static { ty, member, .. } => {
             if let Expr::TypeName { name, .. } = ty.as_ref() {
                 if name.name == "io" {
@@ -409,6 +410,14 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
                             args: vec![Ty::Primitive(crate::Primitive::String)],
                             nullable: false,
                         },
+                        _ => Ty::Unknown,
+                    };
+                }
+                if name.name == "assert" {
+                    return match member.name.as_str() {
+                        "eq" | "neq" | "isTrue" | "isFalse" | "fail" => {
+                            Ty::Primitive(crate::Primitive::Void)
+                        }
                         _ => Ty::Unknown,
                     };
                 }

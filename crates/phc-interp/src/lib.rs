@@ -951,6 +951,74 @@ impl<'a> Interp<'a> {
                 // the runtime helper.
                 Ok(Some(Value::OptionNone))
             }
+            // D-033: assert namespace. Failure raises a runtime
+            // error — `phc test` already treats those as the
+            // failure signal for a test body.
+            ("assert", "eq") => {
+                if args.len() != 2 {
+                    return Err(rt("assert::eq takes 2 arguments".to_string()));
+                }
+                let a = self.eval_expr(&args[0], env)?;
+                let b = self.eval_expr(&args[1], env)?;
+                if !values_equal(&a, &b) {
+                    return Err(rt(format!(
+                        "assertion failed: assert::eq({}, {})",
+                        a.display(),
+                        b.display()
+                    )));
+                }
+                Ok(Some(Value::Void))
+            }
+            ("assert", "neq") => {
+                if args.len() != 2 {
+                    return Err(rt("assert::neq takes 2 arguments".to_string()));
+                }
+                let a = self.eval_expr(&args[0], env)?;
+                let b = self.eval_expr(&args[1], env)?;
+                if values_equal(&a, &b) {
+                    return Err(rt(format!(
+                        "assertion failed: assert::neq({}, {})",
+                        a.display(),
+                        b.display()
+                    )));
+                }
+                Ok(Some(Value::Void))
+            }
+            ("assert", "isTrue") => {
+                if args.len() != 1 {
+                    return Err(rt("assert::isTrue takes 1 argument".to_string()));
+                }
+                let v = self.eval_expr(&args[0], env)?;
+                match v {
+                    Value::Bool(true) => Ok(Some(Value::Void)),
+                    Value::Bool(false) => Err(rt("assertion failed: assert::isTrue".to_string())),
+                    other => Err(rt(format!(
+                        "assert::isTrue expects `bool`, got `{}`",
+                        other.display()
+                    ))),
+                }
+            }
+            ("assert", "isFalse") => {
+                if args.len() != 1 {
+                    return Err(rt("assert::isFalse takes 1 argument".to_string()));
+                }
+                let v = self.eval_expr(&args[0], env)?;
+                match v {
+                    Value::Bool(false) => Ok(Some(Value::Void)),
+                    Value::Bool(true) => Err(rt("assertion failed: assert::isFalse".to_string())),
+                    other => Err(rt(format!(
+                        "assert::isFalse expects `bool`, got `{}`",
+                        other.display()
+                    ))),
+                }
+            }
+            ("assert", "fail") => {
+                if args.len() != 1 {
+                    return Err(rt("assert::fail takes 1 argument".to_string()));
+                }
+                let v = self.eval_expr(&args[0], env)?;
+                Err(rt(format!("assertion failed: {}", v.display())))
+            }
             ("result", "ok") => {
                 let v = single_arg(args, "result::ok", self, env)?;
                 Ok(Some(Value::ResultOk(Box::new(v))))

@@ -966,3 +966,52 @@ function main(): void {
         ]
     );
 }
+
+#[test]
+fn assert_d033_passing_cases() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::eq(2 + 3, 5);
+    assert::neq(1, 2);
+    assert::isTrue(true);
+    assert::isFalse(false);
+    assert::eq("phc", "phc");
+    io::println("done");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["done".to_string()]);
+}
+
+#[test]
+fn assert_d033_eq_failure_surfaces_as_runtime_error() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::eq(1, 2);
+}
+"#;
+    let out = run_src(src);
+    assert!(
+        out.errors
+            .iter()
+            .any(|e| e.message.contains("assertion failed: assert::eq")),
+        "expected eq assertion error, got {:?}",
+        out.errors
+    );
+}
+
+#[test]
+fn assert_d033_fail_with_message() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::fail("boom");
+}
+"#;
+    let out = run_src(src);
+    assert!(
+        out.errors.iter().any(|e| e.message.contains("boom")),
+        "expected fail message, got {:?}",
+        out.errors
+    );
+}

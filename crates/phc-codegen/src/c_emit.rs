@@ -1267,6 +1267,14 @@ impl<'a> Emitter<'a> {
                         return snippet;
                     }
                 }
+                // D-033: `assert::eq` / `neq` / `isTrue` / `isFalse`
+                // / `fail`. Reserved test-helper namespace; picks
+                // the comparison shape from the arg's static type.
+                if name.name == "assert" {
+                    if let Some(snippet) = self.try_emit_assert_call(&member.name, args, callee) {
+                        return snippet;
+                    }
+                }
                 // result::ok(v), result::err(e), option::some(v).
                 if let Some(snippet) =
                     self.try_emit_result_option_ctor(&name.name, &member.name, args)
@@ -1425,6 +1433,98 @@ impl<'a> Emitter<'a> {
             "indexing only supported on `list<T>` in v0",
         );
         "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit an `assert::<member>(args)` call (D-033). Comparison
+    /// shape comes from the args' static types — strings via
+    /// `phc_str_eq`, primitives via C `==`, everything else via
+    /// pointer / integer equality (good enough for v0a class
+    /// instances and lambdas, where identity is the only meaning
+    /// of equality today). Failure path always calls `phc_panic`
+    /// with a clear message.
+    fn try_emit_assert_call(
+        &mut self,
+        member: &str,
+        args: &[Expr],
+        callee: &Expr,
+    ) -> Option<String> {
+        let arity = |this: &mut Self, expected: usize| -> bool {
+            if args.len() != expected {
+                this.diag(
+                    span_of_expr(callee),
+                    &format!(
+                        "assert::{member} expects {expected} argument(s), got {}",
+                        args.len()
+                    ),
+                );
+                return false;
+            }
+            true
+        };
+        match member {
+            "eq" | "neq" => {
+                if !arity(self, 2) {
+                    return Some(format!("phc_panic(\"assert::{member} arity\")"));
+                }
+                let a_ty = self
+                    .typed
+                    .expr_types
+                    .get(&span_of_expr(&args[0]))
+                    .cloned()
+                    .unwrap_or(Ty::Unknown);
+                let a_c = self.emit_expr(&args[0]);
+                let b_c = self.emit_expr(&args[1]);
+                let lo = span_of_expr(callee).lo;
+                let cmp = self.eq_expr_for_ty(&a_ty, "__a", "__b");
+                let predicate = if member == "eq" {
+                    format!("!({cmp})")
+                } else {
+                    cmp
+                };
+                let c_t = self.ty_to_c(&a_ty);
+                Some(format!(
+                    "({{ {c_t} __a = {a_c}; {c_t} __b = {b_c}; if ({predicate}) {{ phc_panic(\"assertion failed: assert::{member}\"); }} (void)0; __phc_assert_done_{lo}: (void)0; }})"
+                ))
+            }
+            "isTrue" | "isFalse" => {
+                if !arity(self, 1) {
+                    return Some(format!("phc_panic(\"assert::{member} arity\")"));
+                }
+                let cond = self.emit_expr(&args[0]);
+                let pred = if member == "isTrue" {
+                    format!("!({cond})")
+                } else {
+                    cond
+                };
+                Some(format!(
+                    "({{ if ({pred}) {{ phc_panic(\"assertion failed: assert::{member}\"); }} (void)0; }})"
+                ))
+            }
+            "fail" => {
+                if !arity(self, 1) {
+                    return Some("phc_panic(\"assert::fail arity\")".to_string());
+                }
+                // arg is a string; runtime panic with a heap-built
+                // C string for the message.
+                let msg = self.emit_expr(&args[0]);
+                Some(format!(
+                    "({{ phc_string __msg = {msg}; phc_panic(__msg.data); (void)0; }})"
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// Pick a C equality expression for two operands `a` and `b`
+    /// (already bound to identifiers) given their shared static type.
+    /// Strings dispatch to `phc_str_eq`; everything else uses C `==`.
+    fn eq_expr_for_ty(&self, ty: &Ty, a: &str, b: &str) -> String {
+        match ty {
+            Ty::Primitive(Primitive::String) | Ty::Primitive(Primitive::Bytes) => {
+                format!("phc_str_eq({a}, {b})")
+            }
+            _ => format!("({a}) == ({b})"),
+        }
     }
 
     /// Emit a `io::<member>(args)` call (D-032). `io` is a reserved

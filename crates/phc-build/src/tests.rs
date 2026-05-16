@@ -856,6 +856,49 @@ function main(): void {
     assert!(stderr.contains("ohno"), "missing stderr `ohno`: {stderr:?}");
 }
 
+/// Build + run D-033 assert namespace through codegen. Asserts
+/// the passing branch reaches stdout and the binary exits zero.
+#[test]
+fn build_and_run_assert_passing_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_assert_passing_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    assert::eq(2 + 3, 5);
+    assert::neq(1, 2);
+    assert::isTrue(true);
+    assert::isFalse(false);
+    assert::eq("phc", "phc");
+    io::println("asserts passed");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("assert_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("assert_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "assert binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("asserts passed"), "stdout: {stdout:?}");
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

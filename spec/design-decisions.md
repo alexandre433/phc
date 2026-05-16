@@ -128,6 +128,7 @@ Locked during Phase 6 stdlib build-out:
 27. D-030 — `list<T>` closure methods (locked 2026-05-16): `forEach(fn(T):void)→void`, `map(fn(T):U)→list<U>`, `filter(fn(T):bool)→list<T>`. Same stmt-expr + `phc_lambda` invocation pattern as D-029, looped over `phc_list_at`/`phc_list_push`. No new runtime functions.
 28. D-031 — `set<string>` collection v0a (locked 2026-05-16): `set()` ctor, `add(string)→bool` (true on insert, false if dup), `has(string)→bool`, `remove(string)→bool`, `len()→int`. String keys only; linear-scan storage parallel to map. Distinct `phc_set` C type. Generic keys / hash storage / iteration deferred.
 29. D-032 — `io` stdlib namespace (locked 2026-05-16): `io::print/println/eprint/eprintln(string)→void` plus `io::readLine()→option<string>` (none on EOF). Reserved namespace; routed via the existing static-call dispatch (parallel to `Logger::info`). Compiled binaries hit real stdin/stdout/stderr via runtime helpers; interp routes prints into its captured stdout vec and stubs `readLine` to none. Logger::info retained as legacy alias for the existing example corpus.
+30. D-033 — `assert` test-helper namespace (locked 2026-05-16): `assert::eq(a, b)→void`, `assert::neq(a, b)→void`, `assert::isTrue(bool)→void`, `assert::isFalse(bool)→void`, `assert::fail(string)→void`. Failure raises a runtime panic, which `phc test` treats as the test's failure signal. Replaces the OOB-on-list hack the D-021 v0a tests used. Codegen picks the comparison shape (string vs everything-else) from the arg's static type.
 
 ---
 
@@ -1082,3 +1083,46 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0 surface; binary I/O, file APIs,
   formatted print (`printf`-style), and a real `display` trait
   tracked separately.
+
+### D-033 — `assert` test-helper namespace (v0)
+- **Decision**: Adds a reserved `assert` static-call namespace
+  with the bare-minimum surface every test framework needs:
+
+  | Call | Signature | Behaviour |
+  |------|-----------|-----------|
+  | `assert::eq` | `(T, T): void` | Panics if operands not equal. |
+  | `assert::neq` | `(T, T): void` | Panics if operands are equal. |
+  | `assert::isTrue` | `(bool): void` | Panics if false. |
+  | `assert::isFalse` | `(bool): void` | Panics if true. |
+  | `assert::fail` | `(string): void` | Always panics with the message. |
+
+  `phc test` already treats any panic as the failure signal for
+  a test body, so the assert surface plugs in without new
+  framework plumbing. Replaces the workaround D-021 v0a tests
+  used (`if (cond) { list<int> $_oops = list(); int $_ = $_oops->at(99); }`).
+
+  **`assert::eq` / `neq` dispatch on the args' static type**:
+  string operands lower to `phc_str_eq`; everything else uses C
+  `==` (good enough for primitives, class-instance identity, and
+  lambda-handle identity in v0a). The two args must share a
+  type; mixed-type comparisons fall back to whatever the C
+  compiler does and may not behave intuitively — a future
+  generics + bounds pass can tighten this.
+
+  Interp matches the codegen surface via `values_equal` for
+  eq/neq, plus boolean checks for isTrue/isFalse, plus a
+  string-message panic for fail.
+- **Alternatives considered**: keep the OOB-on-list hack
+  (works but readers have to decode it); ship a single `assert`
+  function with a magic first-arg bool (loses the "show me the
+  values that disagreed" branch); spec a full xUnit-style
+  framework with describe/before/after (Phase 9 follow-up;
+  not in v0a scope).
+- **Rationale**: Smallest reserved namespace that makes test
+  bodies read like tests. The static-call dispatch path is
+  already used by `io` / `Logger` / `result::ok`, so wiring is
+  mechanical.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; `assert::throws`,
+  `assert::approxEq` for floats, and message-carrying variants
+  of every check tracked separately.

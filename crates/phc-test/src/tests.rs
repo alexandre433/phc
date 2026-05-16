@@ -84,3 +84,26 @@ test "logs once" {
     assert_eq!(report.passed, 1);
     assert_eq!(report.results[0].stdout, vec!["hi".to_string()]);
 }
+
+#[test]
+fn assert_helpers_drive_phc_test_pass_fail() {
+    let src = r#"pack demo;
+test "math works" {
+    assert::eq(2 + 3, 5);
+    assert::isTrue(true);
+}
+test "math doesn't" {
+    assert::eq(2 + 2, 5);
+}
+"#;
+    let report = run_source(src);
+    assert_eq!(report.passed, 1);
+    assert_eq!(report.failed, 1);
+    let passing = &report.results[0];
+    assert_eq!(passing.name, "math works");
+    assert!(passing.passed);
+    let failing = &report.results[1];
+    assert_eq!(failing.name, "math doesn't");
+    assert!(!failing.passed);
+    assert!(failing.errors[0].message.contains("assert::eq"));
+}
