@@ -21,6 +21,7 @@ phc-borrowcheck = { path = "../crates/phc-borrowcheck" }
 phc-lsp = { path = "../crates/phc-lsp" }
 phc-test = { path = "../crates/phc-test" }
 phc-fmt = { path = "../crates/phc-fmt" }
+phc-lint = { path = "../crates/phc-lint" }
 tokio = { workspace = true }
 phc-span = { path = "../crates/phc-span" }
 phc-build = { path = "../crates/phc-build" }

@@ -131,6 +131,7 @@ Locked during Phase 6 stdlib build-out:
 30. D-033 — `assert` test-helper namespace (locked 2026-05-16): `assert::eq(a, b)→void`, `assert::neq(a, b)→void`, `assert::isTrue(bool)→void`, `assert::isFalse(bool)→void`, `assert::fail(string)→void`. Failure raises a runtime panic, which `phc test` treats as the test's failure signal. Replaces the OOB-on-list hack the D-021 v0a tests used. Codegen picks the comparison shape (string vs everything-else) from the arg's static type.
 31. D-034 — numeric stdlib namespaces (locked 2026-05-16): `int::parse(string)→result<int, parseError>`, `int::min/max(int,int)→int`, `int::abs(int)→int`; `float::parse(string)→result<float, parseError>`, `float::min/max(float,float)→float`, `float::abs(float)→float`, `float::isNaN(float)→bool`. Replaces the ad-hoc `$str->toInt()` builtin for the parse case; `toInt` retained as legacy. Codegen routes via static-call dispatch to `phc_int_*` / `phc_float_*` runtime helpers.
 32. D-035 — `phc fmt` MVP (locked 2026-05-16): token-stream pretty-printer. Lexer now retains `LineComment` / `BlockComment` tokens; parser cursor filters them before grammar productions so the change is transparent for every other consumer. Fmt walks the unfiltered token stream and emits canonical whitespace + 4-space indentation with comments round-tripped. `phc fmt <file>` rewrites in place; `--check` prints to stdout and exits non-zero when changes are needed.
+33. D-036 — `phc lint` MVP starter ruleset (locked 2026-05-16): three rules, all `Warning` severity. `unused_local` (declared but never referenced, suppressed via `_`-prefix); `unreachable_after_return` (stmts after a `return` in the same block); `class_naming` (class / enum / interface / trait names must be PascalCase per D-006a). `phc lint <file>` exits non-zero on any warning or setup error. Naming rules for functions / methods / fields / locals, shadowing, empty-block / dead-branch analysis, autofix, and per-rule suppression deferred.
 
 ---
 
@@ -1229,3 +1230,39 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0a surface; AST-aware second pass,
   full Unicode width, line-reflow, and configurable style
   tracked separately.
+
+### D-036 — `phc lint` MVP starter ruleset (v0a)
+- **Decision**: Lock the v0a `phc-lint` surface as **three rules,
+  all Warning severity**:
+
+  | Rule | Trigger |
+  |------|---------|
+  | `unused_local` | A `<Type> $name = ...;` (or `flip ...`) local that no expression references. Suppressible by renaming `$name` to `$_name` (any `_`-prefix). |
+  | `unreachable_after_return` | A statement that follows a `return` inside the same block. Each offending stmt warns; nested blocks are recursed and each has its own reachability frame. |
+  | `class_naming` | A class / enum / interface / trait whose name is not PascalCase per D-006a. |
+
+  All three rules emit `Severity::Warning` rather than `Error`. The
+  CLI's `phc lint <file>` exits non-zero on any warning or setup
+  error so CI scripts can gate on cleanliness without the linter
+  itself being able to refuse compilation.
+
+  Pipeline is **parse → resolve → run rules**. Parse / resolve
+  failures abort the lint and surface as `setup_errors`; the
+  rules themselves don't need typecheck or borrowcheck output.
+- **Alternatives considered**: ship a richer ruleset (shadowing,
+  empty blocks, dead branches, function / method / field naming
+  conventions) — each is a real rule but the project hasn't
+  picked the naming style and the analysis surface for the rest
+  is bigger than v0a's "one slice" budget; ship lint as errors
+  by default — too aggressive when most rules are style nits;
+  fold lint into `phc check` — conflates "does this parse" with
+  "is this stylistically clean".
+- **Rationale**: Smallest ruleset that catches genuinely bad
+  shapes (dead bindings, unreachable code) plus the one
+  user-type naming rule the spec already locks (D-006a). The
+  three-rule surface is enough to demonstrate the lint pipeline
+  shape — adding more rules later doesn't require any
+  architectural changes.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0a surface; richer rules + autofix +
+  per-rule suppression attributes tracked separately.

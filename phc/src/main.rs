@@ -75,8 +75,11 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
-    /// Run the linter
-    Lint,
+    /// Run the D-036 v0a lint ruleset over a PHC source file.
+    Lint {
+        /// Path to a `.phc` source file
+        file: PathBuf,
+    },
     /// Create a new PHC project
     New { name: String },
 }
@@ -91,10 +94,7 @@ fn main() -> ExitCode {
         Some(Command::Check { root }) => check_cmd(&root),
         Some(Command::Test { file }) => test_cmd(&file),
         Some(Command::Fmt { file, check }) => fmt_cmd(&file, check),
-        Some(Command::Lint) => {
-            eprintln!("phc lint: not yet implemented");
-            ExitCode::from(1)
-        }
+        Some(Command::Lint { file }) => lint_cmd(&file),
         Some(Command::New { name }) => {
             eprintln!("phc new {name}: not yet implemented");
             ExitCode::from(1)
@@ -242,6 +242,44 @@ fn test_cmd(path: &Path) -> ExitCode {
     if report.ok() {
         ExitCode::SUCCESS
     } else {
+        ExitCode::from(1)
+    }
+}
+
+/// Read `path`, run the D-036 v0a lint ruleset, and print every
+/// warning + setup error. Exits non-zero on any setup error or
+/// at least one warning so CI scripts can gate on cleanliness.
+fn lint_cmd(path: &Path) -> ExitCode {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("phc lint: cannot read `{}`: {e}", path.display());
+            return ExitCode::from(2);
+        }
+    };
+    let report = phc_lint::lint_source(&source);
+    for d in &report.setup_errors {
+        eprintln!("error at {}..{}: {}", d.span.lo, d.span.hi, d.message);
+    }
+    for d in &report.warnings {
+        eprintln!("warning at {}..{}: {}", d.span.lo, d.span.hi, d.message);
+    }
+    if !report.setup_errors.is_empty() {
+        eprintln!(
+            "phc lint: setup errors prevented analysis of `{}`",
+            path.display()
+        );
+        return ExitCode::from(1);
+    }
+    if report.warnings.is_empty() {
+        eprintln!("phc lint: `{}` — clean", path.display());
+        ExitCode::SUCCESS
+    } else {
+        eprintln!(
+            "phc lint: `{}` — {} warning(s)",
+            path.display(),
+            report.warnings.len()
+        );
         ExitCode::from(1)
     }
 }

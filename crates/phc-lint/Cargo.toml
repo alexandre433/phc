@@ -9,4 +9,8 @@ description = "PHC static linter"
 
 [dependencies]
 phc-ast = { path = "../phc-ast" }
+phc-errors = { path = "../phc-errors" }
+phc-parser = { path = "../phc-parser" }
+phc-semantic = { path = "../phc-semantic" }
+phc-span = { path = "../phc-span" }
 miette = { workspace = true }

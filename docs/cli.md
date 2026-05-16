@@ -176,10 +176,37 @@ adjacent tokens with the usual no-space exceptions (`.`, `->`,
 `::`, call/index openers, `,`/`;`/`?`/`:` separators, `&`/`$`
 sigils). See spec D-035 for the full table.
 
+## `phc lint`
+
+Run the D-036 v0a lint ruleset over a `.phc` source file.
+
+```sh
+phc lint <file>
+```
+
+v0a rules (all `Warning` severity):
+
+- `unused_local` — `int $x = 1;` never referenced. Rename to
+  `$_x` (any `_`-prefixed name) to silence.
+- `unreachable_after_return` — any statement following a `return`
+  in the same block.
+- `class_naming` — class / enum / interface / trait names should
+  be PascalCase per D-006a.
+
+Exit codes:
+
+- `0` — clean (no warnings, no setup errors).
+- `1` — at least one warning, or parse / resolve diagnostic.
+- `2` — file could not be read.
+
+Out of scope for v0a, tracked as Phase 8 follow-ups: shadowing,
+empty-block detection, dead-branch analysis, naming rules for
+functions / methods / fields / locals, autofix suggestions,
+per-rule suppression attributes.
+
 ## Stubbed subcommands
 
 The following subcommands exist on the CLI but print "not yet
 implemented" and exit non-zero:
 
-- `phc lint` — linter (Phase 8 follow-up).
 - `phc new <name>` — project scaffolder (Phase 7 follow-up).
