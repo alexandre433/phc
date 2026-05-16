@@ -141,6 +141,7 @@ impl<'a> Emitter<'a> {
             "result" => "phc_result".into(),
             "option" => "phc_option".into(),
             "list" => "phc_list".into(),
+            "map" => "phc_map".into(),
             "fn" => "phc_lambda".into(),
             _ => {
                 if self.is_class(name) {
@@ -177,6 +178,8 @@ impl<'a> Emitter<'a> {
                     format!("phc_enum_{name}")
                 } else if name == "list" {
                     "phc_list".into()
+                } else if name == "map" {
+                    "phc_map".into()
                 } else if name == "fn" {
                     "phc_lambda".into()
                 } else {
@@ -204,7 +207,10 @@ impl<'a> Emitter<'a> {
             },
             Ty::Path { path, .. }
                 if path.len() == 1
-                    && (self.is_class(&path[0]) || path[0] == "list" || path[0] == "fn") =>
+                    && (self.is_class(&path[0])
+                        || path[0] == "list"
+                        || path[0] == "map"
+                        || path[0] == "fn") =>
             {
                 "ptr"
             }
@@ -1291,6 +1297,21 @@ impl<'a> Emitter<'a> {
                     }
                 }
             }
+            // Stdlib map<string, V> methods (D-028). Same precedence
+            // as list — runs before generic class dispatch.
+            if let Some(Ty::Path {
+                path, args: targs, ..
+            }) = self.typed.expr_types.get(&span_of_expr(receiver))
+            {
+                if path.len() == 1 && path[0] == "map" {
+                    let value_ty = targs.get(1).cloned().unwrap_or(Ty::Unknown);
+                    if let Some(snippet) =
+                        self.try_emit_map_method(receiver, &field.name, args, &value_ty)
+                    {
+                        return snippet;
+                    }
+                }
+            }
             // Stdlib result<T, E> / option<T> methods (D-026).
             if let Some(Ty::Path {
                 path, args: targs, ..
@@ -1330,6 +1351,10 @@ impl<'a> Emitter<'a> {
         if let Expr::TypeName { name, .. } = callee {
             if name.name == "list" && args.is_empty() {
                 return "phc_list_new()".into();
+            }
+            // Same precedence rule for `map()` (D-028).
+            if name.name == "map" && args.is_empty() {
+                return "phc_map_new()".into();
             }
         }
         // User-defined free function call OR class construction.
@@ -1375,6 +1400,40 @@ impl<'a> Emitter<'a> {
             "indexing only supported on `list<T>` in v0",
         );
         "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit a stdlib `map<string, V>` method call (D-028). v0a
+    /// requires string keys; `value_ty` (V) selects the payload
+    /// union member at `set` and is unused at the runtime side for
+    /// `get`/`has`/`len` (the C runtime takes opaque payloads).
+    fn try_emit_map_method(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+        value_ty: &Ty,
+    ) -> Option<String> {
+        let recv_c = self.emit_expr(receiver);
+        match (method, args.len()) {
+            ("len", 0) => Some(format!("phc_map_len({recv_c})")),
+            ("has", 1) => {
+                let key = self.emit_expr(&args[0]);
+                Some(format!("phc_map_has({recv_c}, {key})"))
+            }
+            ("get", 1) => {
+                let key = self.emit_expr(&args[0]);
+                Some(format!("phc_map_get({recv_c}, {key})"))
+            }
+            ("set", 2) => {
+                let key = self.emit_expr(&args[0]);
+                let val = self.emit_expr(&args[1]);
+                let pm = self.payload_member(value_ty);
+                Some(format!(
+                    "phc_map_set({recv_c}, {key}, (phc_payload){{.{pm} = {val}}})"
+                ))
+            }
+            _ => None,
+        }
     }
 
     /// Emit a stdlib `result<T, E>` or `option<T>` method call

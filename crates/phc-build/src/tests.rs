@@ -535,6 +535,58 @@ function main(): void {
     }
 }
 
+/// Build + run a D-028 map program. v0a: string keys only,
+/// linear-scan storage. Asserts set / has / get(→option) / len.
+#[test]
+fn build_and_run_map_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_map_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    map<string, int> $m = map();
+    $m->set("a", 1);
+    $m->set("b", 2);
+    $m->set("a", 10);
+    if ($m->len() == 2) { Logger::info("len ok"); }
+    if ($m->has("a")) { Logger::info("has ok"); }
+    option<int> $hit = $m->get("a");
+    if ($hit->unwrapOr(0) == 10) { Logger::info("get ok"); }
+    option<int> $miss = $m->get("missing");
+    if ($miss->isNone()) { Logger::info("missing ok"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("map_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("map_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "map binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in ["len ok", "has ok", "get ok", "missing ok"] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

@@ -77,6 +77,20 @@ void        phc_list_push(phc_list l, phc_payload v);
 phc_payload phc_list_at(phc_list l, int64_t i);  /* aborts on OOB */
 int64_t     phc_list_len(phc_list l);
 
+/* Map value (D-028). String-keyed only in v0a; linear-scan
+ * storage (Vec<(key, payload)>). Heap-allocated handle, same
+ * reference-semantics carve-out as list<T>: mutation through
+ * `set` updates the shared backing storage. Hash-based storage
+ * lands when generic-key hashing is speced. */
+struct phc_map_s;
+typedef struct phc_map_s* phc_map;
+
+phc_map     phc_map_new(void);
+void        phc_map_set(phc_map m, phc_string key, phc_payload v);
+phc_option  phc_map_get(phc_map m, phc_string key);
+bool        phc_map_has(phc_map m, phc_string key);
+int64_t     phc_map_len(phc_map m);
+
 /* Lambda value: function pointer + heap-alloc'd capture environment.
  * The codegen emits `fn` as the lifted-body symbol's address and
  * `env` as a malloc'd struct holding every variable the body

@@ -67,6 +67,11 @@ pub enum Value {
     /// the same backing storage and observe each other's pushes.
     /// CoW lands when the runtime grows refcounts.
     List(Rc<RefCell<Vec<Value>>>),
+    /// `map<string, V>` value (D-028). Same reference-semantics as
+    /// `List`. v0a only supports string keys; the storage type
+    /// reflects that. Generic-key maps land when key hashing is
+    /// speced.
+    Map(Rc<RefCell<Vec<(String, Value)>>>),
 }
 
 /// Owned lambda payload. Stored behind an Rc so cloning a Value is
@@ -99,6 +104,14 @@ impl Value {
             Value::List(items) => {
                 let parts: Vec<String> = items.borrow().iter().map(|v| v.display()).collect();
                 format!("[{}]", parts.join(", "))
+            }
+            Value::Map(entries) => {
+                let parts: Vec<String> = entries
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| format!("{k}: {}", v.display()))
+                    .collect();
+                format!("{{{}}}", parts.join(", "))
             }
         }
     }
@@ -714,6 +727,14 @@ impl<'a> Interp<'a> {
                     return Ok(value);
                 }
             }
+            // D-028 map method dispatch.
+            if let Value::Map(entries) = &recv {
+                if let Some(value) =
+                    self.try_eval_map_method(entries.clone(), &field.name, args, env)?
+                {
+                    return Ok(value);
+                }
+            }
             // D-026 result/option method dispatch.
             if matches!(
                 recv,
@@ -733,6 +754,10 @@ impl<'a> Interp<'a> {
         if let Expr::TypeName { name, .. } = callee {
             if name.name == "list" && args.is_empty() {
                 return Ok(Value::List(Rc::new(RefCell::new(Vec::new()))));
+            }
+            // Same precedence rule for `map()` (D-028).
+            if name.name == "map" && args.is_empty() {
+                return Ok(Value::Map(Rc::new(RefCell::new(Vec::new()))));
             }
         }
         // Class construction or free function: `name(args)` parses
@@ -959,6 +984,75 @@ impl<'a> Interp<'a> {
                     })
                     .collect();
                 Ok(Some(Value::String(out)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// D-028 map method dispatch. v0a only supports string keys.
+    fn try_eval_map_method(
+        &mut self,
+        entries: Rc<RefCell<Vec<(String, Value)>>>,
+        method: &str,
+        args: &[Expr],
+        env: &mut Env,
+    ) -> EvalResult<Option<Value>> {
+        let arity_check = |expected: usize| -> EvalResult<()> {
+            if args.len() != expected {
+                return Err(rt(format!(
+                    "map method `{method}` takes {expected} argument(s), got {}",
+                    args.len()
+                )));
+            }
+            Ok(())
+        };
+        let key_arg = |this: &mut Self, env: &mut Env| -> EvalResult<String> {
+            let v = this.eval_expr(&args[0], env)?;
+            match v {
+                Value::String(s) => Ok(s),
+                other => Err(rt(format!(
+                    "map method `{method}` expects a `string` key, got `{}`",
+                    other.display()
+                ))),
+            }
+        };
+        match method {
+            "len" => {
+                arity_check(0)?;
+                Ok(Some(Value::Int(entries.borrow().len() as i64)))
+            }
+            "has" => {
+                arity_check(1)?;
+                let key = key_arg(self, env)?;
+                Ok(Some(Value::Bool(
+                    entries.borrow().iter().any(|(k, _)| k == &key),
+                )))
+            }
+            "get" => {
+                arity_check(1)?;
+                let key = key_arg(self, env)?;
+                let hit = entries.borrow().iter().find(|(k, _)| k == &key).cloned();
+                match hit {
+                    Some((_, v)) => Ok(Some(Value::OptionSome(Box::new(v)))),
+                    None => Ok(Some(Value::OptionNone)),
+                }
+            }
+            "set" => {
+                if args.len() != 2 {
+                    return Err(rt(format!(
+                        "map method `set` takes 2 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let key = key_arg(self, env)?;
+                let value = self.eval_expr(&args[1], env)?;
+                let mut e = entries.borrow_mut();
+                if let Some(pair) = e.iter_mut().find(|(k, _)| k == &key) {
+                    pair.1 = value;
+                } else {
+                    e.push((key, value));
+                }
+                Ok(Some(Value::Void))
             }
             _ => Ok(None),
         }

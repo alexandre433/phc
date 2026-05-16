@@ -122,6 +122,7 @@ Locked during Phase 6 stdlib build-out:
 21. D-026 — Result/Option ergonomic methods (locked 2026-05-16): `result` gets `isOk/isErr/unwrapOr`; `option` gets `isSome/isNone/unwrapOr/orElse`. Inline statement-expression lowering for `unwrapOr/orElse`; `map/andThen/unwrap/okOr` deferred (the closure forms wait on D-024).
 22. D-024 — Function type syntax (locked 2026-05-16): `fn(T1, T2, ...): R` heads a function type. `fn` reserved keyword. Additive AST (`fn_return: Option<Box<TypeRef>>`) lowered to `Ty::Path { path:["fn"], args:[R, P1, ...] }`; codegen maps to `phc_lambda`. Stored lambdas now legal: bind, pass, return. Generic fn-types and the `Ty::Function` enum refactor deferred.
 23. D-005 aliasing extension (locked 2026-05-16): within a single call's arg list, no two borrows of the same root binding may both be mutable, and a mutable borrow cannot coexist with any other borrow of the same root. Broader aliasing (across statements, through intermediate bindings) needs a full liveness pass and stays out of scope for v0.
+24. D-028 — `map<string, V>` collection v0a (locked 2026-05-16): `map()` ctor (V from binding annotation), `set/get/has/len` methods. String keys only; linear-scan storage. Reference semantics like list. `map` is a reserved name. Generic keys, hash storage, `remove`/iteration deferred.
 
 ---
 
@@ -865,3 +866,42 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0 surface; enum-based AST refactor,
   generic function types, and borrow-aware parameter parsing
   tracked separately.
+
+### D-028 — `map<string, V>` collection (v0a)
+- **Decision**: First map. **v0a restricts keys to `string`** —
+  the generic-key form `map<K, V>` parses fine, but only `K =
+  string` is wired through codegen and runtime in this slice.
+  Same reference-semantics carve-out as `list<T>` (D-027): the
+  local handle is immutable by default, mutation through methods
+  is allowed regardless of the handle's `flip` flag.
+  - **Construction**: `map()` zero-arg call; value type taken
+    from the binding annotation (`map<string, int> $m = map();`).
+    `map` is a reserved name.
+  - **Methods (D-023 dispatch)**:
+
+    | Method | Signature | Notes |
+    |--------|-----------|-------|
+    | `len` | `(): int` | Number of entries. |
+    | `has` | `(string): bool` | Key presence. |
+    | `get` | `(string): option<V>` | Returns `option::some(v)` on hit, `option::none` on miss. |
+    | `set` | `(string, V): void` | Insert or overwrite. |
+
+  - **Storage in v0a is linear-scan** — every method walks the
+    entries Vec. Acceptable for the v0 workloads this unblocks
+    (small lookup tables, key→config maps); hash-based storage
+    lands when generic-key hashing is speced.
+- **Alternatives considered**: hash-from-day-one (couples to a
+  hasher decision before user code has surfaced what they need);
+  generic keys via a `hashable` trait dispatch (depends on D-014
+  trait-bound resolution that hasn't shipped); separate
+  `dict<V>` for the string-only case (forks the type surface).
+- **Rationale**: Picks the smallest surface that lets a real
+  program build and read a string-keyed lookup table. The linear
+  scan plus the reserved-name pattern keeps the slice tight and
+  consistent with D-027.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0a; generic `K`, hash storage,
+  `remove`, iteration / `forEach`, and `entries / keys / values`
+  tracked separately.
+
+---

@@ -211,3 +211,79 @@ phc_payload phc_list_at(phc_list l, int64_t i) {
 int64_t phc_list_len(phc_list l) {
     return (int64_t)l->len;
 }
+
+/* ===== Map stdlib (D-028) ===== */
+
+struct phc_map_entry {
+    phc_string key;
+    phc_payload value;
+};
+
+struct phc_map_s {
+    size_t len;
+    size_t cap;
+    struct phc_map_entry* items;
+};
+
+phc_map phc_map_new(void) {
+    phc_map m = (phc_map)phc_alloc(sizeof(struct phc_map_s));
+    m->len = 0;
+    m->cap = 0;
+    m->items = NULL;
+    return m;
+}
+
+static int phc_string_eq(phc_string a, phc_string b) {
+    if (a.len != b.len) return 0;
+    if (a.len == 0) return 1;
+    return memcmp(a.data, b.data, a.len) == 0;
+}
+
+void phc_map_set(phc_map m, phc_string key, phc_payload v) {
+    for (size_t i = 0; i < m->len; ++i) {
+        if (phc_string_eq(m->items[i].key, key)) {
+            m->items[i].value = v;
+            return;
+        }
+    }
+    if (m->len == m->cap) {
+        size_t new_cap = m->cap == 0 ? 4 : m->cap * 2;
+        struct phc_map_entry* grown =
+            (struct phc_map_entry*)realloc(m->items, new_cap * sizeof(struct phc_map_entry));
+        if (!grown) {
+            fputs("phc runtime: out of memory growing map\n", stderr);
+            abort();
+        }
+        m->items = grown;
+        m->cap = new_cap;
+    }
+    m->items[m->len].key = key;
+    m->items[m->len].value = v;
+    m->len++;
+}
+
+phc_option phc_map_get(phc_map m, phc_string key) {
+    for (size_t i = 0; i < m->len; ++i) {
+        if (phc_string_eq(m->items[i].key, key)) {
+            phc_option o;
+            o.kind = 0;
+            o.some = m->items[i].value;
+            return o;
+        }
+    }
+    phc_option o;
+    o.kind = 1;
+    o.some.i64 = 0;
+    return o;
+}
+
+bool phc_map_has(phc_map m, phc_string key) {
+    for (size_t i = 0; i < m->len; ++i) {
+        if (phc_string_eq(m->items[i].key, key)) return true;
+    }
+    return false;
+}
+
+int64_t phc_map_len(phc_map m) {
+    return (int64_t)m->len;
+}

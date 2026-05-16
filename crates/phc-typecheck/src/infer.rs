@@ -389,6 +389,18 @@ fn stdlib_method_return_ty(recv_ty: &Ty, method: &str) -> Option<Ty> {
                 ("list", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("list", "push") => Some(Ty::Primitive(crate::Primitive::Void)),
                 ("list", "at") => elem,
+                ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
+                ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
+                ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),
+                ("map", "get") => {
+                    // Returns option<V> where V = args[1].
+                    let v = args.get(1).cloned().unwrap_or(Ty::Unknown);
+                    Some(Ty::Path {
+                        path: vec!["option".to_string()],
+                        args: vec![v],
+                        nullable: false,
+                    })
+                }
                 ("result", "isOk") | ("result", "isErr") => {
                     Some(Ty::Primitive(crate::Primitive::Bool))
                 }

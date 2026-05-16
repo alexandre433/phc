@@ -785,3 +785,30 @@ function main(): void {
         vec!["stored lambda call".to_string(), "two-arg call".to_string()]
     );
 }
+
+#[test]
+fn map_d028_runs_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    map<string, int> $m = map();
+    $m->set("a", 1);
+    $m->set("b", 2);
+    $m->set("a", 10);
+    if ($m->len() == 2) { Logger::info("len ok"); }
+    if ($m->has("a")) { Logger::info("has ok"); }
+    if ($m->get("a")->unwrapOr(0) == 10) { Logger::info("get ok"); }
+    if ($m->get("missing")->isNone()) { Logger::info("missing ok"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(
+        out.stdout,
+        vec![
+            "len ok".to_string(),
+            "has ok".to_string(),
+            "get ok".to_string(),
+            "missing ok".to_string()
+        ]
+    );
+}
