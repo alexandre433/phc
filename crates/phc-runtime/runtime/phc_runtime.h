@@ -160,6 +160,18 @@ phc_string phc_str_trim(phc_string s);
 phc_string phc_str_upper(phc_string s);
 phc_string phc_str_lower(phc_string s);
 
+/* === Numeric stdlib (D-034) === */
+phc_result phc_int_parse(phc_string s);     /* result<int, parseError> */
+int64_t    phc_int_min(int64_t a, int64_t b);
+int64_t    phc_int_max(int64_t a, int64_t b);
+int64_t    phc_int_abs(int64_t v);
+
+phc_result phc_float_parse(phc_string s);   /* result<float, parseError> */
+double     phc_float_min(double a, double b);
+double     phc_float_max(double a, double b);
+double     phc_float_abs(double v);
+bool       phc_float_is_nan(double v);
+
 /* === Conversion to phc_string === */
 phc_string phc_to_string_int64(int64_t v);
 phc_string phc_to_string_double(double v);

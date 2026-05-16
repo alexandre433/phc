@@ -140,6 +140,89 @@ phc_string phc_concat2(phc_string a, phc_string b) {
     return out;
 }
 
+/* ===== Numeric stdlib (D-034) ===== */
+
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
+
+static phc_result phc_parse_err(const char* msg) {
+    phc_result r;
+    r.kind = 1;
+    r.err.s = phc_string_lit(msg);
+    return r;
+}
+
+phc_result phc_int_parse(phc_string s) {
+    if (s.len == 0) return phc_parse_err("empty input");
+    /* Build a NUL-terminated copy and use strtoll. */
+    char* tmp = phc_xmalloc(s.len + 1);
+    memcpy(tmp, s.data, s.len);
+    tmp[s.len] = '\0';
+    /* Reject embedded NULs early so strtoll doesn't stop short. */
+    if (strlen(tmp) != s.len) {
+        free(tmp);
+        return phc_parse_err("embedded NUL in input");
+    }
+    char* end = NULL;
+    errno = 0;
+    long long parsed = strtoll(tmp, &end, 10);
+    if (end == tmp || *end != '\0') {
+        free(tmp);
+        return phc_parse_err("invalid integer literal");
+    }
+    if (errno == ERANGE) {
+        free(tmp);
+        return phc_parse_err("integer out of range");
+    }
+    free(tmp);
+    phc_result r;
+    r.kind = 0;
+    r.ok.i64 = (int64_t)parsed;
+    return r;
+}
+
+int64_t phc_int_min(int64_t a, int64_t b) { return a < b ? a : b; }
+int64_t phc_int_max(int64_t a, int64_t b) { return a > b ? a : b; }
+int64_t phc_int_abs(int64_t v) {
+    /* Avoid UB on INT64_MIN: saturate to INT64_MAX. */
+    if (v == INT64_MIN) return INT64_MAX;
+    return v < 0 ? -v : v;
+}
+
+phc_result phc_float_parse(phc_string s) {
+    if (s.len == 0) return phc_parse_err("empty input");
+    char* tmp = phc_xmalloc(s.len + 1);
+    memcpy(tmp, s.data, s.len);
+    tmp[s.len] = '\0';
+    if (strlen(tmp) != s.len) {
+        free(tmp);
+        return phc_parse_err("embedded NUL in input");
+    }
+    char* end = NULL;
+    errno = 0;
+    double parsed = strtod(tmp, &end);
+    if (end == tmp || *end != '\0') {
+        free(tmp);
+        return phc_parse_err("invalid float literal");
+    }
+    if (errno == ERANGE) {
+        free(tmp);
+        return phc_parse_err("float out of range");
+    }
+    free(tmp);
+    phc_result r;
+    r.kind = 0;
+    r.ok.f64 = parsed;
+    return r;
+}
+
+double phc_float_min(double a, double b) { return a < b ? a : b; }
+double phc_float_max(double a, double b) { return a > b ? a : b; }
+double phc_float_abs(double v) { return v < 0.0 ? -v : v; }
+bool   phc_float_is_nan(double v) { return v != v; }
+
 phc_string phc_to_string_int64(int64_t v) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "%lld", (long long)v);

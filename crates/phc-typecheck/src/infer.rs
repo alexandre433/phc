@@ -421,6 +421,44 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
                         _ => Ty::Unknown,
                     };
                 }
+                // D-034 numeric namespaces.
+                if name.name == "int" {
+                    return match member.name.as_str() {
+                        "parse" => Ty::Path {
+                            path: vec!["result".to_string()],
+                            args: vec![
+                                Ty::Primitive(crate::Primitive::Int),
+                                Ty::Path {
+                                    path: vec!["parseError".to_string()],
+                                    args: Vec::new(),
+                                    nullable: false,
+                                },
+                            ],
+                            nullable: false,
+                        },
+                        "min" | "max" | "abs" => Ty::Primitive(crate::Primitive::Int),
+                        _ => Ty::Unknown,
+                    };
+                }
+                if name.name == "float" {
+                    return match member.name.as_str() {
+                        "parse" => Ty::Path {
+                            path: vec!["result".to_string()],
+                            args: vec![
+                                Ty::Primitive(crate::Primitive::Float),
+                                Ty::Path {
+                                    path: vec!["parseError".to_string()],
+                                    args: Vec::new(),
+                                    nullable: false,
+                                },
+                            ],
+                            nullable: false,
+                        },
+                        "min" | "max" | "abs" => Ty::Primitive(crate::Primitive::Float),
+                        "isNaN" => Ty::Primitive(crate::Primitive::Bool),
+                        _ => Ty::Unknown,
+                    };
+                }
             }
             let _ = args;
             Ty::Unknown

@@ -1015,3 +1015,31 @@ function main(): void {
         out.errors
     );
 }
+
+#[test]
+fn numeric_d034_runs_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    result<int, parseError> $parsed = int::parse("42");
+    assert::eq($parsed->unwrapOr(0), 42);
+    result<int, parseError> $bad = int::parse("nope");
+    assert::isTrue($bad->isErr());
+
+    assert::eq(int::min(7, 3), 3);
+    assert::eq(int::max(7, 3), 7);
+    assert::eq(int::abs(-9), 9);
+
+    result<float, parseError> $f = float::parse("2.5");
+    assert::eq($f->unwrapOr(0.0), 2.5);
+    assert::eq(float::min(1.5, 0.25), 0.25);
+    assert::eq(float::max(1.5, 0.25), 1.5);
+    assert::eq(float::abs(-3.5), 3.5);
+    assert::isFalse(float::isNaN(1.0));
+
+    io::println("numeric ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["numeric ok".to_string()]);
+}

@@ -1275,6 +1275,18 @@ impl<'a> Emitter<'a> {
                         return snippet;
                     }
                 }
+                // D-034: numeric stdlib namespaces `int::*` and
+                // `float::*` route to dedicated runtime helpers.
+                if name.name == "int" {
+                    if let Some(snippet) = self.try_emit_int_call(&member.name, args, callee) {
+                        return snippet;
+                    }
+                }
+                if name.name == "float" {
+                    if let Some(snippet) = self.try_emit_float_call(&member.name, args, callee) {
+                        return snippet;
+                    }
+                }
                 // result::ok(v), result::err(e), option::some(v).
                 if let Some(snippet) =
                     self.try_emit_result_option_ctor(&name.name, &member.name, args)
@@ -1433,6 +1445,97 @@ impl<'a> Emitter<'a> {
             "indexing only supported on `list<T>` in v0",
         );
         "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit an `int::<member>(args)` call (D-034). Static-call
+    /// dispatch to the numeric runtime helpers.
+    fn try_emit_int_call(&mut self, member: &str, args: &[Expr], callee: &Expr) -> Option<String> {
+        let arity_err = |this: &mut Self, expected: usize| -> String {
+            this.diag(
+                span_of_expr(callee),
+                &format!(
+                    "int::{member} expects {expected} argument(s), got {}",
+                    args.len()
+                ),
+            );
+            format!("phc_panic(\"int::{member} arity\")")
+        };
+        match member {
+            "parse" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let s = self.emit_expr(&args[0]);
+                Some(format!("phc_int_parse({s})"))
+            }
+            "min" | "max" => {
+                if args.len() != 2 {
+                    return Some(arity_err(self, 2));
+                }
+                let a = self.emit_expr(&args[0]);
+                let b = self.emit_expr(&args[1]);
+                Some(format!("phc_int_{member}({a}, {b})"))
+            }
+            "abs" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("phc_int_abs({v})"))
+            }
+            _ => None,
+        }
+    }
+
+    /// Emit a `float::<member>(args)` call (D-034).
+    fn try_emit_float_call(
+        &mut self,
+        member: &str,
+        args: &[Expr],
+        callee: &Expr,
+    ) -> Option<String> {
+        let arity_err = |this: &mut Self, expected: usize| -> String {
+            this.diag(
+                span_of_expr(callee),
+                &format!(
+                    "float::{member} expects {expected} argument(s), got {}",
+                    args.len()
+                ),
+            );
+            format!("phc_panic(\"float::{member} arity\")")
+        };
+        match member {
+            "parse" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let s = self.emit_expr(&args[0]);
+                Some(format!("phc_float_parse({s})"))
+            }
+            "min" | "max" => {
+                if args.len() != 2 {
+                    return Some(arity_err(self, 2));
+                }
+                let a = self.emit_expr(&args[0]);
+                let b = self.emit_expr(&args[1]);
+                Some(format!("phc_float_{member}({a}, {b})"))
+            }
+            "abs" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("phc_float_abs({v})"))
+            }
+            "isNaN" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("phc_float_is_nan({v})"))
+            }
+            _ => None,
+        }
     }
 
     /// Emit an `assert::<member>(args)` call (D-033). Comparison

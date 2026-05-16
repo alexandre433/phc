@@ -899,6 +899,58 @@ function main(): void {
     assert!(stdout.contains("asserts passed"), "stdout: {stdout:?}");
 }
 
+/// Build + run D-034 numeric stdlib namespaces (int / float).
+/// Drives parse / min / max / abs / isNaN through the full
+/// codegen + cc + run pipeline using D-033 assert helpers.
+#[test]
+fn build_and_run_numeric_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_numeric_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    result<int, parseError> $ok = int::parse("42");
+    assert::eq($ok->unwrapOr(0), 42);
+    result<int, parseError> $bad = int::parse("nope");
+    assert::isTrue($bad->isErr());
+
+    assert::eq(int::min(7, 3), 3);
+    assert::eq(int::max(7, 3), 7);
+    assert::eq(int::abs(-9), 9);
+
+    result<float, parseError> $f = float::parse("2.5");
+    assert::eq($f->unwrapOr(0.0), 2.5);
+    assert::isFalse(float::isNaN(1.0));
+
+    io::println("numeric ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("numeric_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("numeric_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "numeric binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("numeric ok"), "stdout: {stdout:?}");
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

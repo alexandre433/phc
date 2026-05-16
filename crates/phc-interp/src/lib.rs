@@ -1019,6 +1019,124 @@ impl<'a> Interp<'a> {
                 let v = self.eval_expr(&args[0], env)?;
                 Err(rt(format!("assertion failed: {}", v.display())))
             }
+            // D-034 numeric stdlib namespaces.
+            ("int", "parse") => {
+                if args.len() != 1 {
+                    return Err(rt("int::parse takes 1 argument".to_string()));
+                }
+                let v = self.eval_expr(&args[0], env)?;
+                let s = match v {
+                    Value::String(s) => s,
+                    other => {
+                        return Err(rt(format!(
+                            "int::parse expects `string`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(string_to_int(&s)))
+            }
+            ("int", "min") | ("int", "max") | ("int", "abs") => {
+                let want = if method == "abs" { 1 } else { 2 };
+                if args.len() != want {
+                    return Err(rt(format!(
+                        "int::{method} takes {want} argument(s), got {}",
+                        args.len()
+                    )));
+                }
+                let a = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "int::{method} expects `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                if method == "abs" {
+                    let r = if a == i64::MIN { i64::MAX } else { a.abs() };
+                    return Ok(Some(Value::Int(r)));
+                }
+                let b = match self.eval_expr(&args[1], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "int::{method} expects `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Int(if method == "min" {
+                    a.min(b)
+                } else {
+                    a.max(b)
+                })))
+            }
+            ("float", "parse") => {
+                if args.len() != 1 {
+                    return Err(rt("float::parse takes 1 argument".to_string()));
+                }
+                let v = self.eval_expr(&args[0], env)?;
+                let s = match v {
+                    Value::String(s) => s,
+                    other => {
+                        return Err(rt(format!(
+                            "float::parse expects `string`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                match s.parse::<f64>() {
+                    Ok(f) => Ok(Some(Value::ResultOk(Box::new(Value::Float(f))))),
+                    Err(e) => Ok(Some(Value::ResultErr(Box::new(Value::String(format!(
+                        "{e}"
+                    )))))),
+                }
+            }
+            ("float", "min") | ("float", "max") | ("float", "abs") | ("float", "isNaN") => {
+                let want = if method == "abs" || method == "isNaN" {
+                    1
+                } else {
+                    2
+                };
+                if args.len() != want {
+                    return Err(rt(format!(
+                        "float::{method} takes {want} argument(s), got {}",
+                        args.len()
+                    )));
+                }
+                let a = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::{method} expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                if method == "abs" {
+                    return Ok(Some(Value::Float(a.abs())));
+                }
+                if method == "isNaN" {
+                    return Ok(Some(Value::Bool(a.is_nan())));
+                }
+                let b = match self.eval_expr(&args[1], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::{method} expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(if method == "min" {
+                    a.min(b)
+                } else {
+                    a.max(b)
+                })))
+            }
             ("result", "ok") => {
                 let v = single_arg(args, "result::ok", self, env)?;
                 Ok(Some(Value::ResultOk(Box::new(v))))

@@ -129,6 +129,7 @@ Locked during Phase 6 stdlib build-out:
 28. D-031 — `set<string>` collection v0a (locked 2026-05-16): `set()` ctor, `add(string)→bool` (true on insert, false if dup), `has(string)→bool`, `remove(string)→bool`, `len()→int`. String keys only; linear-scan storage parallel to map. Distinct `phc_set` C type. Generic keys / hash storage / iteration deferred.
 29. D-032 — `io` stdlib namespace (locked 2026-05-16): `io::print/println/eprint/eprintln(string)→void` plus `io::readLine()→option<string>` (none on EOF). Reserved namespace; routed via the existing static-call dispatch (parallel to `Logger::info`). Compiled binaries hit real stdin/stdout/stderr via runtime helpers; interp routes prints into its captured stdout vec and stubs `readLine` to none. Logger::info retained as legacy alias for the existing example corpus.
 30. D-033 — `assert` test-helper namespace (locked 2026-05-16): `assert::eq(a, b)→void`, `assert::neq(a, b)→void`, `assert::isTrue(bool)→void`, `assert::isFalse(bool)→void`, `assert::fail(string)→void`. Failure raises a runtime panic, which `phc test` treats as the test's failure signal. Replaces the OOB-on-list hack the D-021 v0a tests used. Codegen picks the comparison shape (string vs everything-else) from the arg's static type.
+31. D-034 — numeric stdlib namespaces (locked 2026-05-16): `int::parse(string)→result<int, parseError>`, `int::min/max(int,int)→int`, `int::abs(int)→int`; `float::parse(string)→result<float, parseError>`, `float::min/max(float,float)→float`, `float::abs(float)→float`, `float::isNaN(float)→bool`. Replaces the ad-hoc `$str->toInt()` builtin for the parse case; `toInt` retained as legacy. Codegen routes via static-call dispatch to `phc_int_*` / `phc_float_*` runtime helpers.
 
 ---
 
@@ -1126,3 +1127,46 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0 surface; `assert::throws`,
   `assert::approxEq` for floats, and message-carrying variants
   of every check tracked separately.
+
+### D-034 — Numeric stdlib namespaces (v0)
+- **Decision**: Adds reserved `int` and `float` static-call
+  namespaces with the bare numeric utilities every program
+  needs:
+
+  | Call | Signature |
+  |------|-----------|
+  | `int::parse` | `(string): result<int, parseError>` |
+  | `int::min` / `int::max` | `(int, int): int` |
+  | `int::abs` | `(int): int` |
+  | `float::parse` | `(string): result<float, parseError>` |
+  | `float::min` / `float::max` | `(float, float): float` |
+  | `float::abs` | `(float): float` |
+  | `float::isNaN` | `(float): bool` |
+
+  Codegen lowers each call to a dedicated `phc_int_*` /
+  `phc_float_*` runtime helper. `parse` returns a `phc_result`
+  with the parsed value in `ok.i64` / `ok.f64` on success or
+  `err.s` carrying a short error string on failure. `int::abs`
+  saturates at `INT64_MAX` for `INT64_MIN` input (avoids UB).
+
+  The string-method `$str->toInt()` (D-025) is retained as a
+  legacy shortcut. New code should prefer `int::parse($str)`
+  for symmetry with `float::parse` and consistency with the
+  `static-call → stdlib` pattern.
+- **Alternatives considered**: pile every numeric op onto the
+  primitive itself (`$n->abs()`, `$n->min(other)` — adds
+  method dispatch where a static namespace is the more
+  conventional shape, and parse can't sit on a string primitive
+  cleanly without `string::parseInt`); generic `num::min/max`
+  with a `Comparable` trait (depends on D-014 bounds work
+  that hasn't shipped); spec a richer numeric tower (decimal,
+  big-int) — Phase 6+ follow-up.
+- **Rationale**: smallest reserved namespace that lets a real
+  program parse user input and bound numeric values. Same
+  static-call dispatch pattern as D-032 / D-033, so wiring is
+  mechanical.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; bitwise ops, formatting
+  (`int::toHex` / `float::toFixed`), conversion (`int::toFloat`,
+  `float::toInt`), `int::pow`, trigonometry, full `parseError`
+  shape tracked separately.
