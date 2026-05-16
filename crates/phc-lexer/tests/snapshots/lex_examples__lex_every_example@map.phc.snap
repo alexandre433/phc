@@ -8,6 +8,8 @@ input_file: examples/map.phc
   13..14    Dot
   14..17    Ident("map")
   17..18    Semicolon
+  20..86    LineComment("// D-028 v0a: map<string, V> with set / has / get(→ option<V>) /")
+  87..140   LineComment("// len. String keys only in v0a; linear-scan storage.")
  142..148   Public
  149..157   Function
  158..162   Ident("main")
@@ -59,6 +61,7 @@ input_file: examples/map.phc
  290..292   IntLit("95")
  292..293   RParen
  293..294   Semicolon
+ 296..308   LineComment("// overwrite")
  314..316   If
  317..318   LParen
  318..319   Dollar

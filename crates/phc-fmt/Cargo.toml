@@ -9,3 +9,6 @@ description = "PHC opinionated code formatter"
 
 [dependencies]
 phc-ast = { path = "../phc-ast" }
+phc-errors = { path = "../phc-errors" }
+phc-lexer = { path = "../phc-lexer" }
+phc-span = { path = "../phc-span" }

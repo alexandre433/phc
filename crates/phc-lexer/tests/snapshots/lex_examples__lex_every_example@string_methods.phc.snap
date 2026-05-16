@@ -8,6 +8,7 @@ input_file: examples/string_methods.phc
   13..14    Dot
   14..28    Ident("string_methods")
   28..29    Semicolon
+  31..78    LineComment("// D-025 surface: byte-oriented string methods.")
   80..86    Public
   87..95    Function
   96..100   Ident("main")

@@ -8,6 +8,9 @@ input_file: examples/list.phc
   13..14    Dot
   14..18    Ident("list")
   18..19    Semicolon
+  21..84    LineComment("// D-027 v0a: list<T> with push / len / at, indexing, for-loop.")
+  85..148   LineComment("// Reference semantics — handle is shared; methods mutate the")
+ 149..183   LineComment("// heap-allocated backing storage.")
  185..191   Public
  192..200   Function
  201..205   Ident("main")

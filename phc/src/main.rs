@@ -65,8 +65,16 @@ enum Command {
         /// Path to a `.phc` source file whose tests should be run
         file: PathBuf,
     },
-    /// Format source files
-    Fmt,
+    /// Reformat a PHC source file in place (or print to stdout
+    /// with --check).
+    Fmt {
+        /// Path to a `.phc` source file
+        file: PathBuf,
+        /// Don't write — print the formatted source to stdout and
+        /// exit non-zero if the file isn't already canonical.
+        #[arg(long)]
+        check: bool,
+    },
     /// Run the linter
     Lint,
     /// Create a new PHC project
@@ -82,10 +90,7 @@ fn main() -> ExitCode {
         Some(Command::Build { file, output }) => build_cmd(file.as_deref(), output.as_deref()),
         Some(Command::Check { root }) => check_cmd(&root),
         Some(Command::Test { file }) => test_cmd(&file),
-        Some(Command::Fmt) => {
-            eprintln!("phc fmt: not yet implemented");
-            ExitCode::from(1)
-        }
+        Some(Command::Fmt { file, check }) => fmt_cmd(&file, check),
         Some(Command::Lint) => {
             eprintln!("phc lint: not yet implemented");
             ExitCode::from(1)
@@ -238,6 +243,50 @@ fn test_cmd(path: &Path) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(1)
+    }
+}
+
+/// Read `path`, run the token-stream formatter (D-035), and
+/// either write the result back or (with `check`) print to stdout
+/// and exit non-zero if the file wasn't already canonical.
+fn fmt_cmd(path: &Path, check: bool) -> ExitCode {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("phc fmt: cannot read `{}`: {e}", path.display());
+            return ExitCode::from(2);
+        }
+    };
+    let formatted = match phc_fmt::format(&source) {
+        Ok(s) => s,
+        Err(diags) => {
+            for d in &diags {
+                eprintln!("fmt error at {}..{}: {}", d.span.lo, d.span.hi, d.message);
+            }
+            return ExitCode::from(1);
+        }
+    };
+    if check {
+        print!("{formatted}");
+        if source == formatted {
+            ExitCode::SUCCESS
+        } else {
+            eprintln!("phc fmt: `{}` would change", path.display());
+            ExitCode::from(1)
+        }
+    } else if source == formatted {
+        ExitCode::SUCCESS
+    } else {
+        match std::fs::write(path, &formatted) {
+            Ok(()) => {
+                eprintln!("phc fmt: reformatted `{}`", path.display());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("phc fmt: cannot write `{}`: {e}", path.display());
+                ExitCode::from(1)
+            }
+        }
     }
 }
 

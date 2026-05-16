@@ -151,11 +151,35 @@ Editors spawn this as a long-lived child process and speak LSP
 over its stdio. The server runs until the client closes the
 connection.
 
+## `phc fmt`
+
+Reformat a `.phc` source file in place using the token-stream
+pretty-printer (D-035 v0a). Comments round-trip verbatim.
+
+```sh
+phc fmt <file>
+phc fmt --check <file>
+```
+
+Behaviour:
+
+- Default mode rewrites the file when it isn't already
+  canonical. Exits zero on either "already canonical" or
+  "rewritten cleanly"; exits non-zero on lex errors or write
+  failures.
+- `--check` prints the formatted source to stdout and exits
+  non-zero when the file would change. Useful in CI.
+
+Canonical style: 4-space indent per `{` level, LF endings,
+newline after `;` / `{` / line-comment, single space between
+adjacent tokens with the usual no-space exceptions (`.`, `->`,
+`::`, call/index openers, `,`/`;`/`?`/`:` separators, `&`/`$`
+sigils). See spec D-035 for the full table.
+
 ## Stubbed subcommands
 
 The following subcommands exist on the CLI but print "not yet
 implemented" and exit non-zero:
 
-- `phc fmt` — formatter (Phase 8 follow-up).
 - `phc lint` — linter (Phase 8 follow-up).
 - `phc new <name>` — project scaffolder (Phase 7 follow-up).

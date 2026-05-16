@@ -8,6 +8,10 @@ input_file: examples/test_block.phc
   13..14    Dot
   14..24    Ident("test_block")
   24..25    Semicolon
+  27..90    LineComment("// D-021 v0a: tests are top-level `test \"name\" { ... }` blocks.")
+  91..156   LineComment("// Run via `phc test examples/test_block.phc`. A test passes when")
+ 157..220   LineComment("// the body completes without a runtime error; any panic or `?`")
+ 221..271   LineComment("// propagation that escapes the body is a failure.")
  273..279   Public
  280..288   Function
  289..292   Ident("add")
@@ -31,6 +35,9 @@ input_file: examples/test_block.phc
  333..334   Ident("b")
  334..335   Semicolon
  336..337   RBrace
+ 339..399   LineComment("// v0a: panic on failure by triggering an out-of-bounds list")
+ 400..463   LineComment("// access. `phc test` treats any runtime error as a failure —")
+ 464..528   LineComment("// dedicated `assert::eq` helpers land in a later Phase 9 slice.")
  529..533   Test
  534..559   StrLit[Text("addition is commutative")]
  560..561   LBrace

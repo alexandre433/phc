@@ -8,6 +8,9 @@ input_file: examples/fn_types.phc
   13..14    Dot
   14..22    Ident("fn_types")
   22..23    Semicolon
+  25..83    LineComment("// D-024: function types are written `fn(T1, T2, ...): R`.")
+  84..144   LineComment("// Lambdas can be stored in a typed binding, passed as args,")
+ 145..176   LineComment("// and returned from functions.")
  178..184   Public
  185..193   Function
  194..205   Ident("pickHandler")

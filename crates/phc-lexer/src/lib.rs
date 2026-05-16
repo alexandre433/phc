@@ -238,9 +238,11 @@ fn scan_interp_body(remainder: &str) -> Option<usize> {
 /// Block comments nest (spec §1.2). Logos has no native nesting, so
 /// we open with the literal `/*` token and let this callback consume
 /// the body — counting depth — until the matching `*/`. On success we
-/// `Skip` so the comment never appears in the token stream; on EOF
-/// before close, we `SkipErr` so the iterator surfaces an error span.
-fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
+/// emit `Token::BlockComment(text)` so the formatter (D-035) can
+/// round-trip the comment; the parser cursor filters comment
+/// tokens before they reach grammar productions. The returned
+/// string includes the surrounding `/* ... */` delimiters.
+fn lex_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<String, ()> {
     let remainder = lex.remainder();
     let bytes = remainder.as_bytes();
     let mut depth: usize = 1;
@@ -256,7 +258,14 @@ fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
                 i += 2;
                 if depth == 0 {
                     lex.bump(i);
-                    return FilterResult::Skip;
+                    let body = &remainder[..i];
+                    // The leading "/*" was consumed by the token
+                    // matcher itself; prepend it back so the
+                    // returned text round-trips verbatim.
+                    let mut text = String::with_capacity(body.len() + 2);
+                    text.push_str("/*");
+                    text.push_str(body);
+                    return FilterResult::Emit(text);
                 }
             }
             _ => i += 1,
@@ -266,6 +275,19 @@ fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
     FilterResult::Error(())
 }
 
+/// Read a `// ...` line comment body. The `//` itself was consumed
+/// by the token matcher; we slurp the remainder of the line and
+/// emit the full text (including `//`) as the token payload.
+fn lex_line_comment(lex: &mut logos::Lexer<Token>) -> String {
+    let remainder = lex.remainder();
+    let end = remainder.find('\n').unwrap_or(remainder.len());
+    lex.bump(end);
+    let mut text = String::with_capacity(end + 2);
+    text.push_str("//");
+    text.push_str(&remainder[..end]);
+    text
+}
+
 /// A single lexical token in PHC source.
 ///
 /// Variants that carry data (identifier text, literal value) keep
@@ -273,14 +295,19 @@ fn skip_block_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
 /// further interpretation (e.g. parsing integer literals into `i64`).
 #[derive(Logos, Debug, Clone, PartialEq, Eq)]
 #[logos(skip r"[ \t\r\n\f]+")]
-#[logos(skip r"//[^\n]*")]
 pub enum Token {
     // ----- Comments -----
-    /// `/* ... */` block comment. Nesting allowed (spec §1.2).
-    /// Always skipped via [`skip_block_comment`]; never observed by
-    /// downstream consumers.
-    #[token("/*", skip_block_comment)]
-    BlockComment,
+    /// `/* ... */` block comment. Nesting allowed (spec §1.2). The
+    /// formatter (D-035) round-trips comments verbatim; the parser
+    /// cursor filters comment tokens before grammar productions
+    /// see them, so adding them to the stream is transparent for
+    /// every other consumer.
+    #[token("/*", lex_block_comment)]
+    BlockComment(String),
+    /// `// ...` line comment (excludes the trailing newline). Same
+    /// round-trip / filtering rules as `BlockComment`.
+    #[token("//", lex_line_comment)]
+    LineComment(String),
 
     // ----- String literal -----
     /// Double-quoted string literal, fully tokenised per D-017.
@@ -655,29 +682,57 @@ mod tests {
     }
 
     #[test]
-    fn line_comments_are_skipped() {
-        let src = "function // this is ignored\nreturn";
-        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+    fn line_comments_become_line_comment_tokens() {
+        // Updated 2026-05-16 for D-035: comments are no longer
+        // dropped — they ride in the token stream so the formatter
+        // can round-trip them. The parser filters them out at the
+        // boundary; downstream grammar productions still don't see
+        // them.
+        let src = "function // this is preserved\nreturn";
+        let toks = lex(src);
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0], Token::Function);
+        assert!(matches!(&toks[1], Token::LineComment(t) if t == "// this is preserved"));
+        assert_eq!(toks[2], Token::Return);
     }
 
     #[test]
-    fn block_comments_are_skipped() {
+    fn block_comments_become_block_comment_tokens() {
         let src = "function /* anything in here */ return";
-        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+        let toks = lex(src);
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0], Token::Function);
+        assert!(matches!(&toks[1], Token::BlockComment(t) if t == "/* anything in here */"));
+        assert_eq!(toks[2], Token::Return);
     }
 
     #[test]
-    fn block_comments_nest() {
+    fn block_comments_nest_and_preserve_inner_text() {
         // Spec §1.2: block comments nest. The middle */ must NOT
-        // close the outer comment.
+        // close the outer comment; the captured text includes the
+        // nested chunk verbatim.
         let src = "function /* outer /* inner */ still outer */ return";
-        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+        let toks = lex(src);
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0], Token::Function);
+        assert!(matches!(
+            &toks[1],
+            Token::BlockComment(t) if t == "/* outer /* inner */ still outer */"
+        ));
+        assert_eq!(toks[2], Token::Return);
     }
 
     #[test]
     fn block_comment_can_span_multiple_lines() {
         let src = "function /* line one\n   line two\n   line three */ return";
-        assert_eq!(lex(src), vec![Token::Function, Token::Return]);
+        let toks = lex(src);
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0], Token::Function);
+        assert!(matches!(
+            &toks[1],
+            Token::BlockComment(t) if t.contains("line one") && t.contains("line three")
+        ));
+        assert_eq!(toks[2], Token::Return);
     }
 
     fn parts_of(token: Token) -> Vec<StringPart> {

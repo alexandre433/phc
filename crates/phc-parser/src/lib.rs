@@ -50,7 +50,18 @@ pub fn parse(source: &str, file: FileId) -> ParseResult {
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     for item in Lexer::new(source, file) {
         match item {
-            Ok(spanned) => tokens.push(spanned),
+            Ok(spanned) => {
+                // Comment tokens are emitted by the lexer so the
+                // formatter (D-035) can round-trip them, but the
+                // grammar productions don't tolerate them — filter
+                // them out at the boundary.
+                if !matches!(
+                    spanned.token,
+                    Token::LineComment(_) | Token::BlockComment(_)
+                ) {
+                    tokens.push(spanned);
+                }
+            }
             Err(span) => diagnostics.push(lex_error(span)),
         }
     }

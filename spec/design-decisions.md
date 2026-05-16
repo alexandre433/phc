@@ -130,6 +130,7 @@ Locked during Phase 6 stdlib build-out:
 29. D-032 — `io` stdlib namespace (locked 2026-05-16): `io::print/println/eprint/eprintln(string)→void` plus `io::readLine()→option<string>` (none on EOF). Reserved namespace; routed via the existing static-call dispatch (parallel to `Logger::info`). Compiled binaries hit real stdin/stdout/stderr via runtime helpers; interp routes prints into its captured stdout vec and stubs `readLine` to none. Logger::info retained as legacy alias for the existing example corpus.
 30. D-033 — `assert` test-helper namespace (locked 2026-05-16): `assert::eq(a, b)→void`, `assert::neq(a, b)→void`, `assert::isTrue(bool)→void`, `assert::isFalse(bool)→void`, `assert::fail(string)→void`. Failure raises a runtime panic, which `phc test` treats as the test's failure signal. Replaces the OOB-on-list hack the D-021 v0a tests used. Codegen picks the comparison shape (string vs everything-else) from the arg's static type.
 31. D-034 — numeric stdlib namespaces (locked 2026-05-16): `int::parse(string)→result<int, parseError>`, `int::min/max(int,int)→int`, `int::abs(int)→int`; `float::parse(string)→result<float, parseError>`, `float::min/max(float,float)→float`, `float::abs(float)→float`, `float::isNaN(float)→bool`. Replaces the ad-hoc `$str->toInt()` builtin for the parse case; `toInt` retained as legacy. Codegen routes via static-call dispatch to `phc_int_*` / `phc_float_*` runtime helpers.
+32. D-035 — `phc fmt` MVP (locked 2026-05-16): token-stream pretty-printer. Lexer now retains `LineComment` / `BlockComment` tokens; parser cursor filters them before grammar productions so the change is transparent for every other consumer. Fmt walks the unfiltered token stream and emits canonical whitespace + 4-space indentation with comments round-tripped. `phc fmt <file>` rewrites in place; `--check` prints to stdout and exits non-zero when changes are needed.
 
 ---
 
@@ -1170,3 +1171,61 @@ Locked during Phase 6 stdlib build-out:
   (`int::toHex` / `float::toFixed`), conversion (`int::toFloat`,
   `float::toInt`), `int::pow`, trigonometry, full `parseError`
   shape tracked separately.
+
+### D-035 — `phc fmt` MVP (token-stream pretty-printer, v0a)
+- **Decision**: Lock the v0a formatter shape as a **token-stream
+  pretty-printer**, not an AST-aware re-emitter. Comments
+  round-trip naturally because the lexer keeps them in the token
+  stream (a deliberate change in this slice — see below).
+
+  **Canonical style**:
+  - 4-space indentation per `{` level.
+  - LF line endings.
+  - Newline after `;`, `{`, line-comment; conditional newline after
+    `}` (kept on the same line for `} else`, `},`, `};`, `})`,
+    `}]`, `}.foo`, `}->bar`, `}::baz`).
+  - Single space between adjacent tokens by default. No-space rules:
+    around `.` / `->` / `::`; inside `(`/`)` and `[`/`]`; before
+    `,` / `;` / `?` / `:`; between callee + `(` or `[`; after `&`
+    and `$`; across `<` (when prev is a type-like Ident) or `>`.
+  - At most one blank line preserved between top-level items when
+    the source had at least one.
+
+  **Lexer change bundled with this slice**: comments were
+  previously skipped at the lexer (via `logos(skip ...)`); now
+  they are emitted as `Token::LineComment(String)` and
+  `Token::BlockComment(String)` with the full source text
+  (including delimiters). The parser's top-level entry filters
+  these tokens out before constructing the cursor, so every
+  downstream grammar production sees the same stream it did
+  before.
+
+  **CLI**: `phc fmt <file>` rewrites in place; `phc fmt --check
+  <file>` prints to stdout and exits non-zero when the file is
+  not already canonical. Lex errors abort with no partial output.
+
+  **Known imperfections** (tracked as Phase 8 follow-ups):
+  - `<` / `>` formatting uses a name heuristic (stdlib types +
+    PascalCase identifiers) for the type-args tightening. A real
+    AST-aware pass would know exactly.
+  - Long lines are not re-flowed.
+  - Trailing-comma / alignment policies, blank-line shaping
+    inside functions, and full Unicode-aware width counting are
+    AST-aware second-pass work.
+- **Alternatives considered**: AST-walking formatter (correct but
+  loses comments without separate plumbing; bigger slice); ship
+  fmt that refuses files with comments (honest but unusable on
+  the existing corpus); ship fmt that silently drops comments
+  (users would run it once and lose work). The token-stream
+  approach with kept-comment tokens is the smallest path that
+  ships a usable v0a.
+- **Rationale**: Token-stream fmt is mechanically straightforward
+  and preserves the user's actual lexical content. Keeping
+  comments in the token stream is the change every future fmt /
+  lint / refactor tool wants anyway — paying that cost now
+  unblocks both `phc fmt` today and the AST-aware second pass
+  later.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0a surface; AST-aware second pass,
+  full Unicode width, line-reflow, and configurable style
+  tracked separately.
