@@ -1,0 +1,20 @@
+pack examples.list;
+
+// D-027 v0a: list<T> with push / len / at, indexing, for-loop.
+// Reference semantics — handle is shared; methods mutate the
+// heap-allocated backing storage.
+
+public function main(): void {
+    list<int> $xs = list();
+    $xs->push(10);
+    $xs->push(20);
+    $xs->push(30);
+
+    if ($xs->len() == 3) { Logger::info("len ok"); }
+    if ($xs->at(1) == 20) { Logger::info("at ok"); }
+    if ($xs[0] == 10) { Logger::info("index ok"); }
+
+    flip int $sum = 0;
+    for (int $x in $xs) { $sum := $sum + $x; }
+    if ($sum == 60) { Logger::info("for ok"); }
+}

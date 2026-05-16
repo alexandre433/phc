@@ -1,0 +1,18 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/fn_types.phc
+---
+=== top level ===
+SymbolId(1)  Function  main  (380..384)
+SymbolId(0)  Function  pickHandler  (194..205)
+
+=== uses ===
+ 248..253  -> SymbolId(2)  Value  loud
+ 295..297  -> SymbolId(3)  Value  s
+ 348..350  -> SymbolId(4)  Value  s
+ 449..451  -> SymbolId(5)  Value  a
+ 454..456  -> SymbolId(6)  Value  b
+ 466..470  -> SymbolId(7)  Value  add
+ 577..583  -> SymbolId(8)  Value  shout
+ 695..701  -> SymbolId(9)  Value  quiet

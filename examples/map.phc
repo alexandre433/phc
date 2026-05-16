@@ -1,0 +1,20 @@
+pack examples.map;
+
+// D-028 v0a: map<string, V> with set / has / get(→ option<V>) /
+// len. String keys only in v0a; linear-scan storage.
+
+public function main(): void {
+    map<string, int> $score = map();
+    $score->set("ada", 90);
+    $score->set("alan", 85);
+    $score->set("ada", 95);  // overwrite
+
+    if ($score->len() == 2) { Logger::info("len ok"); }
+    if ($score->has("ada")) { Logger::info("has ok"); }
+
+    option<int> $hit = $score->get("ada");
+    if ($hit->unwrapOr(0) == 95) { Logger::info("get ok"); }
+
+    option<int> $miss = $score->get("grace");
+    if ($miss->isNone()) { Logger::info("missing ok"); }
+}

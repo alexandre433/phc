@@ -1,0 +1,57 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/fn_types.phc
+---
+=== function sigs ===
+SymbolId(0)(bool $loud) -> fn<string, string>
+SymbolId(1)() -> void
+
+=== expr types ===
+ 248..253  : bool
+ 272..306  : <unknown>
+ 295..297  : <unknown>
+ 295..304  : <unknown>
+ 295..306  : <unknown>
+ 325..359  : <unknown>
+ 348..350  : <unknown>
+ 348..357  : <unknown>
+ 348..359  : <unknown>
+ 424..456  : <unknown>
+ 449..451  : <unknown>
+ 449..456  : <unknown>
+ 454..456  : <unknown>
+ 466..470  : fn<int, int, int>
+ 466..478  : int
+ 466..484  : bool
+ 471..473  : int
+ 475..477  : int
+ 482..484  : int
+ 488..494  : <unknown>
+ 488..500  : <unknown>
+ 488..513  : <unknown>
+ 501..512  : string
+ 550..561  : <unknown>
+ 550..567  : fn<string, string>
+ 562..566  : bool
+ 577..583  : fn<string, string>
+ 577..590  : string
+ 577..599  : bool
+ 584..589  : string
+ 594..599  : string
+ 603..609  : <unknown>
+ 603..615  : <unknown>
+ 603..630  : <unknown>
+ 616..629  : string
+ 667..678  : <unknown>
+ 667..685  : fn<string, string>
+ 679..684  : bool
+ 695..701  : fn<string, string>
+ 695..708  : string
+ 695..717  : bool
+ 702..707  : string
+ 712..717  : string
+ 721..727  : <unknown>
+ 721..733  : <unknown>
+ 721..746  : <unknown>
+ 734..745  : string

@@ -1,0 +1,66 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/string_methods.phc
+---
+=== function sigs ===
+SymbolId(0)() -> void
+
+=== expr types ===
+ 129..146  : string
+ 168..172  : string
+ 168..178  : <unknown>
+ 168..180  : string
+ 191..197  : string
+ 191..202  : <unknown>
+ 191..204  : int
+ 191..210  : bool
+ 208..210  : int
+ 214..220  : <unknown>
+ 214..226  : <unknown>
+ 214..236  : <unknown>
+ 227..235  : string
+ 248..254  : string
+ 248..264  : <unknown>
+ 248..271  : bool
+ 265..270  : string
+ 275..281  : <unknown>
+ 275..287  : <unknown>
+ 275..302  : <unknown>
+ 288..301  : string
+ 314..320  : string
+ 314..332  : <unknown>
+ 314..341  : bool
+ 333..340  : string
+ 345..351  : <unknown>
+ 345..357  : <unknown>
+ 345..370  : <unknown>
+ 358..369  : string
+ 382..388  : string
+ 382..398  : <unknown>
+ 382..406  : bool
+ 399..405  : string
+ 410..416  : <unknown>
+ 410..422  : <unknown>
+ 410..433  : <unknown>
+ 423..432  : string
+ 458..464  : string
+ 458..471  : <unknown>
+ 458..473  : string
+ 495..501  : string
+ 495..508  : <unknown>
+ 495..510  : string
+ 520..526  : string
+ 520..543  : bool
+ 530..543  : string
+ 547..553  : <unknown>
+ 547..559  : <unknown>
+ 547..571  : <unknown>
+ 560..570  : string
+ 583..589  : string
+ 583..606  : bool
+ 593..606  : string
+ 610..616  : <unknown>
+ 610..622  : <unknown>
+ 610..634  : <unknown>
+ 623..633  : string

@@ -1,0 +1,23 @@
+pack examples.fn_types;
+
+// D-024: function types are written `fn(T1, T2, ...): R`.
+// Lambdas can be stored in a typed binding, passed as args,
+// and returned from functions.
+
+public function pickHandler(bool $loud): fn(string): string {
+    if ($loud) {
+        return (string $s): string => $s->upper();
+    }
+    return (string $s): string => $s->lower();
+}
+
+public function main(): void {
+    fn(int, int): int $add = (int $a, int $b): int => $a + $b;
+    if ($add(20, 22) == 42) { Logger::info("stored ok"); }
+
+    fn(string): string $shout = pickHandler(true);
+    if ($shout("phc") == "PHC") { Logger::info("returned ok"); }
+
+    fn(string): string $quiet = pickHandler(false);
+    if ($quiet("PHC") == "phc") { Logger::info("branch ok"); }
+}

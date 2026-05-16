@@ -1,0 +1,20 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/list.phc
+---
+=== top level ===
+SymbolId(0)  Function  main  (201..205)
+
+=== uses ===
+ 248..251  -> SymbolId(1)  Value  xs
+ 267..270  -> SymbolId(1)  Value  xs
+ 286..289  -> SymbolId(1)  Value  xs
+ 310..313  -> SymbolId(1)  Value  xs
+ 363..366  -> SymbolId(1)  Value  xs
+ 416..419  -> SymbolId(1)  Value  xs
+ 503..506  -> SymbolId(1)  Value  xs
+ 510..514  -> SymbolId(2)  Value  sum
+ 518..522  -> SymbolId(2)  Value  sum
+ 525..527  -> SymbolId(3)  Value  x
+ 539..543  -> SymbolId(2)  Value  sum

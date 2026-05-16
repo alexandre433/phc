@@ -1,0 +1,18 @@
+pack examples.string_methods;
+
+// D-025 surface: byte-oriented string methods.
+
+public function main(): void {
+    string $raw = "  Hello, PHC!  ";
+    string $clean = $raw->trim();
+
+    if ($clean->len() == 11) { Logger::info("len ok"); }
+    if ($clean->contains("PHC")) { Logger::info("contains ok"); }
+    if ($clean->startsWith("Hello")) { Logger::info("starts ok"); }
+    if ($clean->endsWith("PHC!")) { Logger::info("ends ok"); }
+
+    string $shout = $clean->upper();
+    string $quiet = $clean->lower();
+    if ($shout == "HELLO, PHC!") { Logger::info("upper ok"); }
+    if ($quiet == "hello, phc!") { Logger::info("lower ok"); }
+}

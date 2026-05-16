@@ -1,0 +1,12 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/test_block.phc
+---
+=== function sigs ===
+SymbolId(0)(int $a, int $b) -> int
+
+=== expr types ===
+ 327..329  : int
+ 327..334  : int
+ 332..334  : int

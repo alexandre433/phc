@@ -1,0 +1,15 @@
+---
+source: crates/phc-interp/tests/run_examples.rs
+expression: rendered
+input_file: examples/string_methods.phc
+---
+=== stdout ===
+len ok
+contains ok
+starts ok
+ends ok
+upper ok
+lower ok
+
+=== result ===
+void

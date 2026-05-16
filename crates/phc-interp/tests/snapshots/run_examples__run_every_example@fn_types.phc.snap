@@ -1,0 +1,12 @@
+---
+source: crates/phc-interp/tests/run_examples.rs
+expression: rendered
+input_file: examples/fn_types.phc
+---
+=== stdout ===
+stored ok
+returned ok
+branch ok
+
+=== result ===
+void

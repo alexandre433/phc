@@ -1,0 +1,18 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/map.phc
+---
+=== top level ===
+SymbolId(0)  Function  main  (158..162)
+
+=== uses ===
+ 214..220  -> SymbolId(1)  Value  score
+ 242..248  -> SymbolId(1)  Value  score
+ 271..277  -> SymbolId(1)  Value  score
+ 318..324  -> SymbolId(1)  Value  score
+ 374..380  -> SymbolId(1)  Value  score
+ 446..452  -> SymbolId(1)  Value  score
+ 474..478  -> SymbolId(2)  Value  hit
+ 552..558  -> SymbolId(1)  Value  score
+ 582..587  -> SymbolId(3)  Value  miss

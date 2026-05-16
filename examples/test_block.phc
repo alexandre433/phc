@@ -1,0 +1,29 @@
+pack examples.test_block;
+
+// D-021 v0a: tests are top-level `test "name" { ... }` blocks.
+// Run via `phc test examples/test_block.phc`. A test passes when
+// the body completes without a runtime error; any panic or `?`
+// propagation that escapes the body is a failure.
+
+public function add(int $a, int $b): int {
+    return $a + $b;
+}
+
+// v0a: panic on failure by triggering an out-of-bounds list
+// access. `phc test` treats any runtime error as a failure —
+// dedicated `assert::eq` helpers land in a later Phase 9 slice.
+test "addition is commutative" {
+    if (add(2, 3) != add(3, 2)) {
+        list<int> $oops = list();
+        int $_ = $oops->at(99);
+    }
+}
+
+test "list push and at" {
+    list<int> $xs = list();
+    $xs->push(7);
+    if ($xs->at(0) != 7) {
+        list<int> $oops = list();
+        int $_ = $oops->at(99);
+    }
+}

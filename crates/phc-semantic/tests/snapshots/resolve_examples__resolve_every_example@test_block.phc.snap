@@ -1,0 +1,17 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/test_block.phc
+---
+=== top level ===
+SymbolId(0)  Function  add  (289..292)
+SymbolId(1)  Test  addition is commutative  (529..669)
+SymbolId(2)  Test  list push and at  (671..843)
+
+=== uses ===
+ 327..329  -> SymbolId(3)  Value  a
+ 332..334  -> SymbolId(4)  Value  b
+ 647..652  -> SymbolId(5)  Value  oops
+ 729..732  -> SymbolId(7)  Value  xs
+ 751..754  -> SymbolId(7)  Value  xs
+ 821..826  -> SymbolId(8)  Value  oops

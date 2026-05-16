@@ -28,6 +28,9 @@ Implemented language surface (compiled and interpreted in lockstep):
 
 See [`spec/`](./spec/) for canonical decisions and [`spec/design-decisions.md`](./spec/design-decisions.md) for the full list (D-001…D-028 plus amendments).
 
+For programmer-facing docs (getting started, tutorial, stdlib
+cheat-sheet, CLI reference), see [`docs/`](./docs/).
+
 ## Roadmap
 
 | Phase | Description | Issue |

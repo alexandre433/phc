@@ -1,0 +1,64 @@
+---
+source: crates/phc-typecheck/tests/typecheck_examples.rs
+expression: rendered
+input_file: examples/list.phc
+---
+=== function sigs ===
+SymbolId(0)() -> void
+
+=== expr types ===
+ 236..240  : <unknown>
+ 236..242  : <unknown>
+ 248..251  : list<int>
+ 248..257  : <unknown>
+ 248..261  : void
+ 258..260  : int
+ 267..270  : list<int>
+ 267..276  : <unknown>
+ 267..280  : void
+ 277..279  : int
+ 286..289  : list<int>
+ 286..295  : <unknown>
+ 286..299  : void
+ 296..298  : int
+ 310..313  : list<int>
+ 310..318  : <unknown>
+ 310..320  : int
+ 310..325  : bool
+ 324..325  : int
+ 329..335  : <unknown>
+ 329..341  : <unknown>
+ 329..351  : <unknown>
+ 342..350  : string
+ 363..366  : list<int>
+ 363..370  : <unknown>
+ 363..373  : int
+ 363..379  : bool
+ 371..372  : int
+ 377..379  : int
+ 383..389  : <unknown>
+ 383..395  : <unknown>
+ 383..404  : <unknown>
+ 396..403  : string
+ 416..419  : list<int>
+ 416..422  : int
+ 416..428  : bool
+ 420..421  : int
+ 426..428  : int
+ 432..438  : <unknown>
+ 432..444  : <unknown>
+ 432..456  : <unknown>
+ 445..455  : string
+ 481..482  : int
+ 503..506  : list<int>
+ 510..514  : int
+ 518..522  : int
+ 518..527  : int
+ 525..527  : int
+ 539..543  : int
+ 539..549  : bool
+ 547..549  : int
+ 553..559  : <unknown>
+ 553..565  : <unknown>
+ 553..575  : <unknown>
+ 566..574  : string

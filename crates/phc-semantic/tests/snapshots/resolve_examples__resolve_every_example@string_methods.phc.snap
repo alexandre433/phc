@@ -1,0 +1,18 @@
+---
+source: crates/phc-semantic/tests/resolve_examples.rs
+expression: rendered
+input_file: examples/string_methods.phc
+---
+=== top level ===
+SymbolId(0)  Function  main  (96..100)
+
+=== uses ===
+ 168..172  -> SymbolId(1)  Value  raw
+ 191..197  -> SymbolId(2)  Value  clean
+ 248..254  -> SymbolId(2)  Value  clean
+ 314..320  -> SymbolId(2)  Value  clean
+ 382..388  -> SymbolId(2)  Value  clean
+ 458..464  -> SymbolId(2)  Value  clean
+ 495..501  -> SymbolId(2)  Value  clean
+ 520..526  -> SymbolId(3)  Value  shout
+ 583..589  -> SymbolId(4)  Value  quiet
