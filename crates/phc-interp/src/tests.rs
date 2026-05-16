@@ -938,3 +938,31 @@ function main(): void {
     ];
     assert_eq!(out.stdout, expected);
 }
+
+#[test]
+fn io_d032_runs_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    io::println("hello");
+    io::eprintln("ohno");
+    io::print("no-newline ");
+    io::println("rest");
+    // readLine returns option::none in interp (no stdin); just
+    // exercise the call.
+    option<string> $line = io::readLine();
+    if ($line->isNone()) { io::println("eof ok"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(
+        out.stdout,
+        vec![
+            "hello".to_string(),
+            "ohno".to_string(),
+            "no-newline ".to_string(),
+            "rest".to_string(),
+            "eof ok".to_string(),
+        ]
+    );
+}

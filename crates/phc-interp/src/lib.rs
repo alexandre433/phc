@@ -924,6 +924,33 @@ impl<'a> Interp<'a> {
                 self.out.stdout.push(rendered);
                 Ok(Some(Value::Void))
             }
+            // D-032 io namespace. The interpreter routes every io::*
+            // print variant into `self.out.stdout` (its single
+            // captured stream) so existing harnesses see the output
+            // — eprint variants are conceptually stderr but the
+            // interp only owns one stream today; keep the strings
+            // visible rather than silently dropping them.
+            ("io", "print") | ("io", "eprint") => {
+                let v = self.eval_expr(&args[0], env)?;
+                self.out.stdout.push(v.display());
+                Ok(Some(Value::Void))
+            }
+            ("io", "println") | ("io", "eprintln") => {
+                let v = self.eval_expr(&args[0], env)?;
+                self.out.stdout.push(v.display());
+                Ok(Some(Value::Void))
+            }
+            ("io", "readLine") => {
+                if !args.is_empty() {
+                    return Err(rt("io::readLine takes no arguments".to_string()));
+                }
+                // The tree-walking interpreter has no real stdin
+                // — returning `option::none` is the honest signal
+                // that reads under `phc run` are stubbed. Compiled
+                // binaries via `phc build` read real stdin through
+                // the runtime helper.
+                Ok(Some(Value::OptionNone))
+            }
             ("result", "ok") => {
                 let v = single_arg(args, "result::ok", self, env)?;
                 Ok(Some(Value::ResultOk(Box::new(v))))

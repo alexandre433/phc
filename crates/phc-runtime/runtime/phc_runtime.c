@@ -57,6 +57,69 @@ void phc_print(phc_string s) {
     fflush(stdout);
 }
 
+void phc_io_print(phc_string s) {
+    if (s.len > 0) fwrite(s.data, 1, s.len, stdout);
+    fflush(stdout);
+}
+
+void phc_io_println(phc_string s) {
+    if (s.len > 0) fwrite(s.data, 1, s.len, stdout);
+    fputc('\n', stdout);
+    fflush(stdout);
+}
+
+void phc_io_eprint(phc_string s) {
+    if (s.len > 0) fwrite(s.data, 1, s.len, stderr);
+    fflush(stderr);
+}
+
+void phc_io_eprintln(phc_string s) {
+    if (s.len > 0) fwrite(s.data, 1, s.len, stderr);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+phc_option phc_io_read_line(void) {
+    phc_option out;
+    size_t cap = 64;
+    size_t len = 0;
+    char* buf = (char*)malloc(cap);
+    if (!buf) {
+        fputs("phc runtime: out of memory reading stdin\n", stderr);
+        abort();
+    }
+    int ch;
+    while ((ch = fgetc(stdin)) != EOF) {
+        if (ch == '\n') break;
+        if (len + 1 >= cap) {
+            cap *= 2;
+            char* grown = (char*)realloc(buf, cap);
+            if (!grown) {
+                free(buf);
+                fputs("phc runtime: out of memory growing readLine buffer\n", stderr);
+                abort();
+            }
+            buf = grown;
+        }
+        buf[len++] = (char)ch;
+    }
+    if (ch == EOF && len == 0) {
+        free(buf);
+        out.kind = 1;
+        out.some.i64 = 0;
+        return out;
+    }
+    /* Trim trailing CR from CRLF on Windows. */
+    if (len > 0 && buf[len - 1] == '\r') len--;
+    buf[len] = '\0';
+    phc_string s;
+    s.len = len;
+    s.data = buf;
+    out.kind = 0;
+    out.some.s = s;
+    return out;
+}
+
 void phc_panic(const char* msg) {
     fputs("phc panic: ", stderr);
     fputs(msg ? msg : "(unknown)", stderr);

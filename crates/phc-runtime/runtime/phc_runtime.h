@@ -127,6 +127,17 @@ phc_value  phc_void(void);
 void phc_print(phc_string s);
 void phc_panic(const char* msg);
 
+/* D-032 — io stdlib namespace. `phc_print` (above) is kept as the
+ * Logger::info-backing helper that writes to stdout with a
+ * trailing newline; the io::* surface adds the no-newline and
+ * stderr variants, plus a readLine that returns a `phc_option`
+ * carrying the line on success and kind=1 on EOF. */
+void phc_io_print(phc_string s);     /* stdout, no trailing newline */
+void phc_io_println(phc_string s);   /* stdout, trailing newline */
+void phc_io_eprint(phc_string s);    /* stderr, no trailing newline */
+void phc_io_eprintln(phc_string s);  /* stderr, trailing newline */
+phc_option phc_io_read_line(void);   /* phc_option<string>; some=line (no trailing \n), kind=1 on EOF */
+
 /* === Allocation === */
 /* Allocate `size` bytes zeroed. Used by class instance constructors
  * emitted by phc-codegen. Aborts the process on out-of-memory. */

@@ -1259,6 +1259,14 @@ impl<'a> Emitter<'a> {
                     );
                     return "phc_panic(\"Logger::info arity\")".into();
                 }
+                // D-032: `io::print` / `println` / `eprint` /
+                // `eprintln` / `readLine` — reserved namespace
+                // routed straight to runtime helpers.
+                if name.name == "io" {
+                    if let Some(snippet) = self.try_emit_io_call(&member.name, args, callee) {
+                        return snippet;
+                    }
+                }
                 // result::ok(v), result::err(e), option::some(v).
                 if let Some(snippet) =
                     self.try_emit_result_option_ctor(&name.name, &member.name, args)
@@ -1417,6 +1425,41 @@ impl<'a> Emitter<'a> {
             "indexing only supported on `list<T>` in v0",
         );
         "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit a `io::<member>(args)` call (D-032). `io` is a reserved
+    /// stdlib namespace mapping directly to runtime helpers. Returns
+    /// None when `member` is not in the v0 surface so the regular
+    /// dispatch path can take over.
+    fn try_emit_io_call(&mut self, member: &str, args: &[Expr], callee: &Expr) -> Option<String> {
+        let arity_one = |this: &mut Self, fn_name: &str| -> Option<String> {
+            if args.len() != 1 {
+                this.diag(
+                    span_of_expr(callee),
+                    &format!(
+                        "io::{member} expects exactly one argument, got {}",
+                        args.len()
+                    ),
+                );
+                return Some(format!("phc_panic(\"io::{member} arity\")"));
+            }
+            let s = this.emit_expr(&args[0]);
+            Some(format!("{fn_name}({s})"))
+        };
+        match member {
+            "print" => arity_one(self, "phc_io_print"),
+            "println" => arity_one(self, "phc_io_println"),
+            "eprint" => arity_one(self, "phc_io_eprint"),
+            "eprintln" => arity_one(self, "phc_io_eprintln"),
+            "readLine" => {
+                if !args.is_empty() {
+                    self.diag(span_of_expr(callee), "io::readLine takes no arguments");
+                    return Some("phc_panic(\"io::readLine arity\")".to_string());
+                }
+                Some("phc_io_read_line()".to_string())
+            }
+            _ => None,
+        }
     }
 
     /// Emit a stdlib `set<string>` method call (D-031). String-key

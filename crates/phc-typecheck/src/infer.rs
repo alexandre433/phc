@@ -396,6 +396,26 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
             .and_then(|sid| typed.function_sigs.get(&sid))
             .map(|sig| sig.return_ty.clone())
             .unwrap_or(Ty::Unknown),
+        // D-032: `io::<member>(...)` is a stdlib static call.
+        Expr::Static { ty, member, .. } => {
+            if let Expr::TypeName { name, .. } = ty.as_ref() {
+                if name.name == "io" {
+                    return match member.name.as_str() {
+                        "print" | "println" | "eprint" | "eprintln" => {
+                            Ty::Primitive(crate::Primitive::Void)
+                        }
+                        "readLine" => Ty::Path {
+                            path: vec!["option".to_string()],
+                            args: vec![Ty::Primitive(crate::Primitive::String)],
+                            nullable: false,
+                        },
+                        _ => Ty::Unknown,
+                    };
+                }
+            }
+            let _ = args;
+            Ty::Unknown
+        }
         Expr::Member {
             receiver, field, ..
         } => {

@@ -127,6 +127,7 @@ Locked during Phase 6 stdlib build-out:
 26. D-029 — Result/Option closure methods (locked 2026-05-16): `result<T,E>` gets `map(fn(T):U)→result<U,E>`, `andThen(fn(T):result<U,E>)→result<U,E>`, `unwrap()→T` (panics on err). `option<T>` gets `map`, `andThen` (option-shaped), `okOr(E)→result<T,E>`, `unwrap()` (panics on none). Codegen lowers each to a stmt-expr that invokes the stored `phc_lambda` on the unwrapped payload and packs the result. Closure return type recovered from the arg's `fn(T):U` static type; typecheck lambda inference now also seeds lambda params and records `fn(...):R` on every lambda expression.
 27. D-030 — `list<T>` closure methods (locked 2026-05-16): `forEach(fn(T):void)→void`, `map(fn(T):U)→list<U>`, `filter(fn(T):bool)→list<T>`. Same stmt-expr + `phc_lambda` invocation pattern as D-029, looped over `phc_list_at`/`phc_list_push`. No new runtime functions.
 28. D-031 — `set<string>` collection v0a (locked 2026-05-16): `set()` ctor, `add(string)→bool` (true on insert, false if dup), `has(string)→bool`, `remove(string)→bool`, `len()→int`. String keys only; linear-scan storage parallel to map. Distinct `phc_set` C type. Generic keys / hash storage / iteration deferred.
+29. D-032 — `io` stdlib namespace (locked 2026-05-16): `io::print/println/eprint/eprintln(string)→void` plus `io::readLine()→option<string>` (none on EOF). Reserved namespace; routed via the existing static-call dispatch (parallel to `Logger::info`). Compiled binaries hit real stdin/stdout/stderr via runtime helpers; interp routes prints into its captured stdout vec and stubs `readLine` to none. Logger::info retained as legacy alias for the existing example corpus.
 
 ---
 
@@ -1040,3 +1041,44 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0a surface; generic-key sets, hash
   storage, iteration (`forEach`/`toList`), and set operations
   (`union`/`intersect`/`difference`) tracked separately.
+
+### D-032 — `io` stdlib namespace (v0)
+- **Decision**: Adds a reserved `io` static-call namespace that
+  surfaces the real I/O primitives the runtime already supports,
+  replacing the long-standing `Logger::info` placeholder as the
+  recommended way to write to stdout/stderr.
+
+  | Call | Signature | Behaviour |
+  |------|-----------|-----------|
+  | `io::print` | `(string): void` | stdout, no trailing newline. |
+  | `io::println` | `(string): void` | stdout, trailing newline. |
+  | `io::eprint` | `(string): void` | stderr, no trailing newline. |
+  | `io::eprintln` | `(string): void` | stderr, trailing newline. |
+  | `io::readLine` | `(): option<string>` | One line from stdin (CRLF trimmed); `option::none` on EOF. |
+
+  Codegen lowers each call to a `phc_io_*` runtime helper (added
+  in `phc_runtime.c`). The interpreter routes both stdout and
+  stderr prints into its single captured stdout vector (the
+  tree-walking interp doesn't own a separate stream); `readLine`
+  returns `option::none` in interp because there's no real stdin
+  attached. Compiled binaries via `phc build` hit the real
+  streams through `fwrite` / `fputc` / `fgetc`.
+
+  `Logger::info` is kept as a legacy alias for the existing
+  examples corpus; new code should prefer `io::println`.
+- **Alternatives considered**: `io::print`/`io::println`/etc. on
+  a `stdout` static (more Java-shaped, more typing); fold print
+  family under a generic `display`-trait-driven `print` free
+  function (depends on D-022's `display` trait which is still
+  pending); make `readLine` return `result<string, ioError>`
+  (forces an unused E type today; option<string> matches the
+  EOF-is-not-an-error reading every other modern lang adopts).
+- **Rationale**: Smallest reserved namespace that ships real I/O
+  without waiting on D-022's `display` trait. The static-call
+  dispatch path is already used by `Logger::info` / `result::ok` /
+  `option::some`, so wiring is mechanical. Honest split between
+  what's real in compiled binaries vs stubbed in the interp.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; binary I/O, file APIs,
+  formatted print (`printf`-style), and a real `display` trait
+  tracked separately.

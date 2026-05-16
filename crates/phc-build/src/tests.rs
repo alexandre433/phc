@@ -808,6 +808,54 @@ function main(): void {
     }
 }
 
+/// Build + run D-032 `io::*` surface end-to-end. Exercises
+/// stdout println/print, stderr eprintln. readLine path isn't
+/// invoked here because the test process doesn't pipe stdin.
+#[test]
+fn build_and_run_io_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_io_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    io::println("hello");
+    io::eprintln("ohno");
+    io::print("no-newline ");
+    io::println("rest");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("io_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("io_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "io binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("hello"), "missing `hello`: {stdout:?}");
+    assert!(
+        stdout.contains("no-newline rest"),
+        "missing concat'd print+println: {stdout:?}"
+    );
+    let stderr = String::from_utf8(run.stderr).expect("stderr is utf-8");
+    assert!(stderr.contains("ohno"), "missing stderr `ohno`: {stderr:?}");
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.
