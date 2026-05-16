@@ -12,6 +12,7 @@ phc-ast = { path = "../phc-ast" }
 phc-parser = { path = "../phc-parser" }
 phc-semantic = { path = "../phc-semantic" }
 phc-typecheck = { path = "../phc-typecheck" }
+phc-borrowcheck = { path = "../phc-borrowcheck" }
 phc-codegen = { path = "../phc-codegen" }
 phc-runtime = { path = "../phc-runtime" }
 phc-pkg = { path = "../phc-pkg" }

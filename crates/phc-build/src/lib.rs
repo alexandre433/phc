@@ -18,6 +18,7 @@ pub use session::{
 };
 
 use phc_ast::{Ident, PackDecl, PackPath, SourceFile};
+use phc_borrowcheck::borrowcheck;
 use phc_codegen::emit_c;
 use phc_errors::{Diagnostic, Severity};
 use phc_parser::parse;
@@ -87,6 +88,12 @@ pub fn build_file(input: &Path, output: &Path) -> BuildResult {
     let typed = typecheck(&file_ast, &resolved);
     if !typed.diagnostics.is_empty() {
         result.errors.extend(typed.diagnostics);
+        return result;
+    }
+
+    let borrowed = borrowcheck(&file_ast, &resolved, &typed);
+    if !borrowed.diagnostics.is_empty() {
+        result.errors.extend(borrowed.diagnostics);
         return result;
     }
 
@@ -182,6 +189,11 @@ pub fn build_project(root: &Path, output: &Path) -> BuildResult {
     let typed = typecheck(&combined, &resolved);
     if !typed.diagnostics.is_empty() {
         result.errors.extend(typed.diagnostics);
+        return result;
+    }
+    let borrowed = borrowcheck(&combined, &resolved, &typed);
+    if !borrowed.diagnostics.is_empty() {
+        result.errors.extend(borrowed.diagnostics);
         return result;
     }
     let codegen = emit_c(&combined, &resolved, &typed);

@@ -6,6 +6,7 @@
 //! The other subcommands are still stubbed.
 
 use clap::Parser;
+use phc_borrowcheck::borrowcheck;
 use phc_build::{
     build_file, build_project, check_pack_acyclicity, load_session, resolve_cross_pack_uses,
 };
@@ -218,6 +219,16 @@ fn run_file(path: &PathBuf) -> ExitCode {
     }
 
     let typed = typecheck(&file_ast, &resolved);
+    let borrowed = borrowcheck(&file_ast, &resolved, &typed);
+    if !borrowed.diagnostics.is_empty() {
+        for d in &borrowed.diagnostics {
+            eprintln!(
+                "borrow error at {}..{}: {}",
+                d.span.lo, d.span.hi, d.message
+            );
+        }
+        return ExitCode::from(1);
+    }
     let RunOutput {
         stdout,
         result,

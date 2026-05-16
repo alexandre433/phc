@@ -600,7 +600,7 @@ public trait Doubled {
 
 public class Box {
     use Doubled;
-    construct(public int $value) {}
+    construct(public flip int $value) {}
 
     public function get(): int { return $this->value; }
 }

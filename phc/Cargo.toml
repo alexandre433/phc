@@ -17,6 +17,7 @@ phc-interp = { path = "../crates/phc-interp" }
 phc-parser = { path = "../crates/phc-parser" }
 phc-semantic = { path = "../crates/phc-semantic" }
 phc-typecheck = { path = "../crates/phc-typecheck" }
+phc-borrowcheck = { path = "../crates/phc-borrowcheck" }
 phc-span = { path = "../crates/phc-span" }
 phc-build = { path = "../crates/phc-build" }
 phc-pkg = { path = "../crates/phc-pkg" }

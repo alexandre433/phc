@@ -9,4 +9,12 @@ description = "PHC borrow checker and lifetime inference"
 
 [dependencies]
 phc-ast = { path = "../phc-ast" }
+phc-errors = { path = "../phc-errors" }
+phc-semantic = { path = "../phc-semantic" }
+phc-span = { path = "../phc-span" }
+phc-typecheck = { path = "../phc-typecheck" }
 miette = { workspace = true }
+
+[dev-dependencies]
+phc-lexer = { path = "../phc-lexer" }
+phc-parser = { path = "../phc-parser" }
