@@ -274,10 +274,8 @@ fn collect_enum_variants(
     out: &mut std::collections::BTreeSet<String>,
 ) {
     match pat {
-        Pattern::EnumVariant { ty, variant, .. } => {
-            if ty.name == enum_name {
-                out.insert(variant.name.clone());
-            }
+        Pattern::EnumVariant { ty, variant, .. } if ty.name == enum_name => {
+            out.insert(variant.name.clone());
         }
         Pattern::Or { atoms, .. } => {
             for a in atoms {
