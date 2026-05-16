@@ -51,6 +51,23 @@ typedef struct {
     phc_payload some;
 } phc_option;
 
+/* List value (D-027). Heap-allocated; the C-level type is an opaque
+ * pointer so passing a `phc_list` around is a handle copy, not a
+ * deep copy. Two handles to the same list see each other's
+ * mutations — explicit reference semantics for v0; CoW lands when
+ * the runtime grows refcounts.
+ *
+ * Memory note: `push` of a `phc_string` shallow-copies the struct
+ * (the data pointer is shared with the caller). Safe today because
+ * v0 never frees; revisit once the runtime owns lifetimes. */
+struct phc_list_s;
+typedef struct phc_list_s* phc_list;
+
+phc_list    phc_list_new(void);
+void        phc_list_push(phc_list l, phc_payload v);
+phc_payload phc_list_at(phc_list l, int64_t i);  /* aborts on OOB */
+int64_t     phc_list_len(phc_list l);
+
 /* Lambda value: function pointer + heap-alloc'd capture environment.
  * The codegen emits `fn` as the lifted-body symbol's address and
  * `env` as a malloc'd struct holding every variable the body

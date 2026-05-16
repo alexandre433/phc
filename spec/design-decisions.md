@@ -118,6 +118,7 @@ Amendments surfaced during Phase 2 parser work (locked 2026-05-15):
 Locked during Phase 6 stdlib build-out:
 
 19. D-025 — String stdlib v0 method surface (locked 2026-05-16): camelCase methods `len/contains/startsWith/endsWith/trim/upper/lower` plus carry-over `toInt`. Byte-oriented; ASCII case fold; `==` / `!=` on `string` lower to `phc_str_eq`. Multi-byte / Unicode-aware variants deferred.
+20. D-027 — `list<T>` collection v0a (locked 2026-05-16): `list()` ctor (type from binding annotation), `push/len/at` methods, `$xs[i]` indexing, `for (T $x in $xs)` iteration. **Reference semantics** (handle-shared mutation), explicitly diverges from D-022's CoW pending refcounts. OOB aborts; fallible variants deferred. `list` is a reserved name.
 
 ---
 
@@ -703,3 +704,57 @@ Locked during Phase 6 stdlib build-out:
     `list<T>` collection type.
   - `replace`, `indexOf`, `slice`, code-point-iteration methods.
   - Full Unicode case fold and grapheme-cluster `len`.
+
+### D-027 — `list<T>` collection (v0a)
+- **Decision**: Locks the v0a surface for `list<T>` (D-022 left this
+  Phase 6). Reserved name; user code may not declare a top-level
+  `list` function or class.
+  - **Construction**: `list()` — bare zero-arg call returns an empty
+    list. The element type is taken from the binding's type
+    annotation (`list<int> $xs = list();`). Generic-call ctor syntax
+    (`list<int>()`) is **not** in v0a — it parses today as a
+    comparison; explicit generic instantiation lands later.
+  - **Methods (D-023 dispatch)**:
+
+    | Method | Signature | Notes |
+    |--------|-----------|-------|
+    | `len` | `(): int` | Element count. |
+    | `push` | `(T): void` | Append; mutates the heap-allocated list. |
+    | `at` | `(int): T` | Bounds-checked element read. **Out of bounds aborts the program** (`phc_panic`); fallible variants (`option<T>` / `result<T, IndexError>`) deferred. |
+
+  - **Indexing**: `$xs[i]` is sugar for `$xs->at(i)`; same panic-on-OOB
+    behaviour. Indexing is supported only on `list<T>` in v0a; other
+    receivers are a codegen error.
+  - **Iteration**: `for (T $x in $xs) { ... }` walks every element in
+    insertion order. Only `list<T>` is iterable in v0a; iterating
+    other types is a runtime error in the interpreter and a
+    codegen error in compiled binaries.
+  - **Reference semantics**: `list<T>` is heap-allocated and the
+    local binding holds a handle. Two handles to the same list see
+    each other's `push`es. This **diverges from D-022's "CoW per
+    D-004"** — refcounted CoW lands when the runtime grows it; the
+    v0a behaviour is documented here so the divergence is explicit.
+  - **Mutation vs `flip`**: `$xs->push(x)` mutates the heap-allocated
+    backing storage, **not** the local handle. The handle's `flip`
+    flag governs only handle reassignment (`$xs := other_list;`).
+    A `list<T> $xs` (no `flip`) can therefore receive `push`/`at`
+    calls without violating D-005. Stated explicitly so D-005 +
+    D-027 do not appear contradictory.
+- **Alternatives considered**: CoW today (needs refcounts before any
+  sharing edge case is sound); `array<T>` literal syntax `[1, 2, 3]`
+  in v0 (new lexer token, deferrable); fallible `at` returning
+  `option<T>` (PHP/Rust idiom, but adds `?` ceremony at every read);
+  PHP-style by-value array semantics (forces deep clones on
+  assignment, conflicts with D-022's CoW intent).
+- **Rationale**: Smallest coherent surface that lets a real program
+  collect-and-iterate values without a class scaffolding. Reference
+  semantics is honest about today's runtime; documenting the gap
+  beats silently picking either CoW or copy.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0a surface; CoW migration, fallible
+  accessors, `pop`/`slice`/`insert`/`remove`, and generic-call ctor
+  tracked separately.
+- **Memory note (runtime)**: `phc_list_push` of a `phc_string`
+  shallow-copies the struct (same `data` pointer). Safe today
+  because v0 never frees; will need a real ownership story before
+  drops are introduced.

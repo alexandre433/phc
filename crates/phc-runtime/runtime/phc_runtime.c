@@ -163,3 +163,44 @@ phc_string phc_str_lower(phc_string s) {
     }
     return out;
 }
+
+/* ===== List stdlib (D-027) ===== */
+
+struct phc_list_s {
+    size_t len;
+    size_t cap;
+    phc_payload* items;
+};
+
+phc_list phc_list_new(void) {
+    phc_list l = (phc_list)phc_alloc(sizeof(struct phc_list_s));
+    l->len = 0;
+    l->cap = 0;
+    l->items = NULL;
+    return l;
+}
+
+void phc_list_push(phc_list l, phc_payload v) {
+    if (l->len == l->cap) {
+        size_t new_cap = l->cap == 0 ? 4 : l->cap * 2;
+        phc_payload* grown = (phc_payload*)realloc(l->items, new_cap * sizeof(phc_payload));
+        if (!grown) {
+            fputs("phc runtime: out of memory growing list\n", stderr);
+            abort();
+        }
+        l->items = grown;
+        l->cap = new_cap;
+    }
+    l->items[l->len++] = v;
+}
+
+phc_payload phc_list_at(phc_list l, int64_t i) {
+    if (i < 0 || (size_t)i >= l->len) {
+        phc_panic("list index out of bounds");
+    }
+    return l->items[(size_t)i];
+}
+
+int64_t phc_list_len(phc_list l) {
+    return (int64_t)l->len;
+}

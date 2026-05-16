@@ -667,3 +667,31 @@ function main(): void {
     ];
     assert_eq!(out.stdout, expected);
 }
+
+#[test]
+fn list_d027_runs_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(10);
+    $xs->push(20);
+    $xs->push(30);
+    if ($xs->len() == 3) { Logger::info("len ok"); }
+    if ($xs->at(1) == 20) { Logger::info("at ok"); }
+    if ($xs[0] == 10) { Logger::info("index ok"); }
+    int $sum = 0;
+    flip int $acc = 0;
+    for (int $x in $xs) { $acc := $acc + $x; }
+    if ($acc == 60) { Logger::info("for ok"); }
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let expected = vec![
+        "len ok".to_string(),
+        "at ok".to_string(),
+        "index ok".to_string(),
+        "for ok".to_string(),
+    ];
+    assert_eq!(out.stdout, expected);
+}

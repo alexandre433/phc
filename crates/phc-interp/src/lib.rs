@@ -62,6 +62,11 @@ pub enum Value {
     OptionSome(Box<Value>),
     /// `option::none`.
     OptionNone,
+    /// `list<T>` value (D-027). Reference-semantics: cloning a
+    /// Value::List clones the Rc, not the Vec — two bindings hold
+    /// the same backing storage and observe each other's pushes.
+    /// CoW lands when the runtime grows refcounts.
+    List(Rc<RefCell<Vec<Value>>>),
 }
 
 /// Owned lambda payload. Stored behind an Rc so cloning a Value is
@@ -91,6 +96,10 @@ impl Value {
             Value::ResultErr(e) => format!("result::err({})", e.display()),
             Value::OptionSome(v) => format!("option::some({})", v.display()),
             Value::OptionNone => "option::none".to_string(),
+            Value::List(items) => {
+                let parts: Vec<String> = items.borrow().iter().map(|v| v.display()).collect();
+                format!("[{}]", parts.join(", "))
+            }
         }
     }
 }
@@ -417,10 +426,36 @@ impl<'a> Interp<'a> {
                 };
                 Ok(Flow::Return(value))
             }
-            other => Err(rt(format!(
-                "statement {other:?} is not yet supported by this interpreter \
-                     (For / MemberAssign land in I3+)"
-            ))),
+            Stmt::For(f) => {
+                // v0a: only iterating a `list<T>` is supported.
+                let iter_value = self.eval_expr(&f.iter, env)?;
+                let list = match iter_value {
+                    Value::List(l) => l,
+                    other => {
+                        return Err(rt(format!(
+                            "`for` only iterates `list<T>` in v0, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let elem_sid = self.symbol_at_def(f.elem_name.span);
+                let len = list.borrow().len();
+                for i in 0..len {
+                    env.enter();
+                    if let Some(sid) = elem_sid {
+                        let v = list.borrow()[i].clone();
+                        env.bind(sid, v);
+                    }
+                    let flow = self.eval_block_body(&f.body.statements, env);
+                    env.leave();
+                    match flow? {
+                        Flow::Normal | Flow::Continue => {}
+                        Flow::Break => return Ok(Flow::Normal),
+                        Flow::Return(v) => return Ok(Flow::Return(v)),
+                    }
+                }
+                Ok(Flow::Normal)
+            }
         }
     }
 
@@ -600,10 +635,35 @@ impl<'a> Interp<'a> {
                     name.name
                 )))
             }
-            other => Err(rt(format!(
-                    "expression {other:?} is not yet supported by this interpreter \
-                     (Member / Static / Index / Try / Match / Lambda / TypeName / This land in I3+)"
-                ))),
+            Expr::Index { target, index, .. } => {
+                let target_v = self.eval_expr(target, env)?;
+                let index_v = self.eval_expr(index, env)?;
+                let i = match index_v {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "list index must be `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                match target_v {
+                    Value::List(items) => {
+                        let v = items.borrow();
+                        if i < 0 || (i as usize) >= v.len() {
+                            return Err(rt(format!(
+                                "list index {i} out of bounds (len {})",
+                                v.len()
+                            )));
+                        }
+                        Ok(v[i as usize].clone())
+                    }
+                    other => Err(rt(format!(
+                        "indexing only supported on `list<T>` in v0, got `{}`",
+                        other.display()
+                    ))),
+                }
+            }
         }
     }
 
@@ -646,7 +706,23 @@ impl<'a> Interp<'a> {
                     return Ok(value);
                 }
             }
+            // D-027 list method dispatch.
+            if let Value::List(items) = &recv {
+                if let Some(value) =
+                    self.try_eval_list_method(items.clone(), &field.name, args, env)?
+                {
+                    return Ok(value);
+                }
+            }
             return self.invoke_method(recv, &field.name, args, env);
+        }
+        // Stdlib `list()` constructor (D-027). Reserved name —
+        // checked before user-function dispatch so a user
+        // `function list(): void {}` cannot shadow it silently.
+        if let Expr::TypeName { name, .. } = callee {
+            if name.name == "list" && args.is_empty() {
+                return Ok(Value::List(Rc::new(RefCell::new(Vec::new()))));
+            }
         }
         // Class construction or free function: `name(args)` parses
         // as `Call { callee: TypeName(name), ... }`.
@@ -872,6 +948,61 @@ impl<'a> Interp<'a> {
                     })
                     .collect();
                 Ok(Some(Value::String(out)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// D-027 list method dispatch. Returns Ok(Some) when the method
+    /// matched; Ok(None) so the caller falls through to the general
+    /// (no-such-method) error path.
+    fn try_eval_list_method(
+        &mut self,
+        items: Rc<RefCell<Vec<Value>>>,
+        method: &str,
+        args: &[Expr],
+        env: &mut Env,
+    ) -> EvalResult<Option<Value>> {
+        let arity_check = |expected: usize| -> EvalResult<()> {
+            if args.len() != expected {
+                return Err(rt(format!(
+                    "list method `{method}` takes {expected} argument(s), got {}",
+                    args.len()
+                )));
+            }
+            Ok(())
+        };
+        match method {
+            "len" => {
+                arity_check(0)?;
+                Ok(Some(Value::Int(items.borrow().len() as i64)))
+            }
+            "push" => {
+                arity_check(1)?;
+                let v = self.eval_expr(&args[0], env)?;
+                items.borrow_mut().push(v);
+                Ok(Some(Value::Void))
+            }
+            "at" => {
+                arity_check(1)?;
+                let iv = self.eval_expr(&args[0], env)?;
+                let i = match iv {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "list `at` index must be `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let v = items.borrow();
+                if i < 0 || (i as usize) >= v.len() {
+                    return Err(rt(format!(
+                        "list index {i} out of bounds (len {})",
+                        v.len()
+                    )));
+                }
+                Ok(Some(v[i as usize].clone()))
             }
             _ => Ok(None),
         }

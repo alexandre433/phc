@@ -282,6 +282,58 @@ function main(): void {
     }
 }
 
+/// Build + run a program that exercises every D-027 list surface
+/// piece: list() ctor, push, len, at, indexing, for-loop iteration.
+/// Asserts each branch's sentinel reached stdout.
+#[test]
+fn build_and_run_list_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_list_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(10);
+    $xs->push(20);
+    $xs->push(30);
+    if ($xs->len() == 3) { Logger::info("len ok"); }
+    if ($xs->at(1) == 20) { Logger::info("at ok"); }
+    if ($xs[0] == 10) { Logger::info("index ok"); }
+    flip int $acc = 0;
+    for (int $x in $xs) { $acc := $acc + $x; }
+    if ($acc == 60) { Logger::info("for ok"); }
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("list_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("list_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = Command::new(&output)
+        .output()
+        .expect("invoke compiled binary");
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in ["len ok", "at ok", "index ok", "for ok"] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

@@ -134,6 +134,7 @@ impl<'a> Emitter<'a> {
             "void" => "void".into(),
             "result" => "phc_result".into(),
             "option" => "phc_option".into(),
+            "list" => "phc_list".into(),
             _ => {
                 if self.is_class(name) {
                     format!("phc_obj_{name}*")
@@ -167,6 +168,8 @@ impl<'a> Emitter<'a> {
                     format!("phc_obj_{name}*")
                 } else if self.is_enum(name) {
                     format!("phc_enum_{name}")
+                } else if name == "list" {
+                    "phc_list".into()
                 } else {
                     "int64_t".into()
                 }
@@ -190,7 +193,11 @@ impl<'a> Emitter<'a> {
                 Primitive::Byte => "i64",
                 Primitive::Void => "i64",
             },
-            Ty::Path { path, .. } if path.len() == 1 && self.is_class(&path[0]) => "ptr",
+            Ty::Path { path, .. }
+                if path.len() == 1 && (self.is_class(&path[0]) || path[0] == "list") =>
+            {
+                "ptr"
+            }
             _ => "ptr",
         }
     }
@@ -873,19 +880,32 @@ impl<'a> Emitter<'a> {
                 }
                 self.buf.push_str(&format!("{pad}}}\n"));
             }
+            Stmt::For(f) => {
+                // v0a: only iterating a `list<T>` is supported.
+                // The element binding is materialised inside the
+                // loop body so its scope and span match the parser.
+                let iter_c = self.emit_expr(&f.iter);
+                let elem_ty = lower_for_elem_ty(&f.elem_ty);
+                let elem_member = self.payload_member(&elem_ty);
+                let elem_c_ty = self.c_type_for(&f.elem_ty);
+                let elem_name = mangle(&f.elem_name.name);
+                let lo = f.span.lo;
+                self.buf.push_str(&format!(
+                    "{pad}{{ phc_list __phc_iter_{lo} = {iter_c}; for (int64_t __phc_i_{lo} = 0; __phc_i_{lo} < phc_list_len(__phc_iter_{lo}); ++__phc_i_{lo}) {{\n"
+                ));
+                self.buf.push_str(&format!(
+                    "{pad}    {elem_c_ty} phc_var_{elem_name} = phc_list_at(__phc_iter_{lo}, __phc_i_{lo}).{elem_member};\n"
+                ));
+                for inner in &f.body.statements {
+                    self.emit_stmt(inner, indent + 1);
+                }
+                self.buf.push_str(&format!("{pad}}} }}\n"));
+            }
             Stmt::Break { .. } => {
                 self.buf.push_str(&format!("{pad}break;\n"));
             }
             Stmt::Continue { .. } => {
                 self.buf.push_str(&format!("{pad}continue;\n"));
-            }
-            other => {
-                self.diag(
-                    span_of_stmt(other),
-                    "statement form not yet supported by the C emitter",
-                );
-                self.buf
-                    .push_str(&format!("{pad}phc_panic(\"codegen TODO stmt\");\n"));
             }
         }
     }
@@ -954,6 +974,7 @@ impl<'a> Emitter<'a> {
                 scrutinee, arms, ..
             } => self.emit_match(scrutinee, arms, expr),
             Expr::Try { value, .. } => self.emit_try(value),
+            Expr::Index { target, index, .. } => self.emit_index(target, index, expr),
             other => {
                 self.diag(
                     span_of_expr(other),
@@ -1159,6 +1180,22 @@ impl<'a> Emitter<'a> {
                     return snippet;
                 }
             }
+            // Stdlib list methods (D-027): receiver typed as
+            // `list<T>` routes to phc_list_*. Same precedence rule
+            // as strings — runs before user class dispatch.
+            if let Some(Ty::Path {
+                path, args: targs, ..
+            }) = self.typed.expr_types.get(&span_of_expr(receiver))
+            {
+                if path.len() == 1 && path[0] == "list" {
+                    let elem_ty = targs.first().cloned().unwrap_or(Ty::Unknown);
+                    if let Some(snippet) =
+                        self.try_emit_list_method(receiver, &field.name, args, &elem_ty)
+                    {
+                        return snippet;
+                    }
+                }
+            }
             let recv_c = self.emit_expr(receiver);
             // Look up class name via the receiver's typed Ty.
             let class = self.class_of_expr(receiver);
@@ -1173,6 +1210,14 @@ impl<'a> Emitter<'a> {
                 "method dispatch needs a known class type at the receiver",
             );
             return "phc_panic(\"codegen TODO method receiver\")".into();
+        }
+        // Stdlib `list()` constructor (D-027). Reserved name; checked
+        // before user-function dispatch so a `function list(): void {}`
+        // cannot silently shadow the built-in.
+        if let Expr::TypeName { name, .. } = callee {
+            if name.name == "list" && args.is_empty() {
+                return "phc_list_new()".into();
+            }
         }
         // User-defined free function call OR class construction.
         if let Expr::TypeName { name, .. } = callee {
@@ -1195,6 +1240,57 @@ impl<'a> Emitter<'a> {
             "call form not yet supported by the C emitter",
         );
         "phc_panic(\"codegen TODO call\")".into()
+    }
+
+    /// Emit `$xs[i]`. Today only `list<T>` indexing is supported;
+    /// other receivers fall to a `phc_panic` so the build fails
+    /// loud at the call site instead of producing C that does not
+    /// type-check.
+    fn emit_index(&mut self, target: &Expr, index: &Expr, whole: &Expr) -> String {
+        if let Some(Ty::Path { path, args, .. }) = self.typed.expr_types.get(&span_of_expr(target))
+        {
+            if path.len() == 1 && path[0] == "list" {
+                let elem_ty = args.first().cloned().unwrap_or(Ty::Unknown);
+                let pm = self.payload_member(&elem_ty);
+                let t = self.emit_expr(target);
+                let i = self.emit_expr(index);
+                return format!("phc_list_at({t}, {i}).{pm}");
+            }
+        }
+        self.diag(
+            span_of_expr(whole),
+            "indexing only supported on `list<T>` in v0",
+        );
+        "phc_panic(\"codegen TODO index\")".into()
+    }
+
+    /// Emit a stdlib `list<T>` method call (D-027). The element
+    /// type `elem_ty` selects the payload union member at the call
+    /// site so push and at agree on which slot of `phc_payload` to
+    /// use. Returns None when the method is not in the v0 surface.
+    fn try_emit_list_method(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+        elem_ty: &Ty,
+    ) -> Option<String> {
+        let recv_c = self.emit_expr(receiver);
+        let pm = self.payload_member(elem_ty);
+        match (method, args.len()) {
+            ("len", 0) => Some(format!("phc_list_len({recv_c})")),
+            ("push", 1) => {
+                let v = self.emit_expr(&args[0]);
+                Some(format!(
+                    "phc_list_push({recv_c}, (phc_payload){{.{pm} = {v}}})"
+                ))
+            }
+            ("at", 1) => {
+                let idx = self.emit_expr(&args[0]);
+                Some(format!("phc_list_at({recv_c}, {idx}).{pm}"))
+            }
+            _ => None,
+        }
     }
 
     /// Emit a stdlib string method call (D-025). Returns None when
@@ -1352,6 +1448,31 @@ fn collect_captures(pat: &Pattern, scrut_ty: &str, scrut: &str, buf: &mut String
             }
         }
         _ => {}
+    }
+}
+
+/// Lower a `for`-loop element TypeRef into a typecheck-level Ty
+/// without consulting the typechecker (we don't have a Ty for the
+/// elem_name's span — it's a fresh binding). Mirrors enough of
+/// `phc-typecheck::lower::lower_type_ref` to dispatch the payload
+/// member at the iteration site.
+fn lower_for_elem_ty(t: &phc_ast::TypeRef) -> Ty {
+    if t.path.len() != 1 {
+        return Ty::Unknown;
+    }
+    match t.path[0].name.as_str() {
+        "int" => Ty::Primitive(Primitive::Int),
+        "float" => Ty::Primitive(Primitive::Float),
+        "bool" => Ty::Primitive(Primitive::Bool),
+        "string" => Ty::Primitive(Primitive::String),
+        "byte" => Ty::Primitive(Primitive::Byte),
+        "bytes" => Ty::Primitive(Primitive::Bytes),
+        "void" => Ty::Primitive(Primitive::Void),
+        name => Ty::Path {
+            path: vec![name.to_string()],
+            args: t.args.iter().map(lower_for_elem_ty).collect(),
+            nullable: t.nullable,
+        },
     }
 }
 
@@ -1539,20 +1660,6 @@ fn c_string_lit(s: &str) -> String {
     }
     out.push('"');
     out
-}
-
-fn span_of_stmt(stmt: &Stmt) -> Span {
-    match stmt {
-        Stmt::Local(b) => b.span,
-        Stmt::Reassign(r) => r.span,
-        Stmt::MemberAssign(m) => m.span,
-        Stmt::If(i) => i.span,
-        Stmt::While(w) => w.span,
-        Stmt::For(f) => f.span,
-        Stmt::Return(r) => r.span,
-        Stmt::Break { span } | Stmt::Continue { span } => *span,
-        Stmt::Expr(e) => e.span,
-    }
 }
 
 fn span_of_expr(expr: &Expr) -> Span {
