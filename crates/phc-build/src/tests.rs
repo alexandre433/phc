@@ -4,7 +4,7 @@
 //! without a C toolchain skips them with a printed note rather
 //! than failing.
 
-use crate::build_file;
+use crate::{build_file, load_session};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -122,6 +122,56 @@ function main(): void {
             "classify(-3) -> negative",
         ]
     );
+}
+
+fn project_root(name: &str) -> PathBuf {
+    let mut p = PathBuf::from("target");
+    p.push("phc-build-session");
+    p.push(name);
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::create_dir_all(&p).expect("create project root");
+    p
+}
+
+#[test]
+fn session_loads_files_and_groups_by_pack() {
+    let root = project_root("group_by_pack");
+    std::fs::write(
+        root.join("a.phc"),
+        "pack app.auth;\nfunction main(): void {}",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("b.phc"),
+        "pack app.auth;\nfunction helper(): int { return 0; }",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("db")).unwrap();
+    std::fs::write(
+        root.join("db").join("conn.phc"),
+        "pack app.db;\nfunction connect(): int { return 1; }",
+    )
+    .unwrap();
+
+    let session = load_session(&root);
+    assert!(session.ok(), "diagnostics: {:?}", session.diagnostics);
+    assert_eq!(session.files.len(), 3);
+    assert_eq!(session.packs.len(), 2);
+    assert_eq!(session.packs.get("app.auth").map(Vec::len), Some(2));
+    assert_eq!(session.packs.get("app.db").map(Vec::len), Some(1));
+}
+
+#[test]
+fn session_surfaces_parse_errors() {
+    let root = project_root("parse_error");
+    std::fs::write(root.join("ok.phc"), "pack a;").unwrap();
+    std::fs::write(root.join("bad.phc"), "function").unwrap();
+
+    let session = load_session(&root);
+    assert!(!session.ok());
+    assert!(!session.diagnostics.is_empty());
+    // Good file still loaded.
+    assert!(session.packs.contains_key("a"));
 }
 
 /// Build + run an enum + match program. Exercises enum decls,

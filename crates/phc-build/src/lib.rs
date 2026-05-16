@@ -12,6 +12,9 @@
 //! manifest (`phc.json`) workflow are Phase 7 concerns. This MVP
 //! handles a single file.
 
+mod session;
+pub use session::{load_session, LoadedFile, Session};
+
 use phc_codegen::emit_c;
 use phc_errors::{Diagnostic, Severity};
 use phc_parser::parse;
