@@ -236,11 +236,20 @@ impl Ctx<'_> {
                 self.check_expr(lhs);
                 self.check_expr(rhs);
             }
-            Expr::Call { callee, args, .. } => {
+            Expr::Call { callee, args, span } => {
                 self.check_expr(callee);
                 for a in args {
                     self.check_expr(a);
                 }
+                // Per-call aliasing rule (D-005 extension): within a
+                // single call's arg list, no two borrows of the same
+                // root binding may be mutable, and a mutable borrow
+                // cannot coexist with any other borrow of the same
+                // root. Catches the classic `swap(&flip $x, &flip $x)`
+                // and `read(&$x, &flip $x)` shapes; broader aliasing
+                // (across statements, through let-bindings) needs the
+                // full liveness pass tracked separately.
+                self.check_call_aliasing(args, *span);
             }
             Expr::Index { target, index, .. } => {
                 self.check_expr(target);
@@ -294,6 +303,61 @@ impl Ctx<'_> {
         match self.typed.expr_types.get(&span)? {
             Ty::Path { path, .. } if path.len() == 1 => Some(path[0].clone()),
             _ => None,
+        }
+    }
+
+    /// Check borrow-arg aliasing within a single call. Builds a
+    /// `(root_sid, borrow_kind)` list from the args' borrow
+    /// expressions (only leaf-`Var` borrows in v0) and reports any
+    /// pair that violates D-005 aliasing: two mutable borrows of
+    /// the same root, or a mutable borrow alongside any other
+    /// borrow of the same root.
+    fn check_call_aliasing(&mut self, args: &[Expr], call_span: Span) {
+        let mut borrows: Vec<(SymbolId, Borrow, &str, Span)> = Vec::new();
+        for arg in args {
+            if let Expr::Borrow {
+                kind,
+                operand,
+                span,
+            } = arg
+            {
+                if matches!(kind, Borrow::Shared | Borrow::Mutable) {
+                    if let Expr::Var {
+                        name,
+                        span: var_span,
+                    } = operand.as_ref()
+                    {
+                        if let Some(&sid) = self.resolved.uses.get(var_span) {
+                            borrows.push((sid, *kind, name.name.as_str(), *span));
+                        }
+                    }
+                }
+            }
+        }
+        for i in 0..borrows.len() {
+            for j in (i + 1)..borrows.len() {
+                let (sid_i, kind_i, name_i, span_i) = borrows[i];
+                let (sid_j, kind_j, _name_j, _span_j) = borrows[j];
+                if sid_i != sid_j {
+                    continue;
+                }
+                let conflict = matches!(
+                    (kind_i, kind_j),
+                    (Borrow::Mutable, _) | (_, Borrow::Mutable)
+                );
+                if conflict {
+                    let _ = call_span;
+                    self.diag(
+                        span_i,
+                        format!(
+                            "conflicting borrows of `${}` in the same call: {} and {}",
+                            name_i,
+                            describe_borrow(kind_i),
+                            describe_borrow(kind_j),
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -530,6 +594,14 @@ fn collect_in_expr<F>(
         | Expr::Var { .. }
         | Expr::This { .. }
         | Expr::TypeName { .. } => {}
+    }
+}
+
+fn describe_borrow(kind: Borrow) -> &'static str {
+    match kind {
+        Borrow::None => "owned",
+        Borrow::Shared => "shared `&`",
+        Borrow::Mutable => "mutable `&flip`",
     }
 }
 

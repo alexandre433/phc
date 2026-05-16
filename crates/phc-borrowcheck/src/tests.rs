@@ -158,3 +158,69 @@ function main(): void {
 "#;
     assert!(diagnostics_for(src).is_empty());
 }
+
+#[test]
+fn aliasing_two_mutable_borrows_of_same_root_rejected() {
+    // D-005 aliasing extension: a single call cannot pass two
+    // mutable borrows of the same root binding. Classic swap-shape
+    // failure that the MVP missed.
+    let src = r#"pack demo;
+function swap(&flip int $a, &flip int $b): void { }
+function main(): void {
+    flip int $x = 1;
+    swap(&flip $x, &flip $x);
+}
+"#;
+    let diags = diagnostics_for(src);
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.contains("conflicting borrows of `$x`")),
+        "expected aliasing diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn aliasing_shared_and_mutable_of_same_root_rejected() {
+    let src = r#"pack demo;
+function tee(&int $r, &flip int $w): void { }
+function main(): void {
+    flip int $x = 1;
+    tee(&$x, &flip $x);
+}
+"#;
+    let diags = diagnostics_for(src);
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.contains("conflicting borrows of `$x`")),
+        "expected aliasing diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn aliasing_two_shared_borrows_of_same_root_allowed() {
+    // Shared+shared is fine — that is the whole point of shared
+    // borrows.
+    let src = r#"pack demo;
+function compare(&int $a, &int $b): bool { return false; }
+function main(): void {
+    int $x = 1;
+    bool $_ = compare(&$x, &$x);
+}
+"#;
+    assert!(diagnostics_for(src).is_empty());
+}
+
+#[test]
+fn aliasing_borrows_of_distinct_roots_allowed() {
+    let src = r#"pack demo;
+function swap(&flip int $a, &flip int $b): void { }
+function main(): void {
+    flip int $x = 1;
+    flip int $y = 2;
+    swap(&flip $x, &flip $y);
+}
+"#;
+    assert!(diagnostics_for(src).is_empty());
+}

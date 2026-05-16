@@ -121,6 +121,7 @@ Locked during Phase 6 stdlib build-out:
 20. D-027 — `list<T>` collection v0a (locked 2026-05-16): `list()` ctor (type from binding annotation), `push/len/at` methods, `$xs[i]` indexing, `for (T $x in $xs)` iteration. **Reference semantics** (handle-shared mutation), explicitly diverges from D-022's CoW pending refcounts. OOB aborts; fallible variants deferred. `list` is a reserved name.
 21. D-026 — Result/Option ergonomic methods (locked 2026-05-16): `result` gets `isOk/isErr/unwrapOr`; `option` gets `isSome/isNone/unwrapOr/orElse`. Inline statement-expression lowering for `unwrapOr/orElse`; `map/andThen/unwrap/okOr` deferred (the closure forms wait on D-024).
 22. D-024 — Function type syntax (locked 2026-05-16): `fn(T1, T2, ...): R` heads a function type. `fn` reserved keyword. Additive AST (`fn_return: Option<Box<TypeRef>>`) lowered to `Ty::Path { path:["fn"], args:[R, P1, ...] }`; codegen maps to `phc_lambda`. Stored lambdas now legal: bind, pass, return. Generic fn-types and the `Ty::Function` enum refactor deferred.
+23. D-005 aliasing extension (locked 2026-05-16): within a single call's arg list, no two borrows of the same root binding may both be mutable, and a mutable borrow cannot coexist with any other borrow of the same root. Broader aliasing (across statements, through intermediate bindings) needs a full liveness pass and stays out of scope for v0.
 
 ---
 
