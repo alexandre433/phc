@@ -1351,6 +1351,47 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(v[i as usize].clone()))
             }
+            // D-030 closure forms. Each invokes a user lambda on
+            // every element in insertion order.
+            "forEach" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                for v in snapshot {
+                    self.invoke_lambda_with(&lam, vec![v])?;
+                }
+                Ok(Some(Value::Void))
+            }
+            "map" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let mut out = Vec::with_capacity(snapshot.len());
+                for v in snapshot {
+                    out.push(self.invoke_lambda_with(&lam, vec![v])?);
+                }
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
+            "filter" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let mut out = Vec::new();
+                for v in snapshot {
+                    let keep = self.invoke_lambda_with(&lam, vec![v.clone()])?;
+                    match keep {
+                        Value::Bool(true) => out.push(v),
+                        Value::Bool(false) => {}
+                        other => {
+                            return Err(rt(format!(
+                                "list `filter` predicate must return `bool`, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
             _ => Ok(None),
         }
     }

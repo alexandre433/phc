@@ -1624,8 +1624,54 @@ impl<'a> Emitter<'a> {
                 let idx = self.emit_expr(&args[0]);
                 Some(format!("phc_list_at({recv_c}, {idx}).{pm}"))
             }
+            // D-030 closure forms. Same stmt-expr pattern as D-029
+            // result/option closures: bind receiver + closure once,
+            // loop, cast `__cb.fn` to the precise signature, build
+            // the output list (for map/filter) or just iterate
+            // (forEach).
+            ("forEach", 1) => Some(self.emit_list_for_each(receiver, elem_ty, &args[0])),
+            ("map", 1) => Some(self.emit_list_map(receiver, elem_ty, &args[0])),
+            ("filter", 1) => Some(self.emit_list_filter(receiver, elem_ty, &args[0])),
             _ => None,
         }
+    }
+
+    fn emit_list_for_each(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        // Trailing `(void)0;` so the stmt-expr value is void-typed
+        // and the construct can sit in an ExprStmt context cleanly.
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ ((void(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}); }} (void)0; }})"
+        )
+    }
+
+    fn emit_list_map(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let u_ty = self.lambda_return_ty(closure).unwrap_or(Ty::Unknown);
+        let pm_u = self.payload_member(&u_ty);
+        let c_u = self.ty_to_c(&u_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_list __out_{lo} = phc_list_new(); phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ {c_u} __u_{lo} = (({c_u}(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}); phc_list_push(__out_{lo}, (phc_payload){{.{pm_u} = __u_{lo}}}); }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_filter(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_list __out_{lo} = phc_list_new(); phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ {c_t} __t_{lo} = phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}; if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __t_{lo})) {{ phc_list_push(__out_{lo}, (phc_payload){{.{pm_t} = __t_{lo}}}); }} }} __out_{lo}; }})"
+        )
     }
 
     /// Emit a stdlib string method call (D-025). Returns None when

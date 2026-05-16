@@ -477,7 +477,19 @@ fn stdlib_method_return_ty(
             match (path[0].as_str(), method) {
                 ("list", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("list", "push") => Some(Ty::Primitive(crate::Primitive::Void)),
-                ("list", "at") => elem,
+                ("list", "at") => elem.clone(),
+                ("list", "forEach") => Some(Ty::Primitive(crate::Primitive::Void)),
+                // D-030: list<T>.map(fn(T): U) → list<U>.
+                ("list", "map") => {
+                    let u = lambda_return(0).unwrap_or(Ty::Unknown);
+                    Some(Ty::Path {
+                        path: vec!["list".to_string()],
+                        args: vec![u],
+                        nullable: false,
+                    })
+                }
+                // list<T>.filter(fn(T): bool) → list<T>.
+                ("list", "filter") => Some(recv_ty.clone()),
                 ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
                 ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),

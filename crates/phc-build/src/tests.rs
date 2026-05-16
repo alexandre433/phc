@@ -677,6 +677,78 @@ function main(): void {
     }
 }
 
+/// Build + run D-030 list<T> closure methods: forEach, map,
+/// filter. Verifies the codegen stmt-expr / phc_lambda invocation
+/// pattern works for list element iteration.
+#[test]
+fn build_and_run_list_closure_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_list_closure_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+
+    fn(int): int $dbl = (int $n): int => $n * 2;
+    list<int> $doubled = $xs->map($dbl);
+    if ($doubled->len() == 3) { Logger::info("map len ok"); }
+    if ($doubled->at(2) == 6) { Logger::info("map at ok"); }
+
+    fn(int): bool $isTwo = (int $n): bool => $n == 2;
+    list<int> $twos = $xs->filter($isTwo);
+    if ($twos->len() == 1) { Logger::info("filter len ok"); }
+    if ($twos->at(0) == 2) { Logger::info("filter at ok"); }
+
+    fn(int): void $announce = (int $n): void => Logger::info("v");
+    $xs->forEach($announce);
+    Logger::info("forEach done");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("list_closure_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("list_closure_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "list-closure binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    for sentinel in [
+        "map len ok",
+        "map at ok",
+        "filter len ok",
+        "filter at ok",
+        "forEach done",
+    ] {
+        assert!(
+            stdout.contains(sentinel),
+            "missing `{sentinel}` in output: {stdout:?}"
+        );
+    }
+    let v_count = stdout.matches("v\r\n").count() + stdout.matches("v\n").count();
+    assert!(
+        v_count >= 3,
+        "expected 3 `v` lines from forEach, got {v_count}: {stdout:?}"
+    );
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.

@@ -125,6 +125,7 @@ Locked during Phase 6 stdlib build-out:
 24. D-028 — `map<string, V>` collection v0a (locked 2026-05-16): `map()` ctor (V from binding annotation), `set/get/has/len` methods. String keys only; linear-scan storage. Reference semantics like list. `map` is a reserved name. Generic keys, hash storage, `remove`/iteration deferred.
 25. D-021 v0a (Phase 9 MVP, 2026-05-16): `test "name" { ... }` blocks at file top-level are discovered by `phc-test` and run sequentially through the interpreter. Pass = body completes without runtime error; fail = any panic or `?` propagation. `phc test <file>` reports pass/fail counts and exits non-zero on any failure. Assertion helpers (`assertEq`, etc.), cross-file project discovery, filtering, and parallel execution deferred.
 26. D-029 — Result/Option closure methods (locked 2026-05-16): `result<T,E>` gets `map(fn(T):U)→result<U,E>`, `andThen(fn(T):result<U,E>)→result<U,E>`, `unwrap()→T` (panics on err). `option<T>` gets `map`, `andThen` (option-shaped), `okOr(E)→result<T,E>`, `unwrap()` (panics on none). Codegen lowers each to a stmt-expr that invokes the stored `phc_lambda` on the unwrapped payload and packs the result. Closure return type recovered from the arg's `fn(T):U` static type; typecheck lambda inference now also seeds lambda params and records `fn(...):R` on every lambda expression.
+27. D-030 — `list<T>` closure methods (locked 2026-05-16): `forEach(fn(T):void)→void`, `map(fn(T):U)→list<U>`, `filter(fn(T):bool)→list<T>`. Same stmt-expr + `phc_lambda` invocation pattern as D-029, looped over `phc_list_at`/`phc_list_push`. No new runtime functions.
 
 ---
 
@@ -968,3 +969,37 @@ Locked during Phase 6 stdlib build-out:
 - **Date**: 2026-05-16.
 - **Status**: locked for v0 surface; collection closure methods
   (`forEach` / `map` / `filter` on `list<T>`) tracked separately.
+
+### D-030 — `list<T>` closure methods (v0)
+- **Decision**: Adds the closure forms to `list<T>` now that
+  D-024 (function types) and D-029 (Result/Option closure
+  pattern) are locked.
+
+  | Method | Signature |
+  |--------|-----------|
+  | `forEach` | `(fn(T): void): void` |
+  | `map` | `(fn(T): U): list<U>` |
+  | `filter` | `(fn(T): bool): list<T>` |
+
+  Codegen uses the same stmt-expr + `phc_lambda` cast pattern
+  D-029 introduced. The loop walks `phc_list_at(__xs, __i)` for
+  `__i in [0, phc_list_len(__xs))`. `map` and `filter` allocate
+  a fresh `phc_list_new()` and `phc_list_push` per kept element;
+  `forEach` invokes the callback and trails `(void)0;` so the
+  stmt-expr value is `void`-typed (legal in ExprStmt position).
+
+  Interp mirrors the surface via the existing
+  `eval_lambda_arg` / `invoke_lambda_with` helpers from D-029,
+  snapshotting the list before iteration so a callback that
+  mutates the underlying list does not invalidate the loop.
+- **Alternatives considered**: defer to a generic-iterator
+  trait (depends on D-014 bounds work that hasn't shipped);
+  add `reduce` / `fold` in the same slice (Bigger; payload-
+  member dispatch for the accumulator needs more design and
+  is a clean follow-up).
+- **Rationale**: smallest closure-friendly surface that
+  unblocks "transform a list" programs; same codegen +
+  typecheck plumbing D-029 already validated.
+- **Date**: 2026-05-16.
+- **Status**: locked for v0 surface; `reduce` / `fold` /
+  `find` / `any` / `all` tracked separately.

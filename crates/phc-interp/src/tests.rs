@@ -871,3 +871,39 @@ function main(): void {
     ];
     assert_eq!(out.stdout, expected);
 }
+
+#[test]
+fn list_d030_closure_methods_run_in_interp() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+
+    fn(int): int $dbl = (int $n): int => $n * 2;
+    list<int> $doubled = $xs->map($dbl);
+    if ($doubled->len() == 3 && $doubled->at(2) == 6) { Logger::info("map ok"); }
+
+    fn(int): bool $even = (int $n): bool => ($n + ($n / 2 * -2)) == 0;
+    list<int> $evens = $xs->filter($even);
+    if ($evens->len() == 1 && $evens->at(0) == 2) { Logger::info("filter ok"); }
+
+    flip int $sum = 0;
+    fn(int): void $add = (int $n): void => Logger::info("v");
+    $xs->forEach($add);
+    Logger::info("forEach done");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let expected = vec![
+        "map ok".to_string(),
+        "filter ok".to_string(),
+        "v".to_string(),
+        "v".to_string(),
+        "v".to_string(),
+        "forEach done".to_string(),
+    ];
+    assert_eq!(out.stdout, expected);
+}
