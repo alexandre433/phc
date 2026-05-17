@@ -11,5 +11,18 @@
         "repo": "JuliusBrussee/caveman"
       }
     }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo fmt --check --quiet || echo 'phc-fmt-hook: drift detected — run `cargo fmt`'"
+          }
+        ]
+      }
+    ]
   }
 }
