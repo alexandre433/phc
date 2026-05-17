@@ -415,7 +415,7 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
                 }
                 if name.name == "assert" {
                     return match member.name.as_str() {
-                        "eq" | "neq" | "isTrue" | "isFalse" | "fail" => {
+                        "eq" | "neq" | "isTrue" | "isFalse" | "fail" | "approxEq" | "throws" => {
                             Ty::Primitive(crate::Primitive::Void)
                         }
                         _ => Ty::Unknown,

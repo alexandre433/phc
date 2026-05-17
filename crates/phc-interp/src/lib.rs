@@ -1022,6 +1022,45 @@ impl<'a> Interp<'a> {
                 let v = self.eval_expr(&args[0], env)?;
                 Err(rt(format!("assertion failed: {}", v.display())))
             }
+            // D-041: approxEq — |a-b| < 1e-9; throws — lambda must panic.
+            ("assert", "approxEq") => {
+                if args.len() != 2 {
+                    return Err(rt("assert::approxEq takes 2 arguments".to_string()));
+                }
+                let a = self.eval_expr(&args[0], env)?;
+                let b = self.eval_expr(&args[1], env)?;
+                let to_f64 = |v: Value| -> EvalResult<f64> {
+                    match v {
+                        Value::Float(f) => Ok(f),
+                        Value::Int(i) => Ok(i as f64),
+                        other => Err(rt(format!(
+                            "assert::approxEq expects numeric args, got `{}`",
+                            other.display()
+                        ))),
+                    }
+                };
+                let af = to_f64(a)?;
+                let bf = to_f64(b)?;
+                if (af - bf).abs() >= 1e-9 {
+                    return Err(rt(format!(
+                        "assertion failed: assert::approxEq({af}, {bf})"
+                    )));
+                }
+                Ok(Some(Value::Void))
+            }
+            ("assert", "throws") => {
+                if args.len() != 1 {
+                    return Err(rt("assert::throws takes 1 argument".to_string()));
+                }
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                match self.invoke_lambda_with(&lam, vec![]) {
+                    Err(_) => Ok(Some(Value::Void)),
+                    Ok(_) => Err(rt(
+                        "assertion failed: assert::throws — expected a panic but none occurred"
+                            .to_string(),
+                    )),
+                }
+            }
             // D-034 numeric stdlib namespaces.
             ("int", "parse") => {
                 if args.len() != 1 {

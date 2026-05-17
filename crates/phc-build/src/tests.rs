@@ -1651,3 +1651,45 @@ function main(): void {
     let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
     assert!(stdout.contains("map-set-foreach ok"), "stdout: {stdout:?}");
 }
+
+/// Build + run D-041 assert::approxEq through codegen + cc + run.
+#[test]
+fn build_and_run_assert_approx_eq_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_assert_approx_eq_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    assert::approxEq(1.0, 1.0);
+    assert::approxEq(0.0, 0.0);
+    assert::approxEq(3.14159, 3.14159);
+    // int args widen to float.
+    assert::approxEq(0, 0);
+    io::println("approxEq codegen ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("assert_approx_eq_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("assert_approx_eq_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "assert-approxEq binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("approxEq codegen ok"), "stdout: {stdout:?}");
+}

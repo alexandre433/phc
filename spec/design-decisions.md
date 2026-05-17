@@ -136,6 +136,7 @@ Locked during Phase 6 stdlib build-out:
 35. D-038 — `list<T>` reduce / findIndex (locked 2026-05-17): `reduce(fn(T, T): T) → option<T>` (empty list → `none`; non-empty → folds from first element); `findIndex(fn(T): bool) → option<int>` (first matching index or `none`). Both follow the D-030 stmt-expr + `phc_lambda` cast pattern. `partition` deferred pending tuple-return support.
 36. D-039 — map/set iteration (locked 2026-05-18): `map<string, V>` gains `keys() → list<string>` and `values() → list<V>` (insertion-order guaranteed; returned lists are snapshots). `set<string>` gains `for (string $x in $set)` iteration via the existing `Stmt::For` path (order stable unless `remove` was called). Runtime helpers `phc_map_key_at`, `phc_map_val_at`, `phc_set_at` added.
 37. D-040 — map/set forEach (locked 2026-05-18): `map<string,V>` gains `forEach(fn(string,V):void):void`; `set<string>` gains `forEach(fn(string):void):void`. Both follow the D-030 stmt-expr + `phc_lambda` cast pattern and use D-039 index helpers (`phc_map_key_at`/`phc_map_val_at`, `phc_set_at`). Insertion-order traversal; live-snapshot semantics (len read once at loop start).
+38. D-041 — `assert::approxEq` + `assert::throws` (locked 2026-05-18): `assert::approxEq(float, float):void` checks `|a-b| < 1e-9`; `assert::throws(fn():void):void` runs the lambda and passes iff a panic occurs (interpreter only; compiled mode emits a diagnostic + runtime panic). Both integrate into the existing D-033 static-call dispatch.
 
 ---
 
@@ -1131,8 +1132,8 @@ Locked during Phase 6 stdlib build-out:
   already used by `io` / `Logger` / `result::ok`, so wiring is
   mechanical.
 - **Date**: 2026-05-16.
-- **Status**: locked for v0 surface; `assert::throws`,
-  `assert::approxEq` for floats, and message-carrying variants
+- **Status**: locked for v0 surface; `assert::throws` and
+  `assert::approxEq` shipped in D-041. Message-carrying variants
   of every check tracked separately.
 
 ### D-034 — Numeric stdlib namespaces (v0)
@@ -1460,3 +1461,37 @@ Locked during Phase 6 stdlib build-out:
   runtime functions required beyond the D-039 index helpers.
 - **Date**: 2026-05-18.
 - **Status**: locked for v0a surface.
+
+### D-041 — `assert::approxEq` + `assert::throws` (v0a)
+- **Decision**: Extends the D-033 `assert` namespace with two
+  helpers that D-033 explicitly deferred:
+
+  | Call | Signature | Behaviour |
+  |------|-----------|-----------|
+  | `assert::approxEq` | `(float, float): void` | Panics unless `\|a − b\| < 1e-9`. Works in both interpreter and compiled mode. |
+  | `assert::throws` | `(fn(): void): void` | Runs the no-arg lambda; passes iff a panic occurs. **Interpreter only** — compiled mode emits a diagnostic and a runtime panic. |
+
+  `assert::approxEq` uses `phc_float_abs(a - b) >= 1e-9` in
+  codegen (reusing the D-034 runtime helper) and `(a - b).abs() >=
+  1e-9` in the interpreter. Both args accept `int` or `float`;
+  narrowing int→f64 is implicit at the call site.
+
+  `assert::throws` is restricted to interpreter mode because the
+  C runtime uses `abort()` for panics — there is no portable way
+  to catch an abort in emitted C without `setjmp`/`longjmp`, which
+  is out of scope for v0a codegen.
+
+- **Alternatives considered**: `assert::throws` via `setjmp` in
+  codegen (portable but intrusive — every function frame would
+  need an unwind path); `assert::panics` as a distinct name
+  (no benefit over `throws` for v0); epsilon parameter
+  `assert::approxEq(a, b, eps)` (deferred — hardcoded 1e-9 covers
+  all v0 float test cases).
+- **Rationale**: Float equality is a known footgun; `approxEq`
+  prevents false "tests pass" from FP rounding. `throws` unblocks
+  testing OOB, bad-parse, and other panic paths without requiring
+  a separate test harness.
+- **Date**: 2026-05-18.
+- **Status**: locked for v0a surface. Configurable epsilon,
+  message-carrying variants, and codegen `throws` tracked
+  separately.

@@ -1626,6 +1626,28 @@ impl<'a> Emitter<'a> {
                     "({{ phc_string __msg = {msg}; phc_panic(__msg.data); (void)0; }})"
                 ))
             }
+            // D-041: approxEq — |a-b| < 1e-9; reuses phc_float_abs (D-034).
+            "approxEq" => {
+                if !arity(self, 2) {
+                    return Some("phc_panic(\"assert::approxEq arity\")".to_string());
+                }
+                let a_c = self.emit_expr(&args[0]);
+                let b_c = self.emit_expr(&args[1]);
+                Some(format!(
+                    "({{ double __a = (double)({a_c}); double __b = (double)({b_c}); if (phc_float_abs(__a - __b) >= 1e-9) {{ phc_panic(\"assertion failed: assert::approxEq\"); }} (void)0; }})"
+                ))
+            }
+            // D-041: throws — only valid in interpreter mode.
+            "throws" => {
+                if !arity(self, 1) {
+                    return Some("phc_panic(\"assert::throws arity\")".to_string());
+                }
+                self.diag(
+                    span_of_expr(callee),
+                    "assert::throws is only available in interpreter mode (`phc test`); remove from compiled code",
+                );
+                Some("phc_panic(\"assert::throws: not supported in compiled mode\")".to_string())
+            }
             _ => None,
         }
     }

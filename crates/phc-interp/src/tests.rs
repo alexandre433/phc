@@ -1078,3 +1078,70 @@ function main(): void {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["d037 ok".to_string()]);
 }
+
+#[test]
+fn assert_d041_approx_eq_passes_for_close_floats() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::approxEq(1.0, 1.0);
+    assert::approxEq(0.1 + 0.2, 0.30000000000000004);
+    assert::approxEq(0, 0);
+    io::println("approxEq ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["approxEq ok".to_string()]);
+}
+
+#[test]
+fn assert_d041_approx_eq_fails_for_distant_floats() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::approxEq(1.0, 2.0);
+}
+"#;
+    let out = run_src(src);
+    assert!(
+        out.errors
+            .iter()
+            .any(|e| e.message.contains("assert::approxEq")),
+        "expected approxEq failure, got {:?}",
+        out.errors
+    );
+}
+
+#[test]
+fn assert_d041_throws_passes_when_lambda_panics() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::throws(((): void => {
+        list<int> $xs = list();
+        int $_ = $xs->at(0);
+    }));
+    io::println("throws ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["throws ok".to_string()]);
+}
+
+#[test]
+fn assert_d041_throws_fails_when_lambda_does_not_panic() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::throws(((): void => {
+        int $x = 1;
+    }));
+}
+"#;
+    let out = run_src(src);
+    assert!(
+        out.errors
+            .iter()
+            .any(|e| e.message.contains("assert::throws")),
+        "expected throws failure, got {:?}",
+        out.errors
+    );
+}
