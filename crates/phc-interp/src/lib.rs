@@ -1757,6 +1757,40 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::OptionNone))
             }
+            // D-038: reduce / findIndex.
+            "reduce" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                if snapshot.is_empty() {
+                    return Ok(Some(Value::OptionNone));
+                }
+                let mut acc = snapshot[0].clone();
+                for v in snapshot.into_iter().skip(1) {
+                    acc = self.invoke_lambda_with(&lam, vec![acc, v])?;
+                }
+                Ok(Some(Value::OptionSome(Box::new(acc))))
+            }
+            "findIndex" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                for (i, v) in snapshot.into_iter().enumerate() {
+                    match self.invoke_lambda_with(&lam, vec![v])? {
+                        Value::Bool(true) => {
+                            return Ok(Some(Value::OptionSome(Box::new(Value::Int(i as i64)))))
+                        }
+                        Value::Bool(false) => {}
+                        other => {
+                            return Err(rt(format!(
+                                "list `findIndex` predicate must return `bool`, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::OptionNone))
+            }
             _ => Ok(None),
         }
     }

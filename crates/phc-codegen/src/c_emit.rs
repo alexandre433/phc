@@ -1928,6 +1928,9 @@ impl<'a> Emitter<'a> {
             ("any", 1) => Some(self.emit_list_any(receiver, elem_ty, &args[0])),
             ("all", 1) => Some(self.emit_list_all(receiver, elem_ty, &args[0])),
             ("find", 1) => Some(self.emit_list_find(receiver, elem_ty, &args[0])),
+            // D-038 closure forms.
+            ("reduce", 1) => Some(self.emit_list_reduce(receiver, elem_ty, &args[0])),
+            ("findIndex", 1) => Some(self.emit_list_find_index(receiver, elem_ty, &args[0])),
             _ => None,
         }
     }
@@ -1987,6 +1990,30 @@ impl<'a> Emitter<'a> {
         let lo = span_of_expr(receiver).lo;
         format!(
             "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; phc_option __out_{lo}; __out_{lo}.kind = 1; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo} && __out_{lo}.kind != 0; ++__i_{lo}) {{ {c_t} __t_{lo} = phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}; if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __t_{lo})) {{ __out_{lo}.kind = 0; __out_{lo}.some.{pm_t} = __t_{lo}; }} }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_reduce(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        // Empty list → none (kind=1). Non-empty → seed with xs[0], fold rest.
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; phc_option __out_{lo}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); if (__len_{lo} == 0) {{ __out_{lo}.kind = 1; }} else {{ {c_t} __acc_{lo} = phc_list_at(__xs_{lo}, 0).{pm_t}; for (int64_t __i_{lo} = 1; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ __acc_{lo} = (({c_t}(*)(void*, {c_t}, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __acc_{lo}, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}); }} __out_{lo}.kind = 0; __out_{lo}.some.{pm_t} = __acc_{lo}; }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_find_index(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        // Short-circuit on first match; store index in some.i64.
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; phc_option __out_{lo}; __out_{lo}.kind = 1; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo} && __out_{lo}.kind != 0; ++__i_{lo}) {{ if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t})) {{ __out_{lo}.kind = 0; __out_{lo}.some.i64 = __i_{lo}; }} }} __out_{lo}; }})"
         )
     }
 

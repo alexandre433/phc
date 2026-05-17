@@ -284,6 +284,22 @@ Read-only and write-capable agents follow the same rule. The Plan-mode 3-Explore
 - Rebase or squash-merge to keep history linear; avoid merge commits on `main`
 - Delete feature branches once merged
 
+### 9a. Project-pinned Claude Code automations
+
+The repo ships `.claude/settings.json`, skills, and a subagent so collaborators inherit the same workflow without per-user install. Inventory:
+
+- **Plugin** — `caveman@caveman` (from the `JuliusBrussee/caveman` marketplace). Enables caveman-mode communication by default. Toggle off in a session with `stop caveman` or `normal mode`; code, commits, and security text always render in normal English regardless of mode.
+- **Hook** — `PostToolUse` on `Edit|Write|MultiEdit` runs `cargo fmt --check --quiet` and prints `phc-fmt-hook: drift detected — run \`cargo fmt\`` on drift. Surfaces fmt drift at edit time, not at CI. Do not silence the hook; fix the drift.
+- **Skill** — `/phc-slice <D-###>` (`.claude/skills/phc-slice/SKILL.md`) encodes the validated slice cadence: feat branch → spec amendment → impl → tests → fmt+clippy → ff-merge to `development` → delete branch. Use for every new D-### slice.
+- **Skill** — `/phc-d-lookup <D-###>` (`.claude/skills/phc-d-lookup/SKILL.md`) returns the locked spec entry plus cross-refs / amendments in one shot. Use instead of re-reading `spec/design-decisions.md` for a single decision.
+- **Subagent** — `spec-guardian` (`.claude/agents/spec-guardian.md`) audits impl against spec for the active D-### before ff-merge. Read-only; returns a drift table only. Spawn before every merge that closes a slice.
+
+Rules of use:
+
+- New automations (hooks, skills, subagents) added under `.claude/` must be appended to this section in the same commit.
+- The fmt hook is the only automatic write-side check in `.claude/settings.json`. Adding more PostToolUse commands needs user sign-off — they run on every Edit/Write and are easy to make slow.
+- Skills and the subagent are project-pinned; do not duplicate them in user-level `~/.claude/` for this repo.
+
 ### 10. Test layout
 
 - **Unit tests** live inline at the bottom of the file under `#[cfg(test)] mod tests { ... }`. Use these for testing crate-private helpers and small invariants

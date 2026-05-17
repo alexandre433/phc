@@ -567,6 +567,17 @@ fn stdlib_method_return_ty(
                     args: vec![elem.clone().unwrap_or(Ty::Unknown)],
                     nullable: false,
                 }),
+                // D-038: reduce → option<T>; findIndex → option<int>.
+                ("list", "reduce") => Some(Ty::Path {
+                    path: vec!["option".to_string()],
+                    args: vec![elem.clone().unwrap_or(Ty::Unknown)],
+                    nullable: false,
+                }),
+                ("list", "findIndex") => Some(Ty::Path {
+                    path: vec!["option".to_string()],
+                    args: vec![Ty::Primitive(crate::Primitive::Int)],
+                    nullable: false,
+                }),
                 ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
                 ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),

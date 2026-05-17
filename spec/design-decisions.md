@@ -133,6 +133,7 @@ Locked during Phase 6 stdlib build-out:
 32. D-035 — `phc fmt` MVP (locked 2026-05-16): token-stream pretty-printer. Lexer now retains `LineComment` / `BlockComment` tokens; parser cursor filters them before grammar productions so the change is transparent for every other consumer. Fmt walks the unfiltered token stream and emits canonical whitespace + 4-space indentation with comments round-tripped. `phc fmt <file>` rewrites in place; `--check` prints to stdout and exits non-zero when changes are needed.
 33. D-036 — `phc lint` MVP starter ruleset (locked 2026-05-16): three rules, all `Warning` severity. `unused_local` (declared but never referenced, suppressed via `_`-prefix); `unreachable_after_return` (stmts after a `return` in the same block); `class_naming` (class / enum / interface / trait names must be PascalCase per D-006a). `phc lint <file>` exits non-zero on any warning or setup error. Naming rules for functions / methods / fields / locals, shadowing, empty-block / dead-branch analysis, autofix, and per-rule suppression deferred.
 34. D-037 — `list<T>` closure surface continues (locked 2026-05-16): `fold(U $init, fn(U, T): U) → U`, `any(fn(T): bool) → bool`, `all(fn(T): bool) → bool`, `find(fn(T): bool) → option<T>`. Same stmt-expr + `phc_lambda` cast pattern as D-030. `fold`'s `U` is recovered from `$init`'s static type. `reduce` (no-init fold) deferred until a clear use case picks the empty-list semantics.
+35. D-038 — `list<T>` reduce / findIndex (locked 2026-05-17): `reduce(fn(T, T): T) → option<T>` (empty list → `none`; non-empty → folds from first element); `findIndex(fn(T): bool) → option<int>` (first matching index or `none`). Both follow the D-030 stmt-expr + `phc_lambda` cast pattern. `partition` deferred pending tuple-return support.
 
 ---
 
@@ -1310,5 +1311,40 @@ Locked during Phase 6 stdlib build-out:
   hand-rolled `for` loops. Same dispatch + payload-member
   pattern D-030 and D-029 already validated.
 - **Date**: 2026-05-16.
-- **Status**: locked for v0 surface; `reduce`, `findIndex`,
-  `take`/`drop`, `zip`/`unzip`, `partition` tracked separately.
+- **Status**: locked for v0 surface; `reduce` and `findIndex`
+  shipped in D-038; `partition`, `take`/`drop`, `zip`/`unzip`
+  tracked separately.
+
+### D-038 — `list<T>` reduce / findIndex (v0)
+- **Decision**: Adds two more `list<T>` closure methods.
+
+  | Method | Signature |
+  |--------|-----------|
+  | `reduce` | `(fn(T, T): T): option<T>` |
+  | `findIndex` | `(fn(T): bool): option<int>` |
+
+  - **reduce**: no-init fold. Empty list → `none`. Non-empty →
+    seeds with `xs[0]`, then applies `fn(acc, x)` for each
+    remaining element. Callback signature in C:
+    `<T>(*)(void*, <T>, <T>)`. Return type is `option<T>`, so the
+    typecheck infers `T` from the receiver's element type.
+  - **findIndex**: like `find` but returns the index rather than
+    the element. Uses `phc_option.some.i64` as the payload slot.
+    Short-circuits on first match. Not found → `none`.
+
+  Both reuse the D-030 stmt-expr + `phc_lambda` cast pattern.
+  Interp snapshots the list before iteration (D-030 invariant).
+
+  **`partition` deferred**: needs `(list<T>, list<T>)` tuple
+  return; tuple types not yet shipped. Tracked separately.
+- **Alternatives considered**: `reduce` returning `T` with a
+  panic on empty (simpler signature but unsafe and inconsistent
+  with `find`/`findIndex`); shipping `partition` with
+  `list<list<T>>` (ugly, non-obvious index convention).
+- **Rationale**: `reduce` unlocks idiomatic no-seed aggregation;
+  `findIndex` avoids the pattern of calling `find` and then
+  doing a second linear scan for the position. Both are small
+  increments on the D-037 pattern already validated.
+- **Date**: 2026-05-17.
+- **Status**: locked for v0 surface; `partition`, `take`/`drop`,
+  `zip`/`unzip` tracked separately.

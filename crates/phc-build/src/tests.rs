@@ -1008,6 +1008,68 @@ function main(): void {
     assert!(stdout.contains("fold ok"), "stdout: {stdout:?}");
 }
 
+/// Build + run D-038 list<T> reduce / findIndex through codegen + cc + run.
+#[test]
+fn build_and_run_list_reduce_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_list_reduce_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(10);
+    $xs->push(20);
+    $xs->push(30);
+
+    // reduce: sum non-empty list.
+    fn(int, int): int $add = (int $a, int $b): int => $a + $b;
+    option<int> $total = $xs->reduce($add);
+    assert::eq($total->unwrapOr(0), 60);
+
+    // reduce: empty list → none.
+    list<int> $empty = list();
+    option<int> $none = $empty->reduce($add);
+    assert::isFalse($none->isSome());
+
+    // findIndex: match exists.
+    fn(int): bool $eq20 = (int $n): bool => $n == 20;
+    option<int> $idx = $xs->findIndex($eq20);
+    assert::eq($idx->unwrapOr(-1), 1);
+
+    // findIndex: no match → none.
+    fn(int): bool $eq99 = (int $n): bool => $n == 99;
+    option<int> $miss = $xs->findIndex($eq99);
+    assert::isFalse($miss->isSome());
+
+    io::println("reduce ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("list_reduce_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("list_reduce_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "list-reduce binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("reduce ok"), "stdout: {stdout:?}");
+}
+
 /// Build + run a 2-pack project end-to-end. Confirms multi-file
 /// codegen flattens the corpus into one C unit and produces a
 /// binary that calls cross-pack into the public helper.
