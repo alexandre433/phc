@@ -1490,3 +1490,86 @@ function main(): void {
         vec!["value is 7", "doubled is 14", "after assign: 100",]
     );
 }
+
+/// Build + run D-039 map keys/values + set for-loop through codegen + cc + run.
+#[test]
+fn build_and_run_map_set_iteration_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_map_set_iteration_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    // map keys/values: parallel-array invariant.
+    map<string, int> $scores = map();
+    $scores->set("alice", 10);
+    $scores->set("bob", 20);
+    $scores->set("carol", 30);
+
+    list<string> $ks = $scores->keys();
+    list<int> $vs = $scores->values();
+
+    assert::eq($ks->len(), 3);
+    assert::eq($vs->len(), 3);
+    assert::eq($ks->at(0), "alice");
+    assert::eq($vs->at(0), 10);
+    assert::eq($ks->at(1), "bob");
+    assert::eq($vs->at(1), 20);
+    assert::eq($ks->at(2), "carol");
+    assert::eq($vs->at(2), 30);
+
+    // map keys/values on empty map.
+    map<string, int> $empty_map = map();
+    assert::eq($empty_map->keys()->len(), 0);
+    assert::eq($empty_map->values()->len(), 0);
+
+    // set for-loop: accumulate elements.
+    set<string> $tags = set();
+    $tags->add("rust");
+    $tags->add("phc");
+    $tags->add("systems");
+
+    list<string> $collected = list();
+    for (string $t in $tags) {
+        $collected->push($t);
+    }
+    assert::eq($collected->len(), 3);
+
+    // set for-loop: empty set — body never runs.
+    set<string> $empty_set = set();
+    flip int $count = 0;
+    for (string $x in $empty_set) {
+        $count := $count + 1;
+    }
+    assert::eq($count, 0);
+
+    io::println("map-set-iteration ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("map_set_iteration_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("map_set_iteration_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "map-set-iteration binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(
+        stdout.contains("map-set-iteration ok"),
+        "stdout: {stdout:?}"
+    );
+}

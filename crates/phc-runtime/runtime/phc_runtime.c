@@ -434,6 +434,14 @@ int64_t phc_map_len(phc_map m) {
     return (int64_t)m->len;
 }
 
+phc_string phc_map_key_at(phc_map m, int64_t i) {
+    return m->items[(size_t)i].key;
+}
+
+phc_payload phc_map_val_at(phc_map m, int64_t i) {
+    return m->items[(size_t)i].value;
+}
+
 /* ===== Set stdlib (D-031) ===== */
 
 struct phc_set_s {
@@ -490,4 +498,8 @@ bool phc_set_remove(phc_set s, phc_string key) {
 
 int64_t phc_set_len(phc_set s) {
     return (int64_t)s->len;
+}
+
+phc_string phc_set_at(phc_set s, int64_t i) {
+    return s->items[(size_t)i];
 }

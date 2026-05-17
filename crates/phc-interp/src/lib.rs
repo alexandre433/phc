@@ -491,24 +491,27 @@ impl<'a> Interp<'a> {
                 Ok(Flow::Return(value))
             }
             Stmt::For(f) => {
-                // v0a: only iterating a `list<T>` is supported.
+                // D-039: also handles `set<string>` in addition to `list<T>`.
                 let iter_value = self.eval_expr(&f.iter, env)?;
-                let list = match iter_value {
-                    Value::List(l) => l,
+                let elem_sid = self.symbol_at_def(f.elem_name.span);
+                let items: Vec<Value> = match iter_value {
+                    Value::List(l) => l.borrow().clone(),
+                    Value::Set(keys) => keys
+                        .borrow()
+                        .iter()
+                        .map(|k| Value::String(k.clone()))
+                        .collect(),
                     other => {
                         return Err(rt(format!(
-                            "`for` only iterates `list<T>` in v0, got `{}`",
+                            "`for` iterates `list<T>` or `set<string>` in v0, got `{}`",
                             other.display()
                         )))
                     }
                 };
-                let elem_sid = self.symbol_at_def(f.elem_name.span);
-                let len = list.borrow().len();
-                for i in 0..len {
+                for item in items {
                     env.enter();
                     if let Some(sid) = elem_sid {
-                        let v = list.borrow()[i].clone();
-                        env.bind(sid, v);
+                        env.bind(sid, item);
                     }
                     let flow = self.eval_block_body(&f.body.statements, env);
                     env.leave();
@@ -1391,6 +1394,22 @@ impl<'a> Interp<'a> {
                     e.push((key, value));
                 }
                 Ok(Some(Value::Void))
+            }
+            // D-039: snapshot iteration helpers.
+            "keys" => {
+                arity_check(0)?;
+                let snapshot: Vec<Value> = entries
+                    .borrow()
+                    .iter()
+                    .map(|(k, _)| Value::String(k.clone()))
+                    .collect();
+                Ok(Some(Value::List(Rc::new(RefCell::new(snapshot)))))
+            }
+            "values" => {
+                arity_check(0)?;
+                let snapshot: Vec<Value> =
+                    entries.borrow().iter().map(|(_, v)| v.clone()).collect();
+                Ok(Some(Value::List(Rc::new(RefCell::new(snapshot)))))
             }
             _ => Ok(None),
         }

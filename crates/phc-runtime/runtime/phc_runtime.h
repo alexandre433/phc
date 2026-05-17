@@ -90,6 +90,8 @@ void        phc_map_set(phc_map m, phc_string key, phc_payload v);
 phc_option  phc_map_get(phc_map m, phc_string key);
 bool        phc_map_has(phc_map m, phc_string key);
 int64_t     phc_map_len(phc_map m);
+phc_string  phc_map_key_at(phc_map m, int64_t i);  /* D-039: index into keys; caller owns 0..len range */
+phc_payload phc_map_val_at(phc_map m, int64_t i);  /* D-039: index into values; parallel to key_at */
 
 /* Set value (D-031). String-only in v0a, same reference-semantics
  * + linear-scan storage as `phc_map`. Distinct C type so codegen
@@ -102,6 +104,7 @@ bool        phc_set_add(phc_set s, phc_string key);  /* true on insert, false if
 bool        phc_set_has(phc_set s, phc_string key);
 bool        phc_set_remove(phc_set s, phc_string key); /* true if removed */
 int64_t     phc_set_len(phc_set s);
+phc_string  phc_set_at(phc_set s, int64_t i);  /* D-039: index into elements; caller owns 0..len range */
 
 /* Lambda value: function pointer + heap-alloc'd capture environment.
  * The codegen emits `fn` as the lifted-body symbol's address and

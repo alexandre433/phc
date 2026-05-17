@@ -975,21 +975,33 @@ impl<'a> Emitter<'a> {
                 self.buf.push_str(&format!("{pad}}}\n"));
             }
             Stmt::For(f) => {
-                // v0a: only iterating a `list<T>` is supported.
-                // The element binding is materialised inside the
-                // loop body so its scope and span match the parser.
+                // D-039: branch on iterable type — set<string> or list<T>.
+                let iter_span = span_of_expr(&f.iter);
+                let is_set = matches!(
+                    self.typed.expr_types.get(&iter_span),
+                    Some(Ty::Path { path, .. }) if path.len() == 1 && path[0] == "set"
+                );
                 let iter_c = self.emit_expr(&f.iter);
-                let elem_ty = lower_for_elem_ty(&f.elem_ty);
-                let elem_member = self.payload_member(&elem_ty);
-                let elem_c_ty = self.c_type_for(&f.elem_ty);
                 let elem_name = mangle(&f.elem_name.name);
                 let lo = f.span.lo;
-                self.buf.push_str(&format!(
-                    "{pad}{{ phc_list __phc_iter_{lo} = {iter_c}; for (int64_t __phc_i_{lo} = 0; __phc_i_{lo} < phc_list_len(__phc_iter_{lo}); ++__phc_i_{lo}) {{\n"
-                ));
-                self.buf.push_str(&format!(
-                    "{pad}    {elem_c_ty} phc_var_{elem_name} = phc_list_at(__phc_iter_{lo}, __phc_i_{lo}).{elem_member};\n"
-                ));
+                if is_set {
+                    self.buf.push_str(&format!(
+                        "{pad}{{ phc_set __phc_iter_{lo} = {iter_c}; for (int64_t __phc_i_{lo} = 0; __phc_i_{lo} < phc_set_len(__phc_iter_{lo}); ++__phc_i_{lo}) {{\n"
+                    ));
+                    self.buf.push_str(&format!(
+                        "{pad}    phc_string phc_var_{elem_name} = phc_set_at(__phc_iter_{lo}, __phc_i_{lo});\n"
+                    ));
+                } else {
+                    let elem_ty = lower_for_elem_ty(&f.elem_ty);
+                    let elem_member = self.payload_member(&elem_ty);
+                    let elem_c_ty = self.c_type_for(&f.elem_ty);
+                    self.buf.push_str(&format!(
+                        "{pad}{{ phc_list __phc_iter_{lo} = {iter_c}; for (int64_t __phc_i_{lo} = 0; __phc_i_{lo} < phc_list_len(__phc_iter_{lo}); ++__phc_i_{lo}) {{\n"
+                    ));
+                    self.buf.push_str(&format!(
+                        "{pad}    {elem_c_ty} phc_var_{elem_name} = phc_list_at(__phc_iter_{lo}, __phc_i_{lo}).{elem_member};\n"
+                    ));
+                }
                 for inner in &f.body.statements {
                     self.emit_stmt(inner, indent + 1);
                 }
@@ -1704,6 +1716,12 @@ impl<'a> Emitter<'a> {
         args: &[Expr],
         value_ty: &Ty,
     ) -> Option<String> {
+        match (method, args.len()) {
+            // D-039: snapshot iteration helpers — no recv_c needed at top level.
+            ("keys", 0) => return Some(self.emit_map_keys(receiver)),
+            ("values", 0) => return Some(self.emit_map_values(receiver, value_ty)),
+            _ => {}
+        }
         let recv_c = self.emit_expr(receiver);
         match (method, args.len()) {
             ("len", 0) => Some(format!("phc_map_len({recv_c})")),
@@ -1725,6 +1743,23 @@ impl<'a> Emitter<'a> {
             }
             _ => None,
         }
+    }
+
+    fn emit_map_keys(&mut self, receiver: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_map __m_{lo} = {recv_c}; phc_list __ks_{lo} = phc_list_new(); int64_t __mlen_{lo} = phc_map_len(__m_{lo}); for (int64_t __mi_{lo} = 0; __mi_{lo} < __mlen_{lo}; ++__mi_{lo}) {{ phc_list_push(__ks_{lo}, (phc_payload){{.s = phc_map_key_at(__m_{lo}, __mi_{lo})}}); }} __ks_{lo}; }})"
+        )
+    }
+
+    fn emit_map_values(&mut self, receiver: &Expr, _value_ty: &Ty) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let lo = span_of_expr(receiver).lo;
+        // phc_map_val_at already returns phc_payload; push directly.
+        format!(
+            "({{ phc_map __m_{lo} = {recv_c}; phc_list __vs_{lo} = phc_list_new(); int64_t __mlen_{lo} = phc_map_len(__m_{lo}); for (int64_t __mi_{lo} = 0; __mi_{lo} < __mlen_{lo}; ++__mi_{lo}) {{ phc_list_push(__vs_{lo}, phc_map_val_at(__m_{lo}, __mi_{lo})); }} __vs_{lo}; }})"
+        )
     }
 
     /// Emit a stdlib `result<T, E>` or `option<T>` method call

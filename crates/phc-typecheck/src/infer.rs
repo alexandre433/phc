@@ -590,6 +590,20 @@ fn stdlib_method_return_ty(
                         nullable: false,
                     })
                 }
+                // D-039: map iteration helpers.
+                ("map", "keys") => Some(Ty::Path {
+                    path: vec!["list".to_string()],
+                    args: vec![Ty::Primitive(crate::Primitive::String)],
+                    nullable: false,
+                }),
+                ("map", "values") => {
+                    let v = args.get(1).cloned().unwrap_or(Ty::Unknown);
+                    Some(Ty::Path {
+                        path: vec!["list".to_string()],
+                        args: vec![v],
+                        nullable: false,
+                    })
+                }
                 // D-031: set<string> methods.
                 ("set", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("set", "add") | ("set", "has") | ("set", "remove") => {
