@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-//! Tests for the D-036 v0a lint ruleset.
+//! Tests for the D-036 v0a + D-036b lint ruleset.
 
 use crate::lint_source;
 
@@ -109,6 +109,139 @@ public class User { construct() {} }
     assert!(
         report.warnings.is_empty(),
         "expected no warnings, got {:?}",
+        report.warnings
+    );
+}
+
+// ===== shadow_local tests =====
+
+#[test]
+fn shadow_local_is_warned() {
+    let src = r#"pack demo;
+function main(): void {
+    int $x = 1;
+    if (true) {
+        int $x = 2;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.setup_errors.is_empty(),
+        "setup errors: {:?}",
+        report.setup_errors
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("local '$x' shadows an outer binding")),
+        "expected shadow warning, got {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn shadow_local_different_names_are_clean() {
+    let src = r#"pack demo;
+function main(): void {
+    int $x = 1;
+    if (true) {
+        int $y = 2;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.setup_errors.is_empty(),
+        "setup errors: {:?}",
+        report.setup_errors
+    );
+    // shadow_local should not fire; dead_branch may fire for literal `true`
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("shadows an outer binding")),
+        "unexpected shadow warning, got {:?}",
+        report.warnings
+    );
+}
+
+// ===== dead_branch tests =====
+
+#[test]
+fn dead_branch_true_condition_is_warned() {
+    let src = r#"pack demo;
+function main(): void {
+    if (true) {
+        int $x = 1;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.setup_errors.is_empty(),
+        "setup errors: {:?}",
+        report.setup_errors
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("if condition is always true")),
+        "expected dead_branch warning, got {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn dead_branch_false_condition_is_warned() {
+    let src = r#"pack demo;
+function main(): void {
+    if (false) {
+        int $x = 1;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.setup_errors.is_empty(),
+        "setup errors: {:?}",
+        report.setup_errors
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("if condition is always false")),
+        "expected dead_branch warning, got {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn dead_branch_dynamic_condition_is_clean() {
+    let src = r#"pack demo;
+function main(): void {
+    int $x = 0;
+    if ($x > 0) {
+        int $y = 1;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.setup_errors.is_empty(),
+        "setup errors: {:?}",
+        report.setup_errors
+    );
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("always true") || d.message.contains("always false")),
+        "unexpected dead_branch warning, got {:?}",
         report.warnings
     );
 }
