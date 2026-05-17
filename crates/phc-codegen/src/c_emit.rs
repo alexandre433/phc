@@ -1686,6 +1686,11 @@ impl<'a> Emitter<'a> {
         method: &str,
         args: &[Expr],
     ) -> Option<String> {
+        // D-040: forEach needs the receiver Expr (for span + emit); handle
+        // before computing recv_c to avoid a double-emit of the receiver.
+        if let ("forEach", 1) = (method, args.len()) {
+            return Some(self.emit_set_for_each(receiver, &args[0]));
+        }
         let recv_c = self.emit_expr(receiver);
         match (method, args.len()) {
             ("len", 0) => Some(format!("phc_set_len({recv_c})")),
@@ -1705,6 +1710,17 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// D-040: emit `set<string>->forEach(cb)`. Same stmt-expr pattern as
+    /// map forEach; uses D-039 `phc_set_at` for element access.
+    fn emit_set_for_each(&mut self, receiver: &Expr, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_set __s_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __slen_{lo} = phc_set_len(__s_{lo}); for (int64_t __si_{lo} = 0; __si_{lo} < __slen_{lo}; ++__si_{lo}) {{ ((void(*)(void*, phc_string))(__cb_{lo}.fn))(__cb_{lo}.env, phc_set_at(__s_{lo}, __si_{lo})); }} (void)0; }})"
+        )
+    }
+
     /// Emit a stdlib `map<string, V>` method call (D-028). v0a
     /// requires string keys; `value_ty` (V) selects the payload
     /// union member at `set` and is unused at the runtime side for
@@ -1720,6 +1736,8 @@ impl<'a> Emitter<'a> {
             // D-039: snapshot iteration helpers — no recv_c needed at top level.
             ("keys", 0) => return Some(self.emit_map_keys(receiver)),
             ("values", 0) => return Some(self.emit_map_values(receiver, value_ty)),
+            // D-040: forEach — needs receiver Expr for span + lambda emit.
+            ("forEach", 1) => return Some(self.emit_map_for_each(receiver, value_ty, &args[0])),
             _ => {}
         }
         let recv_c = self.emit_expr(receiver);
@@ -1759,6 +1777,21 @@ impl<'a> Emitter<'a> {
         // phc_map_val_at already returns phc_payload; push directly.
         format!(
             "({{ phc_map __m_{lo} = {recv_c}; phc_list __vs_{lo} = phc_list_new(); int64_t __mlen_{lo} = phc_map_len(__m_{lo}); for (int64_t __mi_{lo} = 0; __mi_{lo} < __mlen_{lo}; ++__mi_{lo}) {{ phc_list_push(__vs_{lo}, phc_map_val_at(__m_{lo}, __mi_{lo})); }} __vs_{lo}; }})"
+        )
+    }
+
+    /// D-040: emit `map<string,V>->forEach(cb)`. Stmt-expr captures
+    /// the map pointer and lambda once, reads len once, then iterates
+    /// by index using D-039 helpers. Trailing `(void)0;` matches the
+    /// list forEach convention so the expr is valid in ExprStmt context.
+    fn emit_map_for_each(&mut self, receiver: &Expr, value_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let v_c = self.ty_to_c(value_ty);
+        let pm = self.payload_member(value_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_map __m_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __mlen_{lo} = phc_map_len(__m_{lo}); for (int64_t __mi_{lo} = 0; __mi_{lo} < __mlen_{lo}; ++__mi_{lo}) {{ ((void(*)(void*, phc_string, {v_c}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_map_key_at(__m_{lo}, __mi_{lo}), phc_map_val_at(__m_{lo}, __mi_{lo}).{pm}); }} (void)0; }})"
         )
     }
 

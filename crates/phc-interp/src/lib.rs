@@ -1327,6 +1327,16 @@ impl<'a> Interp<'a> {
                     Ok(Some(Value::Bool(false)))
                 }
             }
+            // D-040: forEach — snapshot keys then invoke lambda per element.
+            "forEach" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<String> = keys.borrow().clone();
+                for k in snapshot {
+                    self.invoke_lambda_with(&lam, vec![Value::String(k)])?;
+                }
+                Ok(Some(Value::Void))
+            }
             _ => Ok(None),
         }
     }
@@ -1410,6 +1420,16 @@ impl<'a> Interp<'a> {
                 let snapshot: Vec<Value> =
                     entries.borrow().iter().map(|(_, v)| v.clone()).collect();
                 Ok(Some(Value::List(Rc::new(RefCell::new(snapshot)))))
+            }
+            // D-040: forEach — snapshot entries then invoke lambda per pair.
+            "forEach" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<(String, Value)> = entries.borrow().clone();
+                for (k, v) in snapshot {
+                    self.invoke_lambda_with(&lam, vec![Value::String(k), v])?;
+                }
+                Ok(Some(Value::Void))
             }
             _ => Ok(None),
         }

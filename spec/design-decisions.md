@@ -122,11 +122,11 @@ Locked during Phase 6 stdlib build-out:
 21. D-026 — Result/Option ergonomic methods (locked 2026-05-16): `result` gets `isOk/isErr/unwrapOr`; `option` gets `isSome/isNone/unwrapOr/orElse`. Inline statement-expression lowering for `unwrapOr/orElse`; `map/andThen/unwrap/okOr` deferred (the closure forms wait on D-024).
 22. D-024 — Function type syntax (locked 2026-05-16): `fn(T1, T2, ...): R` heads a function type. `fn` reserved keyword. Additive AST (`fn_return: Option<Box<TypeRef>>`) lowered to `Ty::Path { path:["fn"], args:[R, P1, ...] }`; codegen maps to `phc_lambda`. Stored lambdas now legal: bind, pass, return. Generic fn-types and the `Ty::Function` enum refactor deferred.
 23. D-005 aliasing extension (locked 2026-05-16): within a single call's arg list, no two borrows of the same root binding may both be mutable, and a mutable borrow cannot coexist with any other borrow of the same root. Broader aliasing (across statements, through intermediate bindings) needs a full liveness pass and stays out of scope for v0.
-24. D-028 — `map<string, V>` collection v0a (locked 2026-05-16): `map()` ctor (V from binding annotation), `set/get/has/len` methods. String keys only; linear-scan storage. Reference semantics like list. `map` is a reserved name. Generic keys, hash storage, `remove` deferred. `keys()`/`values()` iteration shipped in D-039.
+24. D-028 — `map<string, V>` collection v0a (locked 2026-05-16): `map()` ctor (V from binding annotation), `set/get/has/len` methods. String keys only; linear-scan storage. Reference semantics like list. `map` is a reserved name. Generic keys, hash storage, `remove` deferred. `keys()`/`values()` iteration shipped in D-039. `forEach` shipped in D-040.
 25. D-021 v0a (Phase 9 MVP, 2026-05-16): `test "name" { ... }` blocks at file top-level are discovered by `phc-test` and run sequentially through the interpreter. Pass = body completes without runtime error; fail = any panic or `?` propagation. `phc test <file>` reports pass/fail counts and exits non-zero on any failure. Assertion helpers (`assertEq`, etc.), cross-file project discovery, filtering, and parallel execution deferred.
 26. D-029 — Result/Option closure methods (locked 2026-05-16): `result<T,E>` gets `map(fn(T):U)→result<U,E>`, `andThen(fn(T):result<U,E>)→result<U,E>`, `unwrap()→T` (panics on err). `option<T>` gets `map`, `andThen` (option-shaped), `okOr(E)→result<T,E>`, `unwrap()` (panics on none). Codegen lowers each to a stmt-expr that invokes the stored `phc_lambda` on the unwrapped payload and packs the result. Closure return type recovered from the arg's `fn(T):U` static type; typecheck lambda inference now also seeds lambda params and records `fn(...):R` on every lambda expression.
 27. D-030 — `list<T>` closure methods (locked 2026-05-16): `forEach(fn(T):void)→void`, `map(fn(T):U)→list<U>`, `filter(fn(T):bool)→list<T>`. Same stmt-expr + `phc_lambda` invocation pattern as D-029, looped over `phc_list_at`/`phc_list_push`. No new runtime functions.
-28. D-031 — `set<string>` collection v0a (locked 2026-05-16): `set()` ctor, `add(string)→bool` (true on insert, false if dup), `has(string)→bool`, `remove(string)→bool`, `len()→int`. String keys only; linear-scan storage parallel to map. Distinct `phc_set` C type. Generic keys / hash storage deferred. `for`-loop iteration shipped in D-039.
+28. D-031 — `set<string>` collection v0a (locked 2026-05-16): `set()` ctor, `add(string)→bool` (true on insert, false if dup), `has(string)→bool`, `remove(string)→bool`, `len()→int`. String keys only; linear-scan storage parallel to map. Distinct `phc_set` C type. Generic keys / hash storage deferred. `for`-loop iteration shipped in D-039. `forEach` shipped in D-040.
 29. D-032 — `io` stdlib namespace (locked 2026-05-16): `io::print/println/eprint/eprintln(string)→void` plus `io::readLine()→option<string>` (none on EOF). Reserved namespace; routed via the existing static-call dispatch (parallel to `Logger::info`). Compiled binaries hit real stdin/stdout/stderr via runtime helpers; interp routes prints into its captured stdout vec and stubs `readLine` to none. Logger::info retained as legacy alias for the existing example corpus.
 30. D-033 — `assert` test-helper namespace (locked 2026-05-16): `assert::eq(a, b)→void`, `assert::neq(a, b)→void`, `assert::isTrue(bool)→void`, `assert::isFalse(bool)→void`, `assert::fail(string)→void`. Failure raises a runtime panic, which `phc test` treats as the test's failure signal. Replaces the OOB-on-list hack the D-021 v0a tests used. Codegen picks the comparison shape (string vs everything-else) from the arg's static type.
 31. D-034 — numeric stdlib namespaces (locked 2026-05-16): `int::parse(string)→result<int, parseError>`, `int::min/max(int,int)→int`, `int::abs(int)→int`; `float::parse(string)→result<float, parseError>`, `float::min/max(float,float)→float`, `float::abs(float)→float`, `float::isNaN(float)→bool`. Replaces the ad-hoc `$str->toInt()` builtin for the parse case; `toInt` retained as legacy. Codegen routes via static-call dispatch to `phc_int_*` / `phc_float_*` runtime helpers.
@@ -135,6 +135,7 @@ Locked during Phase 6 stdlib build-out:
 34. D-037 — `list<T>` closure surface continues (locked 2026-05-16): `fold(U $init, fn(U, T): U) → U`, `any(fn(T): bool) → bool`, `all(fn(T): bool) → bool`, `find(fn(T): bool) → option<T>`. Same stmt-expr + `phc_lambda` cast pattern as D-030. `fold`'s `U` is recovered from `$init`'s static type. `reduce` (no-init fold) deferred until a clear use case picks the empty-list semantics.
 35. D-038 — `list<T>` reduce / findIndex (locked 2026-05-17): `reduce(fn(T, T): T) → option<T>` (empty list → `none`; non-empty → folds from first element); `findIndex(fn(T): bool) → option<int>` (first matching index or `none`). Both follow the D-030 stmt-expr + `phc_lambda` cast pattern. `partition` deferred pending tuple-return support.
 36. D-039 — map/set iteration (locked 2026-05-18): `map<string, V>` gains `keys() → list<string>` and `values() → list<V>` (insertion-order guaranteed; returned lists are snapshots). `set<string>` gains `for (string $x in $set)` iteration via the existing `Stmt::For` path (order stable unless `remove` was called). Runtime helpers `phc_map_key_at`, `phc_map_val_at`, `phc_set_at` added.
+37. D-040 — map/set forEach (locked 2026-05-18): `map<string,V>` gains `forEach(fn(string,V):void):void`; `set<string>` gains `forEach(fn(string):void):void`. Both follow the D-030 stmt-expr + `phc_lambda` cast pattern and use D-039 index helpers (`phc_map_key_at`/`phc_map_val_at`, `phc_set_at`). Insertion-order traversal; live-snapshot semantics (len read once at loop start).
 
 ---
 
@@ -1405,5 +1406,57 @@ Locked during Phase 6 stdlib build-out:
   increments on existing D-027/D-028/D-031 wiring.
 - **Date**: 2026-05-18.
 - **Status**: locked for v0a surface. `entries()`, generic-key
-  iteration, `forEach` on map/set, and set operations
-  (`union`/`intersect`/`difference`) tracked separately.
+  iteration, and set operations (`union`/`intersect`/`difference`)
+  tracked separately. `forEach` on map/set shipped in D-040.
+
+### D-040 — map/set forEach (v0a)
+- **Decision**: Adds closure-based iteration to `map<string, V>` and
+  `set<string>`, complementing the D-039 `keys()`/`values()` snapshot
+  helpers and `for`-loop support.
+
+  **`map<string, V>` — forEach**
+
+  | Method | Signature | Notes |
+  |--------|-----------|-------|
+  | `forEach` | `forEach(fn(string, V): void): void` | Calls the lambda once per entry in insertion order, passing (key, value). |
+
+  Lambda C signature: `void(*)(void*, phc_string, <V-ctype>)`. Codegen
+  emits a GCC stmt-expr that captures the map pointer once, reads `len`
+  once at loop start, then iterates by index using `phc_map_key_at` /
+  `phc_map_val_at` (D-039). The payload union member is selected from
+  `V`'s static type, matching the existing `payload_member` helper.
+
+  **`set<string>` — forEach**
+
+  | Method | Signature | Notes |
+  |--------|-----------|-------|
+  | `forEach` | `forEach(fn(string): void): void` | Calls the lambda once per element in storage order, passing the element string. |
+
+  Lambda C signature: `void(*)(void*, phc_string)`. Same stmt-expr
+  pattern; uses `phc_set_at` (D-039) for index access.
+
+  **Interpreter**
+
+  Both methods snapshot the backing collection (map entries or set keys)
+  before iterating, then call `invoke_lambda_with` per entry. Snapshot
+  avoids iterator-invalidation if the lambda mutates the collection.
+
+  **Live-snapshot semantics**
+
+  `len` is read once at stmt-expr entry; mutations to the collection
+  inside the lambda body do not affect iteration (snapshot semantics
+  for the interpreter; live-but-fixed-len for codegen). Consistent with
+  D-030 list forEach.
+
+- **Alternatives considered**: re-using `keys()`/`values()` + list
+  forEach — requires allocating two temporary lists; forEach avoids
+  that allocation. Mutable closure captures — copy-by-value capture
+  semantics mean mutations to scalar locals captured by a lambda do not
+  propagate back; callers should use reference-semantic collections
+  (list/map/set) as accumulators when side-effects are needed.
+- **Rationale**: Closes the most common iteration gap (callbacks over
+  each map entry / set element) without new syntax or runtime types.
+  Follows the established D-030 stmt-expr + phc_lambda pattern; no new
+  runtime functions required beyond the D-039 index helpers.
+- **Date**: 2026-05-18.
+- **Status**: locked for v0a surface.

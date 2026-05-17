@@ -1573,3 +1573,81 @@ function main(): void {
         "stdout: {stdout:?}"
     );
 }
+
+/// Build + run D-040 map/set forEach. Verifies the stmt-expr +
+/// phc_lambda pattern works for map (key+value lambda) and set
+/// (element lambda). Uses reference-semantic list accumulators
+/// to avoid copy-by-value capture limitations on scalar locals.
+#[test]
+fn build_and_run_map_set_foreach_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_map_set_foreach_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    // map forEach: collect keys and values via side-effects.
+    map<string, int> $m = map();
+    $m->set("a", 1);
+    $m->set("b", 2);
+    $m->set("c", 3);
+
+    list<string> $ks = list();
+    list<int> $vs = list();
+    $m->forEach((string $k, int $v): void => {
+        $ks->push($k);
+        $vs->push($v);
+    });
+    assert::eq($ks->len(), 3);
+    assert::eq($vs->len(), 3);
+    assert::eq($ks->at(0), "a");
+    assert::eq($vs->at(0), 1);
+
+    // set forEach: accumulate elements using a list.
+    set<string> $s = set();
+    $s->add("x");
+    $s->add("y");
+    list<string> $els = list();
+    $s->forEach((string $el): void => {
+        $els->push($el);
+    });
+    assert::eq($els->len(), 2);
+
+    // empty map/set: forEach body never runs.
+    map<string, int> $em = map();
+    list<string> $empty_ks = list();
+    $em->forEach((string $k, int $v): void => { $empty_ks->push($k); });
+    assert::eq($empty_ks->len(), 0);
+
+    set<string> $es = set();
+    list<string> $empty_els = list();
+    $es->forEach((string $el): void => { $empty_els->push($el); });
+    assert::eq($empty_els->len(), 0);
+
+    io::println("map-set-foreach ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("map_set_foreach_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("map_set_foreach_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "map-set-foreach binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("map-set-foreach ok"), "stdout: {stdout:?}");
+}

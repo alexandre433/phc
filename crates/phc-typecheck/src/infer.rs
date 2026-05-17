@@ -604,11 +604,15 @@ fn stdlib_method_return_ty(
                         nullable: false,
                     })
                 }
+                // D-040: map forEach.
+                ("map", "forEach") => Some(Ty::Primitive(crate::Primitive::Void)),
                 // D-031: set<string> methods.
                 ("set", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("set", "add") | ("set", "has") | ("set", "remove") => {
                     Some(Ty::Primitive(crate::Primitive::Bool))
                 }
+                // D-040: set forEach.
+                ("set", "forEach") => Some(Ty::Primitive(crate::Primitive::Void)),
                 ("result", "isOk") | ("result", "isErr") => {
                     Some(Ty::Primitive(crate::Primitive::Bool))
                 }
