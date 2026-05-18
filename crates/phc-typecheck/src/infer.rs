@@ -580,6 +580,9 @@ fn stdlib_method_return_ty(
                 }),
                 // D-043: take / drop → list<T>.
                 ("list", "take") | ("list", "drop") => Some(recv_ty.clone()),
+                // D-044: reverse / concat → list<T>; join → string.
+                ("list", "reverse") | ("list", "concat") => Some(recv_ty.clone()),
+                ("list", "join") => Some(Ty::Primitive(crate::Primitive::String)),
                 ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
                 ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),

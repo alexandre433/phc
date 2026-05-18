@@ -1809,3 +1809,69 @@ function main(): void {
         "stdout: {stdout:?}"
     );
 }
+
+#[test]
+fn build_and_run_list_reverse_concat_join_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_list_reverse_concat_join_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+
+    list<int> $rev = $xs->reverse();
+    assert::eq($rev->len(), 3);
+    assert::eq($rev->at(0), 3);
+    assert::eq($rev->at(2), 1);
+
+    list<int> $ys = list();
+    $ys->push(4);
+    $ys->push(5);
+    list<int> $cat = $xs->concat($ys);
+    assert::eq($cat->len(), 5);
+    assert::eq($cat->at(0), 1);
+    assert::eq($cat->at(4), 5);
+
+    list<string> $words = list();
+    $words->push("hello");
+    $words->push("world");
+    string $joined = $words->join(" ");
+    assert::eq($joined, "hello world");
+
+    list<string> $empty = list();
+    assert::eq($empty->join(","), "");
+
+    io::println("reverse/concat/join codegen ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("list_reverse_concat_join_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("list_reverse_concat_join_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "list reverse/concat/join binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(
+        stdout.contains("reverse/concat/join codegen ok"),
+        "stdout: {stdout:?}"
+    );
+}

@@ -2035,6 +2035,10 @@ impl<'a> Emitter<'a> {
             // D-043: take / drop — index-arithmetic slices, no closure.
             ("take", 1) => Some(self.emit_list_take(receiver, elem_ty, &args[0])),
             ("drop", 1) => Some(self.emit_list_drop(receiver, elem_ty, &args[0])),
+            // D-044: reverse / concat / join.
+            ("reverse", 0) => Some(self.emit_list_reverse(receiver, elem_ty)),
+            ("concat", 1) => Some(self.emit_list_concat(receiver, elem_ty, &args[0])),
+            ("join", 1) => Some(self.emit_list_join(receiver, &args[0])),
             _ => None,
         }
     }
@@ -2188,6 +2192,52 @@ impl<'a> Emitter<'a> {
              for (int64_t __i_{lo} = __n_{lo}; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ \
                phc_list_push(__out_{lo}, phc_list_at(__xs_{lo}, __i_{lo})); \
              }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_reverse(&mut self, receiver: &Expr, _elem_ty: &Ty) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; \
+             int64_t __len_{lo} = phc_list_len(__xs_{lo}); \
+             phc_list __out_{lo} = phc_list_new(); \
+             for (int64_t __i_{lo} = __len_{lo} - 1; __i_{lo} >= 0; --__i_{lo}) {{ \
+               phc_list_push(__out_{lo}, phc_list_at(__xs_{lo}, __i_{lo})); \
+             }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_concat(&mut self, receiver: &Expr, _elem_ty: &Ty, other: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let other_c = self.emit_expr(other);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_list __ys_{lo} = {other_c}; \
+             int64_t __xlen_{lo} = phc_list_len(__xs_{lo}); \
+             int64_t __ylen_{lo} = phc_list_len(__ys_{lo}); \
+             phc_list __out_{lo} = phc_list_new(); \
+             for (int64_t __i_{lo} = 0; __i_{lo} < __xlen_{lo}; ++__i_{lo}) {{ \
+               phc_list_push(__out_{lo}, phc_list_at(__xs_{lo}, __i_{lo})); \
+             }} \
+             for (int64_t __i_{lo} = 0; __i_{lo} < __ylen_{lo}; ++__i_{lo}) {{ \
+               phc_list_push(__out_{lo}, phc_list_at(__ys_{lo}, __i_{lo})); \
+             }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_join(&mut self, receiver: &Expr, sep: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let sep_c = self.emit_expr(sep);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_string __sep_{lo} = {sep_c}; \
+             int64_t __len_{lo} = phc_list_len(__xs_{lo}); \
+             phc_string __acc_{lo} = phc_string_lit(\"\"); \
+             for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ \
+               if (__i_{lo} > 0) __acc_{lo} = phc_concat2(__acc_{lo}, __sep_{lo}); \
+               __acc_{lo} = phc_concat2(__acc_{lo}, phc_list_at(__xs_{lo}, __i_{lo}).s); \
+             }} __acc_{lo}; }})"
         )
     }
 

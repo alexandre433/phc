@@ -1264,3 +1264,72 @@ function main(): void {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["compose ok".to_string()]);
 }
+
+#[test]
+fn d044_reverse_reverses_list() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+    list<int> $r = $xs->reverse();
+    assert::eq($r->len(), 3);
+    assert::eq($r->at(0), 3);
+    assert::eq($r->at(2), 1);
+    list<int> $empty = list();
+    assert::eq($empty->reverse()->len(), 0);
+    io::println("reverse ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["reverse ok".to_string()]);
+}
+
+#[test]
+fn d044_concat_appends_lists() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    list<int> $ys = list();
+    $ys->push(3);
+    $ys->push(4);
+    list<int> $z = $xs->concat($ys);
+    assert::eq($z->len(), 4);
+    assert::eq($z->at(0), 1);
+    assert::eq($z->at(3), 4);
+    // sources unchanged
+    assert::eq($xs->len(), 2);
+    assert::eq($ys->len(), 2);
+    io::println("concat ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["concat ok".to_string()]);
+}
+
+#[test]
+fn d044_join_concatenates_strings_with_separator() {
+    let src = r#"pack demo;
+function main(): void {
+    list<string> $xs = list();
+    $xs->push("a");
+    $xs->push("b");
+    $xs->push("c");
+    string $r = $xs->join(", ");
+    assert::eq($r, "a, b, c");
+    string $r2 = $xs->join("");
+    assert::eq($r2, "abc");
+    list<string> $empty = list();
+    assert::eq($empty->join("-"), "");
+    io::println("join ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["join ok".to_string()]);
+}

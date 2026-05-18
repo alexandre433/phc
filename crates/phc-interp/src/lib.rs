@@ -1893,6 +1893,54 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::OptionNone))
             }
+            // D-044: reverse / concat / join.
+            "reverse" => {
+                arity_check(0)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let out: Vec<Value> = snapshot.into_iter().rev().collect();
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
+            "concat" => {
+                arity_check(1)?;
+                let other = match self.eval_expr(&args[0], env)? {
+                    Value::List(l) => l,
+                    other => {
+                        return Err(rt(format!(
+                            "list `concat` expects list, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let mut out: Vec<Value> = items.borrow().clone();
+                out.extend(other.borrow().clone());
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
+            "join" => {
+                arity_check(1)?;
+                let sep = match self.eval_expr(&args[0], env)? {
+                    Value::String(s) => s,
+                    other => {
+                        return Err(rt(format!(
+                            "list `join` separator must be string, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let mut parts: Vec<String> = Vec::with_capacity(snapshot.len());
+                for v in snapshot {
+                    match v {
+                        Value::String(s) => parts.push(s),
+                        other => {
+                            return Err(rt(format!(
+                                "list `join` element must be string, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::String(parts.join(&sep))))
+            }
             // D-043: take / drop — index-arithmetic slices.
             "take" => {
                 arity_check(1)?;

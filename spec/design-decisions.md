@@ -139,6 +139,7 @@ Locked during Phase 6 stdlib build-out:
 38. D-041 — `assert::approxEq` + `assert::throws` (locked 2026-05-18): `assert::approxEq(float, float):void` checks `|a-b| < 1e-9`; `assert::throws(fn():void):void` runs the lambda and passes iff a panic occurs (interpreter only; compiled mode emits a diagnostic + runtime panic). Both integrate into the existing D-033 static-call dispatch.
 39. D-042 — `toString()` magic method / display (locked 2026-05-18): any class with `public function toString(): string` participates in string interpolation and `assert::eq` display. No trait declaration required. Interp checks for the method at runtime; codegen emits `phc_method_{Class}_toString(recv)` when the receiver's static type is a known class. Fallback to default display if method absent.
 40. D-043 — `list<T>` take / drop (locked 2026-05-18): `take(n: int): list<T>` returns first `n` elements (clamped to `[0, len]`); `drop(n: int): list<T>` returns all but the first `n` elements (clamped to `[0, len]`). Both return a new list; the source is not mutated. No new runtime primitives — implemented via `phc_list_new` + `phc_list_push` loop using existing index helpers.
+41. D-044 — `list<T>` reverse / concat / join (locked 2026-05-18): `reverse(): list<T>` returns elements in reversed order; `concat(list<T>): list<T>` appends a second list; `join(string): string` concatenates `list<string>` elements with a separator (caller's responsibility to use only on `list<string>`). All return new values; sources not mutated. No new runtime primitives.
 
 ---
 
@@ -1561,3 +1562,34 @@ Locked during Phase 6 stdlib build-out:
 - **Date**: 2026-05-18.
 - **Status**: locked. `zip`/`unzip`/`partition` tracked separately
   (need tuple return type).
+
+### D-044 — `list<T>` reverse / concat / join (v0a)
+- **Decision**: Adds three more `list<T>` methods.
+
+  | Method | Signature | Semantics |
+  |--------|-----------|-----------|
+  | `reverse` | `(): list<T>` | New list with elements in reverse order. |
+  | `concat` | `(list<T>): list<T>` | New list: all elements of receiver then all of argument. |
+  | `join` | `(string): string` | `list<string>` only — concatenate with separator between elements. |
+
+  All return new values. Source lists are not mutated (reference semantics,
+  D-027 carve-out: element handles are shared).
+
+  `join` is typed as `string` regardless of element type; the type system
+  does not enforce `T = string` in v0 (no type-class constraint). Caller
+  responsibility. Codegen and interp emit/evaluate correctly when elements
+  are strings; behaviour with other element types is undefined.
+
+  No new runtime primitives. Codegen uses `phc_list_new` + `phc_list_push`
+  (reverse/concat) and `phc_concat2` in a loop (join).
+
+- **Alternatives considered**: `+` operator for concat (deferred — operator
+  overloading not yet specced); `separator.join(list)` receiver style
+  (less PHP-familiar); enforcing `T = string` for `join` via a type bound
+  (deferred with generic-key map and display trait).
+- **Rationale**: These three cover the most common list assembly patterns
+  without requiring new runtime code or language features. `join` in
+  particular is needed for any formatting or output loop.
+- **Date**: 2026-05-18.
+- **Status**: locked for v0a. `sort`, `zip`/`unzip`, `partition` tracked
+  separately.
