@@ -1228,18 +1228,29 @@ impl<'a> Emitter<'a> {
         if parts.is_empty() {
             return "phc_string_lit(\"\")".to_string();
         }
-        let pieces: Vec<String> = parts
-            .iter()
-            .map(|p| match p {
+        let mut pieces: Vec<String> = Vec::with_capacity(parts.len());
+        for p in parts {
+            let piece = match p {
                 StrPart::Text(t) => format!("phc_string_lit({})", c_string_lit(t)),
-                StrPart::Expr(e) => format!("phc_to_string({})", self.emit_expr(e)),
-            })
-            .collect();
+                StrPart::Expr(e) => self.emit_str_interp_expr(e),
+            };
+            pieces.push(piece);
+        }
         let mut acc = pieces[0].clone();
         for piece in pieces.iter().skip(1) {
             acc = format!("phc_concat2({acc}, {piece})");
         }
         acc
+    }
+
+    /// D-042: emit one interpolated expression part. User class
+    /// instances call `toString()`; everything else uses `phc_to_string`.
+    fn emit_str_interp_expr(&mut self, e: &Expr) -> String {
+        if let Some(cls) = self.class_of_expr(e) {
+            let recv_c = self.emit_expr(e);
+            return format!("phc_method_{cls}_toString({recv_c})");
+        }
+        format!("phc_to_string({})", self.emit_expr(e))
     }
 
     fn emit_call(&mut self, callee: &Expr, args: &[Expr]) -> String {

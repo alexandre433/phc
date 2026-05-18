@@ -1145,3 +1145,47 @@ function main(): void {
         out.errors
     );
 }
+
+#[test]
+fn d042_tostring_used_in_string_interpolation() {
+    let src = r#"pack demo;
+
+public class Point {
+    construct(public int $x, public int $y) {}
+    public function toString(): string {
+        return "({$this->x}, {$this->y})";
+    }
+}
+
+function main(): void {
+    Point $p = Point(3, 4);
+    string $s = "point is {$p}";
+    assert::eq($s, "point is (3, 4)");
+    io::println("toString ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["toString ok".to_string()]);
+}
+
+#[test]
+fn d042_class_without_tostring_falls_back_to_default_display() {
+    let src = r#"pack demo;
+
+public class Bare {
+    construct(public int $x) {}
+}
+
+function main(): void {
+    Bare $b = Bare(7);
+    string $s = "val is {$b}";
+    // No toString — falls back to "<Bare instance>".
+    assert::eq($s, "val is <Bare instance>");
+    io::println("fallback ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["fallback ok".to_string()]);
+}

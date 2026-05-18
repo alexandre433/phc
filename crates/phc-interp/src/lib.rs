@@ -741,11 +741,35 @@ impl<'a> Interp<'a> {
                 StrPart::Text(t) => buf.push_str(t),
                 StrPart::Expr(e) => {
                     let v = self.eval_expr(e, env)?;
-                    buf.push_str(&v.display());
+                    let s = self.value_to_display_string(v, env)?;
+                    buf.push_str(&s);
                 }
             }
         }
         Ok(Value::String(buf))
+    }
+
+    /// D-042: convert a value to its display string. User class
+    /// instances with a `toString()` method use it; all others fall
+    /// back to `Value::display()`.
+    fn value_to_display_string(&mut self, v: Value, env: &mut Env) -> EvalResult<String> {
+        if let Value::Instance { class, .. } = &v {
+            let class_name = class.clone();
+            let has_to_string = find_class(self.file, &class_name)
+                .map(|c| {
+                    find_method_in_class(c, "toString").is_some()
+                        || find_method_in_traits(self.file, c, "toString").is_some()
+                })
+                .unwrap_or(false);
+            if has_to_string {
+                let result = self.invoke_method(v, "toString", &[], env)?;
+                return match result {
+                    Value::String(s) => Ok(s),
+                    other => Ok(other.display()),
+                };
+            }
+        }
+        Ok(v.display())
     }
 
     fn eval_call(&mut self, callee: &Expr, args: &[Expr], env: &mut Env) -> EvalResult<Value> {

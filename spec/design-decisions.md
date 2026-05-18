@@ -137,6 +137,7 @@ Locked during Phase 6 stdlib build-out:
 36. D-039 — map/set iteration (locked 2026-05-18): `map<string, V>` gains `keys() → list<string>` and `values() → list<V>` (insertion-order guaranteed; returned lists are snapshots). `set<string>` gains `for (string $x in $set)` iteration via the existing `Stmt::For` path (order stable unless `remove` was called). Runtime helpers `phc_map_key_at`, `phc_map_val_at`, `phc_set_at` added.
 37. D-040 — map/set forEach (locked 2026-05-18): `map<string,V>` gains `forEach(fn(string,V):void):void`; `set<string>` gains `forEach(fn(string):void):void`. Both follow the D-030 stmt-expr + `phc_lambda` cast pattern and use D-039 index helpers (`phc_map_key_at`/`phc_map_val_at`, `phc_set_at`). Insertion-order traversal; live-snapshot semantics (len read once at loop start).
 38. D-041 — `assert::approxEq` + `assert::throws` (locked 2026-05-18): `assert::approxEq(float, float):void` checks `|a-b| < 1e-9`; `assert::throws(fn():void):void` runs the lambda and passes iff a panic occurs (interpreter only; compiled mode emits a diagnostic + runtime panic). Both integrate into the existing D-033 static-call dispatch.
+39. D-042 — `toString()` magic method / display (locked 2026-05-18): any class with `public function toString(): string` participates in string interpolation and `assert::eq` display. No trait declaration required. Interp checks for the method at runtime; codegen emits `phc_method_{Class}_toString(recv)` when the receiver's static type is a known class. Fallback to default display if method absent.
 
 ---
 
@@ -1495,3 +1496,39 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0a surface. Configurable epsilon,
   message-carrying variants, and codegen `throws` tracked
   separately.
+
+### D-042 — `toString()` magic method / display (v0a)
+- **Decision**: Any class may declare
+  `public function toString(): string` to opt into string
+  interpolation and debug display. No formal trait declaration
+  or `implements` clause is required; the method is resolved at
+  call sites by name.
+
+  - **String interpolation** (`"{$obj}"`, `"{$this->field}"`):
+    when the interpolated expression's static type is a known
+    user class, codegen emits `phc_method_{Class}_toString(recv)`
+    in place of `phc_to_string(recv)`. The interpreter checks for
+    the method at runtime and calls it if present; falls back to
+    `<ClassName instance>` if absent.
+  - **`assert::eq` / `neq`** display in failure messages: existing
+    `Value::display()` is not changed; the test message prints the
+    class name as before. Improving failure output is a follow-up.
+
+  No new reserved keyword or trait shape is introduced. The method
+  name `toString` is a convention, not a language keyword; a user
+  class may also call it directly (`$obj->toString()`).
+
+- **Alternatives considered**: formal `display` trait with
+  `implements display` (adds trait-bound resolution not yet
+  specced); `to_string` snake_case (inconsistent with other
+  camelCase stdlib method names); `__toString` PHP-style dunder
+  (no dunder convention in PHC v0).
+- **Rationale**: The magic-method approach delivers the feature
+  end-to-end without touching the trait system. It matches PHP
+  muscle-memory (`__toString` → `toString`) and is easy to
+  promote to a formal trait in a later slice once trait bounds
+  are specced.
+- **Date**: 2026-05-18.
+- **Status**: locked for v0a surface. Formal `display` trait,
+  `assert::eq` failure display improvements, and `toString` on
+  primitive wrappers tracked separately.
