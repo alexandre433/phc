@@ -138,6 +138,7 @@ Locked during Phase 6 stdlib build-out:
 37. D-040 — map/set forEach (locked 2026-05-18): `map<string,V>` gains `forEach(fn(string,V):void):void`; `set<string>` gains `forEach(fn(string):void):void`. Both follow the D-030 stmt-expr + `phc_lambda` cast pattern and use D-039 index helpers (`phc_map_key_at`/`phc_map_val_at`, `phc_set_at`). Insertion-order traversal; live-snapshot semantics (len read once at loop start).
 38. D-041 — `assert::approxEq` + `assert::throws` (locked 2026-05-18): `assert::approxEq(float, float):void` checks `|a-b| < 1e-9`; `assert::throws(fn():void):void` runs the lambda and passes iff a panic occurs (interpreter only; compiled mode emits a diagnostic + runtime panic). Both integrate into the existing D-033 static-call dispatch.
 39. D-042 — `toString()` magic method / display (locked 2026-05-18): any class with `public function toString(): string` participates in string interpolation and `assert::eq` display. No trait declaration required. Interp checks for the method at runtime; codegen emits `phc_method_{Class}_toString(recv)` when the receiver's static type is a known class. Fallback to default display if method absent.
+40. D-043 — `list<T>` take / drop (locked 2026-05-18): `take(n: int): list<T>` returns first `n` elements (clamped to `[0, len]`); `drop(n: int): list<T>` returns all but the first `n` elements (clamped to `[0, len]`). Both return a new list; the source is not mutated. No new runtime primitives — implemented via `phc_list_new` + `phc_list_push` loop using existing index helpers.
 
 ---
 
@@ -1532,3 +1533,31 @@ Locked during Phase 6 stdlib build-out:
 - **Status**: locked for v0a surface. Formal `display` trait,
   `assert::eq` failure display improvements, and `toString` on
   primitive wrappers tracked separately.
+
+### D-043 — `list<T>` take / drop (v0a)
+- **Decision**: Adds two slicing methods to `list<T>`.
+
+  | Method | Signature | Semantics |
+  |--------|-----------|-----------|
+  | `take` | `(int): list<T>` | First `n` elements. `n ≤ 0` → empty list; `n ≥ len` → full copy. |
+  | `drop` | `(int): list<T>` | All but first `n` elements. `n ≤ 0` → full copy; `n ≥ len` → empty list. |
+
+  Both return a **new list**; the source list is not mutated.
+  Element references are shared (reference semantics, D-027 carve-out).
+
+  No new runtime primitives. Codegen builds the output list using
+  `phc_list_new` + `phc_list_push` with index arithmetic over
+  the existing `phc_list_at` / `phc_list_len` helpers. Follows
+  the same stmt-expr pattern as `filter`.
+
+- **Alternatives considered**: `slice(start, end)` unified form
+  (more flexible but more API surface; `take`/`drop` cover 95 % of
+  use cases and are familiar from functional languages); negative
+  indexing (deferred — complex with reference semantics and no
+  obvious need in v0).
+- **Rationale**: `take`/`drop` are the functional-stdlib primitives
+  most used in practice. They compose well with `filter`/`map`/
+  `find` without requiring tuple returns (unlike `partition`).
+- **Date**: 2026-05-18.
+- **Status**: locked. `zip`/`unzip`/`partition` tracked separately
+  (need tuple return type).

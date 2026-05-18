@@ -578,6 +578,8 @@ fn stdlib_method_return_ty(
                     args: vec![Ty::Primitive(crate::Primitive::Int)],
                     nullable: false,
                 }),
+                // D-043: take / drop → list<T>.
+                ("list", "take") | ("list", "drop") => Some(recv_ty.clone()),
                 ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
                 ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),

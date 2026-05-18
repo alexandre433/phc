@@ -1740,3 +1740,72 @@ function main(): void {
     let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
     assert!(stdout.contains("toString codegen ok"), "stdout: {stdout:?}");
 }
+
+#[test]
+fn build_and_run_list_take_drop_program() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_list_take_drop_program: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+    $xs->push(4);
+    $xs->push(5);
+
+    list<int> $front = $xs->take(3);
+    assert::eq($front->len(), 3);
+    assert::eq($front->at(0), 1);
+    assert::eq($front->at(2), 3);
+
+    list<int> $rest = $xs->drop(2);
+    assert::eq($rest->len(), 3);
+    assert::eq($rest->at(0), 3);
+
+    list<int> $mid = $xs->drop(1)->take(3);
+    assert::eq($mid->len(), 3);
+    assert::eq($mid->at(0), 2);
+    assert::eq($mid->at(2), 4);
+
+    list<int> $empty = $xs->take(0);
+    assert::eq($empty->len(), 0);
+    list<int> $all = $xs->drop(0);
+    assert::eq($all->len(), 5);
+    list<int> $clamp_hi = $xs->take(99);
+    assert::eq($clamp_hi->len(), 5);
+    list<int> $clamp_drop = $xs->drop(99);
+    assert::eq($clamp_drop->len(), 0);
+
+    io::println("take/drop codegen ok");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("list_take_drop_program.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("list_take_drop_program");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "list take/drop binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(
+        stdout.contains("take/drop codegen ok"),
+        "stdout: {stdout:?}"
+    );
+}

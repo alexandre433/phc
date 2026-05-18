@@ -1189,3 +1189,78 @@ function main(): void {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["fallback ok".to_string()]);
 }
+
+#[test]
+fn d043_take_returns_first_n_elements() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+    $xs->push(4);
+    $xs->push(5);
+    list<int> $t = $xs->take(3);
+    assert::eq($t->len(), 3);
+    assert::eq($t->at(0), 1);
+    assert::eq($t->at(2), 3);
+    list<int> $t0 = $xs->take(0);
+    assert::eq($t0->len(), 0);
+    list<int> $tall = $xs->take(99);
+    assert::eq($tall->len(), 5);
+    io::println("take ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["take ok".to_string()]);
+}
+
+#[test]
+fn d043_drop_returns_elements_after_n() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(10);
+    $xs->push(20);
+    $xs->push(30);
+    $xs->push(40);
+    $xs->push(50);
+    list<int> $d = $xs->drop(2);
+    assert::eq($d->len(), 3);
+    assert::eq($d->at(0), 30);
+    assert::eq($d->at(2), 50);
+    list<int> $dall = $xs->drop(0);
+    assert::eq($dall->len(), 5);
+    list<int> $dempty = $xs->drop(99);
+    assert::eq($dempty->len(), 0);
+    io::println("drop ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["drop ok".to_string()]);
+}
+
+#[test]
+fn d043_take_drop_compose() {
+    let src = r#"pack demo;
+function main(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    $xs->push(2);
+    $xs->push(3);
+    $xs->push(4);
+    $xs->push(5);
+    $xs->push(6);
+    list<int> $mid = $xs->drop(2)->take(2);
+    assert::eq($mid->len(), 2);
+    assert::eq($mid->at(0), 3);
+    assert::eq($mid->at(1), 4);
+    io::println("compose ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["compose ok".to_string()]);
+}

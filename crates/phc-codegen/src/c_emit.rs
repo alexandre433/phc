@@ -2032,6 +2032,9 @@ impl<'a> Emitter<'a> {
             // D-038 closure forms.
             ("reduce", 1) => Some(self.emit_list_reduce(receiver, elem_ty, &args[0])),
             ("findIndex", 1) => Some(self.emit_list_find_index(receiver, elem_ty, &args[0])),
+            // D-043: take / drop — index-arithmetic slices, no closure.
+            ("take", 1) => Some(self.emit_list_take(receiver, elem_ty, &args[0])),
+            ("drop", 1) => Some(self.emit_list_drop(receiver, elem_ty, &args[0])),
             _ => None,
         }
     }
@@ -2153,6 +2156,38 @@ impl<'a> Emitter<'a> {
         let lo = span_of_expr(receiver).lo;
         format!(
             "({{ phc_list __xs_{lo} = {recv_c}; phc_list __out_{lo} = phc_list_new(); phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ {c_t} __t_{lo} = phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}; if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __t_{lo})) {{ phc_list_push(__out_{lo}, (phc_payload){{.{pm_t} = __t_{lo}}}); }} }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_take(&mut self, receiver: &Expr, _elem_ty: &Ty, n_expr: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let n_c = self.emit_expr(n_expr);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; int64_t __n_{lo} = {n_c}; \
+             int64_t __len_{lo} = phc_list_len(__xs_{lo}); \
+             if (__n_{lo} < 0) __n_{lo} = 0; \
+             if (__n_{lo} > __len_{lo}) __n_{lo} = __len_{lo}; \
+             phc_list __out_{lo} = phc_list_new(); \
+             for (int64_t __i_{lo} = 0; __i_{lo} < __n_{lo}; ++__i_{lo}) {{ \
+               phc_list_push(__out_{lo}, phc_list_at(__xs_{lo}, __i_{lo})); \
+             }} __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_drop(&mut self, receiver: &Expr, _elem_ty: &Ty, n_expr: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let n_c = self.emit_expr(n_expr);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; int64_t __n_{lo} = {n_c}; \
+             int64_t __len_{lo} = phc_list_len(__xs_{lo}); \
+             if (__n_{lo} < 0) __n_{lo} = 0; \
+             if (__n_{lo} > __len_{lo}) __n_{lo} = __len_{lo}; \
+             phc_list __out_{lo} = phc_list_new(); \
+             for (int64_t __i_{lo} = __n_{lo}; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ \
+               phc_list_push(__out_{lo}, phc_list_at(__xs_{lo}, __i_{lo})); \
+             }} __out_{lo}; }})"
         )
     }
 

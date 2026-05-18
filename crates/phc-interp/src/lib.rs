@@ -1893,6 +1893,39 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::OptionNone))
             }
+            // D-043: take / drop — index-arithmetic slices.
+            "take" => {
+                arity_check(1)?;
+                let n = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "list `take` expects int, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let take = n.max(0).min(snapshot.len() as i64) as usize;
+                let out: Vec<Value> = snapshot.into_iter().take(take).collect();
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
+            "drop" => {
+                arity_check(1)?;
+                let n = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "list `drop` expects int, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let skip = n.max(0).min(snapshot.len() as i64) as usize;
+                let out: Vec<Value> = snapshot.into_iter().skip(skip).collect();
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
             _ => Ok(None),
         }
     }
