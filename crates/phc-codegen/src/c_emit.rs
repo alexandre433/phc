@@ -2041,6 +2041,8 @@ impl<'a> Emitter<'a> {
             ("join", 1) => Some(self.emit_list_join(receiver, &args[0])),
             // D-045: sort — insertion sort with closure comparator.
             ("sort", 1) => Some(self.emit_list_sort(receiver, elem_ty, &args[0])),
+            // D-046: flatMap — map to inner list then flatten.
+            ("flatMap", 1) => Some(self.emit_list_flat_map(receiver, elem_ty, &args[0])),
             _ => None,
         }
     }
@@ -2268,6 +2270,28 @@ impl<'a> Emitter<'a> {
                    phc_list_set(__out_{lo}, __j_{lo}, __tmp_{lo}); \
                    --__j_{lo}; \
                  }} else {{ break; }} \
+               }} \
+             }} \
+             __out_{lo}; }})"
+        )
+    }
+
+    fn emit_list_flat_map(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; \
+             int64_t __len_{lo} = phc_list_len(__xs_{lo}); \
+             phc_list __out_{lo} = phc_list_new(); \
+             for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ \
+               {c_t} __t_{lo} = phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}; \
+               phc_list __inner_{lo} = ((phc_list(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __t_{lo}); \
+               int64_t __ilen_{lo} = phc_list_len(__inner_{lo}); \
+               for (int64_t __j_{lo} = 0; __j_{lo} < __ilen_{lo}; ++__j_{lo}) {{ \
+                 phc_list_push(__out_{lo}, phc_list_at(__inner_{lo}, __j_{lo})); \
                }} \
              }} \
              __out_{lo}; }})"

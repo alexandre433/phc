@@ -585,6 +585,11 @@ fn stdlib_method_return_ty(
                 ("list", "join") => Some(Ty::Primitive(crate::Primitive::String)),
                 // D-045: sort(fn(T,T):int) → list<T>.
                 ("list", "sort") => Some(recv_ty.clone()),
+                // D-046: flatMap(fn(T): list<U>) → list<U>.
+                ("list", "flatMap") => {
+                    // lambda returns list<U>; that IS the output type.
+                    Some(lambda_return(0).unwrap_or(Ty::Unknown))
+                }
                 ("map", "len") => Some(Ty::Primitive(crate::Primitive::Int)),
                 ("map", "has") => Some(Ty::Primitive(crate::Primitive::Bool)),
                 ("map", "set") => Some(Ty::Primitive(crate::Primitive::Void)),

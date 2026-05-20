@@ -1941,6 +1941,25 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::String(parts.join(&sep))))
             }
+            // D-046: flatMap — map to inner list then flatten.
+            "flatMap" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let mut out: Vec<Value> = Vec::new();
+                for v in snapshot {
+                    match self.invoke_lambda_with(&lam, vec![v])? {
+                        Value::List(inner) => out.extend(inner.borrow().clone()),
+                        other => {
+                            return Err(rt(format!(
+                                "list `flatMap` callback must return list, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::List(Rc::new(RefCell::new(out)))))
+            }
             // D-045: sort — stable insertion sort with closure comparator.
             "sort" => {
                 arity_check(1)?;

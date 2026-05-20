@@ -33,3 +33,16 @@ SymbolId(0)  Function  main  (201..205)
  971..976  -> SymbolId(10)  Value  desc
  992..997  -> SymbolId(10)  Value  desc
 1013..1018 -> SymbolId(10)  Value  desc
+1136..1142 -> SymbolId(11)  Value  pairs
+1157..1163 -> SymbolId(11)  Value  pairs
+1199..1205 -> SymbolId(11)  Value  pairs
+1272..1278 -> SymbolId(13)  Value  inner
+1285..1287 -> SymbolId(12)  Value  x
+1298..1304 -> SymbolId(13)  Value  inner
+1311..1313 -> SymbolId(12)  Value  x
+1336..1342 -> SymbolId(13)  Value  inner
+1360..1368 -> SymbolId(14)  Value  doubled
+1384..1392 -> SymbolId(14)  Value  doubled
+1408..1416 -> SymbolId(14)  Value  doubled
+1433..1441 -> SymbolId(14)  Value  doubled
+1457..1465 -> SymbolId(14)  Value  doubled

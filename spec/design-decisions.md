@@ -1628,3 +1628,30 @@ Locked during Phase 6 stdlib build-out:
 - **Date**: 2026-05-21.
 - **Status**: locked for v0a. `zip`/`unzip`/`partition` tracked separately
   (blocked on tuple return type).
+
+### D-046 — `list<T>` flatMap (v0a)
+- **Decision**: Adds `flatMap` to `list<T>`.
+
+  | Method | Signature | Semantics |
+  |--------|-----------|-----------|
+  | `flatMap` | `(fn(T): list<U>): list<U>` | Map each element to a list, then concatenate all inner lists into one output list. |
+
+  Returns a **new list**; source list and inner lists are not mutated (reference
+  semantics, D-027 carve-out). Inner list element handles are shared in the output.
+
+  The type system does not enforce that the callback return type is `list<U>` in
+  v0 (no type-class constraint); the interpreter panics at runtime if the callback
+  returns a non-list value.
+
+  No new runtime primitives. Codegen calls the callback per element, receives a
+  `phc_list`, then iterates it and pushes each raw `phc_payload` into the output
+  list. Element type `U` need not be known at the call site — payloads are
+  copied opaquely.
+
+- **Alternatives considered**: separate `flatten` + `map` (more composable but adds
+  API surface; `flatMap` covers the dominant use case in one call).
+- **Rationale**: `flatMap` is the canonical tool for one-to-many transformations
+  (tokenising, expanding nested structures). It composes naturally with the existing
+  closure surface without requiring new language features or runtime additions.
+- **Date**: 2026-05-21.
+- **Status**: locked for v0a.

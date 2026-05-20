@@ -2822,13 +2822,1277 @@ SourceFile {
                                 },
                             },
                         ),
+                        Local(
+                            LocalBinding {
+                                is_mut: false,
+                                ty: TypeRef {
+                                    path: [
+                                        Ident {
+                                            name: "list",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1105,
+                                                hi: 1109,
+                                            },
+                                        },
+                                    ],
+                                    args: [
+                                        TypeRef {
+                                            path: [
+                                                Ident {
+                                                    name: "int",
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1110,
+                                                        hi: 1113,
+                                                    },
+                                                },
+                                            ],
+                                            args: [],
+                                            nullable: false,
+                                            fn_return: None,
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1110,
+                                                hi: 1113,
+                                            },
+                                        },
+                                    ],
+                                    nullable: false,
+                                    fn_return: None,
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1105,
+                                        hi: 1114,
+                                    },
+                                },
+                                name: Ident {
+                                    name: "pairs",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1115,
+                                        hi: 1121,
+                                    },
+                                },
+                                value: Call {
+                                    callee: TypeName {
+                                        name: Ident {
+                                            name: "list",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1124,
+                                                hi: 1128,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 1124,
+                                            hi: 1128,
+                                        },
+                                    },
+                                    args: [],
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1124,
+                                        hi: 1130,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 1105,
+                                    hi: 1131,
+                                },
+                            },
+                        ),
+                        Expr(
+                            ExprStmt {
+                                expr: Call {
+                                    callee: Member {
+                                        receiver: Var {
+                                            name: Ident {
+                                                name: "pairs",
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 1137,
+                                                    hi: 1142,
+                                                },
+                                            },
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1136,
+                                                hi: 1142,
+                                            },
+                                        },
+                                        field: Ident {
+                                            name: "push",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1144,
+                                                hi: 1148,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 1136,
+                                            hi: 1148,
+                                        },
+                                    },
+                                    args: [
+                                        IntLit {
+                                            text: "1",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1149,
+                                                hi: 1150,
+                                            },
+                                        },
+                                    ],
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1136,
+                                        hi: 1151,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 1136,
+                                    hi: 1152,
+                                },
+                            },
+                        ),
+                        Expr(
+                            ExprStmt {
+                                expr: Call {
+                                    callee: Member {
+                                        receiver: Var {
+                                            name: Ident {
+                                                name: "pairs",
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 1158,
+                                                    hi: 1163,
+                                                },
+                                            },
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1157,
+                                                hi: 1163,
+                                            },
+                                        },
+                                        field: Ident {
+                                            name: "push",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1165,
+                                                hi: 1169,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 1157,
+                                            hi: 1169,
+                                        },
+                                    },
+                                    args: [
+                                        IntLit {
+                                            text: "2",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1170,
+                                                hi: 1171,
+                                            },
+                                        },
+                                    ],
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1157,
+                                        hi: 1172,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 1157,
+                                    hi: 1173,
+                                },
+                            },
+                        ),
+                        Local(
+                            LocalBinding {
+                                is_mut: false,
+                                ty: TypeRef {
+                                    path: [
+                                        Ident {
+                                            name: "list",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1178,
+                                                hi: 1182,
+                                            },
+                                        },
+                                    ],
+                                    args: [
+                                        TypeRef {
+                                            path: [
+                                                Ident {
+                                                    name: "int",
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1183,
+                                                        hi: 1186,
+                                                    },
+                                                },
+                                            ],
+                                            args: [],
+                                            nullable: false,
+                                            fn_return: None,
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1183,
+                                                hi: 1186,
+                                            },
+                                        },
+                                    ],
+                                    nullable: false,
+                                    fn_return: None,
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1178,
+                                        hi: 1187,
+                                    },
+                                },
+                                name: Ident {
+                                    name: "doubled",
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1188,
+                                        hi: 1196,
+                                    },
+                                },
+                                value: Call {
+                                    callee: Member {
+                                        receiver: Var {
+                                            name: Ident {
+                                                name: "pairs",
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 1200,
+                                                    hi: 1205,
+                                                },
+                                            },
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1199,
+                                                hi: 1205,
+                                            },
+                                        },
+                                        field: Ident {
+                                            name: "flatMap",
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1207,
+                                                hi: 1214,
+                                            },
+                                        },
+                                        span: Span {
+                                            file: FileId(
+                                                0,
+                                            ),
+                                            lo: 1199,
+                                            hi: 1214,
+                                        },
+                                    },
+                                    args: [
+                                        Lambda {
+                                            params: [
+                                                Param {
+                                                    borrow: None,
+                                                    ty: TypeRef {
+                                                        path: [
+                                                            Ident {
+                                                                name: "int",
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1216,
+                                                                    hi: 1219,
+                                                                },
+                                                            },
+                                                        ],
+                                                        args: [],
+                                                        nullable: false,
+                                                        fn_return: None,
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1216,
+                                                            hi: 1219,
+                                                        },
+                                                    },
+                                                    name: Ident {
+                                                        name: "x",
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1220,
+                                                            hi: 1222,
+                                                        },
+                                                    },
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1216,
+                                                        hi: 1222,
+                                                    },
+                                                },
+                                            ],
+                                            return_type: None,
+                                            body: Block(
+                                                Block {
+                                                    statements: [
+                                                        Local(
+                                                            LocalBinding {
+                                                                is_mut: false,
+                                                                ty: TypeRef {
+                                                                    path: [
+                                                                        Ident {
+                                                                            name: "list",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1237,
+                                                                                hi: 1241,
+                                                                            },
+                                                                        },
+                                                                    ],
+                                                                    args: [
+                                                                        TypeRef {
+                                                                            path: [
+                                                                                Ident {
+                                                                                    name: "int",
+                                                                                    span: Span {
+                                                                                        file: FileId(
+                                                                                            0,
+                                                                                        ),
+                                                                                        lo: 1242,
+                                                                                        hi: 1245,
+                                                                                    },
+                                                                                },
+                                                                            ],
+                                                                            args: [],
+                                                                            nullable: false,
+                                                                            fn_return: None,
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1242,
+                                                                                hi: 1245,
+                                                                            },
+                                                                        },
+                                                                    ],
+                                                                    nullable: false,
+                                                                    fn_return: None,
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1237,
+                                                                        hi: 1246,
+                                                                    },
+                                                                },
+                                                                name: Ident {
+                                                                    name: "inner",
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1247,
+                                                                        hi: 1253,
+                                                                    },
+                                                                },
+                                                                value: Call {
+                                                                    callee: TypeName {
+                                                                        name: Ident {
+                                                                            name: "list",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1256,
+                                                                                hi: 1260,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1256,
+                                                                            hi: 1260,
+                                                                        },
+                                                                    },
+                                                                    args: [],
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1256,
+                                                                        hi: 1262,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1237,
+                                                                    hi: 1263,
+                                                                },
+                                                            },
+                                                        ),
+                                                        Expr(
+                                                            ExprStmt {
+                                                                expr: Call {
+                                                                    callee: Member {
+                                                                        receiver: Var {
+                                                                            name: Ident {
+                                                                                name: "inner",
+                                                                                span: Span {
+                                                                                    file: FileId(
+                                                                                        0,
+                                                                                    ),
+                                                                                    lo: 1273,
+                                                                                    hi: 1278,
+                                                                                },
+                                                                            },
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1272,
+                                                                                hi: 1278,
+                                                                            },
+                                                                        },
+                                                                        field: Ident {
+                                                                            name: "push",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1280,
+                                                                                hi: 1284,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1272,
+                                                                            hi: 1284,
+                                                                        },
+                                                                    },
+                                                                    args: [
+                                                                        Var {
+                                                                            name: Ident {
+                                                                                name: "x",
+                                                                                span: Span {
+                                                                                    file: FileId(
+                                                                                        0,
+                                                                                    ),
+                                                                                    lo: 1286,
+                                                                                    hi: 1287,
+                                                                                },
+                                                                            },
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1285,
+                                                                                hi: 1287,
+                                                                            },
+                                                                        },
+                                                                    ],
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1272,
+                                                                        hi: 1288,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1272,
+                                                                    hi: 1289,
+                                                                },
+                                                            },
+                                                        ),
+                                                        Expr(
+                                                            ExprStmt {
+                                                                expr: Call {
+                                                                    callee: Member {
+                                                                        receiver: Var {
+                                                                            name: Ident {
+                                                                                name: "inner",
+                                                                                span: Span {
+                                                                                    file: FileId(
+                                                                                        0,
+                                                                                    ),
+                                                                                    lo: 1299,
+                                                                                    hi: 1304,
+                                                                                },
+                                                                            },
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1298,
+                                                                                hi: 1304,
+                                                                            },
+                                                                        },
+                                                                        field: Ident {
+                                                                            name: "push",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1306,
+                                                                                hi: 1310,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1298,
+                                                                            hi: 1310,
+                                                                        },
+                                                                    },
+                                                                    args: [
+                                                                        Binary {
+                                                                            op: Mul,
+                                                                            lhs: Var {
+                                                                                name: Ident {
+                                                                                    name: "x",
+                                                                                    span: Span {
+                                                                                        file: FileId(
+                                                                                            0,
+                                                                                        ),
+                                                                                        lo: 1312,
+                                                                                        hi: 1313,
+                                                                                    },
+                                                                                },
+                                                                                span: Span {
+                                                                                    file: FileId(
+                                                                                        0,
+                                                                                    ),
+                                                                                    lo: 1311,
+                                                                                    hi: 1313,
+                                                                                },
+                                                                            },
+                                                                            rhs: IntLit {
+                                                                                text: "10",
+                                                                                span: Span {
+                                                                                    file: FileId(
+                                                                                        0,
+                                                                                    ),
+                                                                                    lo: 1316,
+                                                                                    hi: 1318,
+                                                                                },
+                                                                            },
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1311,
+                                                                                hi: 1318,
+                                                                            },
+                                                                        },
+                                                                    ],
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1298,
+                                                                        hi: 1319,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1298,
+                                                                    hi: 1320,
+                                                                },
+                                                            },
+                                                        ),
+                                                        Return(
+                                                            ReturnStmt {
+                                                                value: Some(
+                                                                    Var {
+                                                                        name: Ident {
+                                                                            name: "inner",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1337,
+                                                                                hi: 1342,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1336,
+                                                                            hi: 1342,
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1329,
+                                                                    hi: 1343,
+                                                                },
+                                                            },
+                                                        ),
+                                                    ],
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1227,
+                                                        hi: 1349,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1215,
+                                                hi: 1349,
+                                            },
+                                        },
+                                    ],
+                                    span: Span {
+                                        file: FileId(
+                                            0,
+                                        ),
+                                        lo: 1199,
+                                        hi: 1350,
+                                    },
+                                },
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 1178,
+                                    hi: 1351,
+                                },
+                            },
+                        ),
+                        If(
+                            IfStmt {
+                                branches: [
+                                    (
+                                        Binary {
+                                            op: And,
+                                            lhs: Binary {
+                                                op: And,
+                                                lhs: Binary {
+                                                    op: And,
+                                                    lhs: Binary {
+                                                        op: And,
+                                                        lhs: Binary {
+                                                            op: Eq,
+                                                            lhs: Call {
+                                                                callee: Member {
+                                                                    receiver: Var {
+                                                                        name: Ident {
+                                                                            name: "doubled",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1361,
+                                                                                hi: 1368,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1360,
+                                                                            hi: 1368,
+                                                                        },
+                                                                    },
+                                                                    field: Ident {
+                                                                        name: "len",
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1370,
+                                                                            hi: 1373,
+                                                                        },
+                                                                    },
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1360,
+                                                                        hi: 1373,
+                                                                    },
+                                                                },
+                                                                args: [],
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1360,
+                                                                    hi: 1375,
+                                                                },
+                                                            },
+                                                            rhs: IntLit {
+                                                                text: "4",
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1379,
+                                                                    hi: 1380,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1360,
+                                                                hi: 1380,
+                                                            },
+                                                        },
+                                                        rhs: Binary {
+                                                            op: Eq,
+                                                            lhs: Call {
+                                                                callee: Member {
+                                                                    receiver: Var {
+                                                                        name: Ident {
+                                                                            name: "doubled",
+                                                                            span: Span {
+                                                                                file: FileId(
+                                                                                    0,
+                                                                                ),
+                                                                                lo: 1385,
+                                                                                hi: 1392,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1384,
+                                                                            hi: 1392,
+                                                                        },
+                                                                    },
+                                                                    field: Ident {
+                                                                        name: "at",
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1394,
+                                                                            hi: 1396,
+                                                                        },
+                                                                    },
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1384,
+                                                                        hi: 1396,
+                                                                    },
+                                                                },
+                                                                args: [
+                                                                    IntLit {
+                                                                        text: "0",
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1397,
+                                                                            hi: 1398,
+                                                                        },
+                                                                    },
+                                                                ],
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1384,
+                                                                    hi: 1399,
+                                                                },
+                                                            },
+                                                            rhs: IntLit {
+                                                                text: "1",
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1403,
+                                                                    hi: 1404,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1384,
+                                                                hi: 1404,
+                                                            },
+                                                        },
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1360,
+                                                            hi: 1404,
+                                                        },
+                                                    },
+                                                    rhs: Binary {
+                                                        op: Eq,
+                                                        lhs: Call {
+                                                            callee: Member {
+                                                                receiver: Var {
+                                                                    name: Ident {
+                                                                        name: "doubled",
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1409,
+                                                                            hi: 1416,
+                                                                        },
+                                                                    },
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1408,
+                                                                        hi: 1416,
+                                                                    },
+                                                                },
+                                                                field: Ident {
+                                                                    name: "at",
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1418,
+                                                                        hi: 1420,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1408,
+                                                                    hi: 1420,
+                                                                },
+                                                            },
+                                                            args: [
+                                                                IntLit {
+                                                                    text: "1",
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1421,
+                                                                        hi: 1422,
+                                                                    },
+                                                                },
+                                                            ],
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1408,
+                                                                hi: 1423,
+                                                            },
+                                                        },
+                                                        rhs: IntLit {
+                                                            text: "10",
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1427,
+                                                                hi: 1429,
+                                                            },
+                                                        },
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1408,
+                                                            hi: 1429,
+                                                        },
+                                                    },
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1360,
+                                                        hi: 1429,
+                                                    },
+                                                },
+                                                rhs: Binary {
+                                                    op: Eq,
+                                                    lhs: Call {
+                                                        callee: Member {
+                                                            receiver: Var {
+                                                                name: Ident {
+                                                                    name: "doubled",
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1434,
+                                                                        hi: 1441,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1433,
+                                                                    hi: 1441,
+                                                                },
+                                                            },
+                                                            field: Ident {
+                                                                name: "at",
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1443,
+                                                                    hi: 1445,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1433,
+                                                                hi: 1445,
+                                                            },
+                                                        },
+                                                        args: [
+                                                            IntLit {
+                                                                text: "2",
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1446,
+                                                                    hi: 1447,
+                                                                },
+                                                            },
+                                                        ],
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1433,
+                                                            hi: 1448,
+                                                        },
+                                                    },
+                                                    rhs: IntLit {
+                                                        text: "2",
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1452,
+                                                            hi: 1453,
+                                                        },
+                                                    },
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1433,
+                                                        hi: 1453,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 1360,
+                                                    hi: 1453,
+                                                },
+                                            },
+                                            rhs: Binary {
+                                                op: Eq,
+                                                lhs: Call {
+                                                    callee: Member {
+                                                        receiver: Var {
+                                                            name: Ident {
+                                                                name: "doubled",
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1458,
+                                                                    hi: 1465,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1457,
+                                                                hi: 1465,
+                                                            },
+                                                        },
+                                                        field: Ident {
+                                                            name: "at",
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1467,
+                                                                hi: 1469,
+                                                            },
+                                                        },
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1457,
+                                                            hi: 1469,
+                                                        },
+                                                    },
+                                                    args: [
+                                                        IntLit {
+                                                            text: "3",
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1470,
+                                                                hi: 1471,
+                                                            },
+                                                        },
+                                                    ],
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1457,
+                                                        hi: 1472,
+                                                    },
+                                                },
+                                                rhs: IntLit {
+                                                    text: "20",
+                                                    span: Span {
+                                                        file: FileId(
+                                                            0,
+                                                        ),
+                                                        lo: 1476,
+                                                        hi: 1478,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    file: FileId(
+                                                        0,
+                                                    ),
+                                                    lo: 1457,
+                                                    hi: 1478,
+                                                },
+                                            },
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1360,
+                                                hi: 1478,
+                                            },
+                                        },
+                                        Block {
+                                            statements: [
+                                                Expr(
+                                                    ExprStmt {
+                                                        expr: Call {
+                                                            callee: Static {
+                                                                ty: TypeName {
+                                                                    name: Ident {
+                                                                        name: "Logger",
+                                                                        span: Span {
+                                                                            file: FileId(
+                                                                                0,
+                                                                            ),
+                                                                            lo: 1490,
+                                                                            hi: 1496,
+                                                                        },
+                                                                    },
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1490,
+                                                                        hi: 1496,
+                                                                    },
+                                                                },
+                                                                member: Ident {
+                                                                    name: "info",
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1498,
+                                                                        hi: 1502,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    file: FileId(
+                                                                        0,
+                                                                    ),
+                                                                    lo: 1490,
+                                                                    hi: 1502,
+                                                                },
+                                                            },
+                                                            args: [
+                                                                StrLit {
+                                                                    parts: [
+                                                                        Text(
+                                                                            "flatMap ok",
+                                                                        ),
+                                                                    ],
+                                                                    span: Span {
+                                                                        file: FileId(
+                                                                            0,
+                                                                        ),
+                                                                        lo: 1503,
+                                                                        hi: 1515,
+                                                                    },
+                                                                },
+                                                            ],
+                                                            span: Span {
+                                                                file: FileId(
+                                                                    0,
+                                                                ),
+                                                                lo: 1490,
+                                                                hi: 1516,
+                                                            },
+                                                        },
+                                                        span: Span {
+                                                            file: FileId(
+                                                                0,
+                                                            ),
+                                                            lo: 1490,
+                                                            hi: 1517,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            span: Span {
+                                                file: FileId(
+                                                    0,
+                                                ),
+                                                lo: 1480,
+                                                hi: 1523,
+                                            },
+                                        },
+                                    ),
+                                ],
+                                else_block: None,
+                                span: Span {
+                                    file: FileId(
+                                        0,
+                                    ),
+                                    lo: 1356,
+                                    hi: 1523,
+                                },
+                            },
+                        ),
                     ],
                     span: Span {
                         file: FileId(
                             0,
                         ),
                         lo: 214,
-                        hi: 1079,
+                        hi: 1525,
                     },
                 },
                 span: Span {
@@ -2836,7 +4100,7 @@ SourceFile {
                         0,
                     ),
                     lo: 185,
-                    hi: 1079,
+                    hi: 1525,
                 },
             },
         ),
@@ -2846,6 +4110,6 @@ SourceFile {
             0,
         ),
         lo: 0,
-        hi: 1080,
+        hi: 1526,
     },
 }
