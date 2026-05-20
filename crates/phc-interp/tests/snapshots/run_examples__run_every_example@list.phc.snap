@@ -8,6 +8,8 @@ len ok
 at ok
 index ok
 for ok
+sort asc ok
+sort desc ok
 
 === result ===
 void

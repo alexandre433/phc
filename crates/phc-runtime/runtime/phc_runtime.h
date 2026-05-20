@@ -74,7 +74,8 @@ typedef struct phc_list_s* phc_list;
 
 phc_list    phc_list_new(void);
 void        phc_list_push(phc_list l, phc_payload v);
-phc_payload phc_list_at(phc_list l, int64_t i);  /* aborts on OOB */
+phc_payload phc_list_at(phc_list l, int64_t i);    /* aborts on OOB */
+void        phc_list_set(phc_list l, int64_t i, phc_payload v);  /* aborts on OOB */
 int64_t     phc_list_len(phc_list l);
 
 /* Map value (D-028). String-keyed only in v0a; linear-scan

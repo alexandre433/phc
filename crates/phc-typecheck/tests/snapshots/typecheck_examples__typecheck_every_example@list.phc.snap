@@ -62,3 +62,79 @@ SymbolId(0)() -> void
  553..565  : <unknown>
  553..575  : <unknown>
  566..574  : string
+ 625..629  : <unknown>
+ 625..631  : <unknown>
+ 637..646  : list<int>
+ 637..652  : <unknown>
+ 637..655  : void
+ 653..654  : int
+ 661..670  : list<int>
+ 661..676  : <unknown>
+ 661..679  : void
+ 677..678  : int
+ 685..694  : list<int>
+ 685..700  : <unknown>
+ 685..703  : void
+ 701..702  : int
+ 729..738  : list<int>
+ 729..744  : <unknown>
+ 729..773  : list<int>
+ 745..772  : fn<int, int, int>
+ 765..767  : int
+ 765..772  : int
+ 770..772  : int
+ 783..790  : list<int>
+ 783..794  : <unknown>
+ 783..797  : int
+ 783..802  : bool
+ 783..825  : bool
+ 783..848  : bool
+ 795..796  : int
+ 801..802  : int
+ 806..813  : list<int>
+ 806..817  : <unknown>
+ 806..820  : int
+ 806..825  : bool
+ 818..819  : int
+ 824..825  : int
+ 829..836  : list<int>
+ 829..840  : <unknown>
+ 829..843  : int
+ 829..848  : bool
+ 841..842  : int
+ 847..848  : int
+ 860..866  : <unknown>
+ 860..872  : <unknown>
+ 860..887  : <unknown>
+ 873..886  : string
+ 917..926  : list<int>
+ 917..932  : <unknown>
+ 917..961  : list<int>
+ 933..960  : fn<int, int, int>
+ 953..955  : int
+ 953..960  : int
+ 958..960  : int
+ 971..976  : list<int>
+ 971..980  : <unknown>
+ 971..983  : int
+ 971..988  : bool
+ 971..1009 : bool
+ 971..1030 : bool
+ 981..982  : int
+ 987..988  : int
+ 992..997  : list<int>
+ 992..1001 : <unknown>
+ 992..1004 : int
+ 992..1009 : bool
+1002..1003 : int
+1008..1009 : int
+1013..1018 : list<int>
+1013..1022 : <unknown>
+1013..1025 : int
+1013..1030 : bool
+1023..1024 : int
+1029..1030 : int
+1042..1048 : <unknown>
+1042..1054 : <unknown>
+1042..1070 : <unknown>
+1055..1069 : string

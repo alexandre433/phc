@@ -17,4 +17,18 @@ public function main(): void {
     flip int $sum = 0;
     for (int $x in $xs) { $sum := $sum + $x; }
     if ($sum == 60) { Logger::info("for ok"); }
+
+    // D-045: sort
+    list<int> $unsorted = list();
+    $unsorted->push(3);
+    $unsorted->push(1);
+    $unsorted->push(2);
+    list<int> $sorted = $unsorted->sort((int $a, int $b) => $a - $b);
+    if ($sorted->at(0) == 1 && $sorted->at(1) == 2 && $sorted->at(2) == 3) {
+        Logger::info("sort asc ok");
+    }
+    list<int> $desc = $unsorted->sort((int $a, int $b) => $b - $a);
+    if ($desc->at(0) == 3 && $desc->at(1) == 2 && $desc->at(2) == 1) {
+        Logger::info("sort desc ok");
+    }
 }

@@ -354,6 +354,13 @@ phc_payload phc_list_at(phc_list l, int64_t i) {
     return l->items[(size_t)i];
 }
 
+void phc_list_set(phc_list l, int64_t i, phc_payload v) {
+    if (i < 0 || (size_t)i >= l->len) {
+        phc_panic("list index out of bounds");
+    }
+    l->items[(size_t)i] = v;
+}
+
 int64_t phc_list_len(phc_list l) {
     return (int64_t)l->len;
 }

@@ -1593,3 +1593,38 @@ Locked during Phase 6 stdlib build-out:
 - **Date**: 2026-05-18.
 - **Status**: locked for v0a. `sort`, `zip`/`unzip`, `partition` tracked
   separately.
+
+### D-045 — `list<T>` sort (v0a)
+- **Decision**: Adds a stable sort method to `list<T>`.
+
+  | Method | Signature | Semantics |
+  |--------|-----------|-----------|
+  | `sort` | `(fn(T, T): int): list<T>` | Returns new list sorted by comparator. |
+
+  Comparator convention (matching C `qsort` / Rust `sort_by`): negative → first
+  argument orders before second; zero → equal; positive → first orders after second.
+
+  Returns a **new list**; the source list is not mutated (reference semantics,
+  D-027 carve-out). The sort is **stable**: equal elements preserve their input
+  order so callers can rely on multi-key sort composition.
+
+  Implemented as insertion sort in both codegen (C emit) and interpreter, which is
+  stable by construction. Future optimisation to merge sort or pdqsort is a drop-in
+  swap that must preserve stability.
+
+  Requires `phc_list_set(phc_list, int64_t, phc_payload)` in the C runtime for
+  in-place swap during insertion sort; added alongside this decision.
+
+- **Alternatives considered**: `sort()` with no comparator and a built-in `<`
+  ordering (not viable — PHC has no ordered trait in v0); `sortWith` naming
+  (less PHP/JS-familiar); using stdlib C `qsort` (does not support closure
+  environments without a global/thread-local hack — deferred); returning `void`
+  and mutating in place (violates the immutable-output convention of take/drop/
+  reverse/concat).
+- **Rationale**: Comparator-based sort is the minimum viable surface — it handles
+  any orderable type without requiring a trait system. Insertion sort avoids new
+  runtime primitives beyond `phc_list_set`, keeps the implementation auditable,
+  and is correct for the small-to-medium list sizes typical in v0 programs.
+- **Date**: 2026-05-21.
+- **Status**: locked for v0a. `zip`/`unzip`/`partition` tracked separately
+  (blocked on tuple return type).

@@ -1941,6 +1941,36 @@ impl<'a> Interp<'a> {
                 }
                 Ok(Some(Value::String(parts.join(&sep))))
             }
+            // D-045: sort — stable insertion sort with closure comparator.
+            "sort" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let mut snapshot: Vec<Value> = items.borrow().clone();
+                let n = snapshot.len();
+                for i in 1..n {
+                    let mut j = i;
+                    while j > 0 {
+                        let cmp = self.invoke_lambda_with(
+                            &lam,
+                            vec![snapshot[j - 1].clone(), snapshot[j].clone()],
+                        )?;
+                        match cmp {
+                            Value::Int(v) if v > 0 => {
+                                snapshot.swap(j - 1, j);
+                                j -= 1;
+                            }
+                            Value::Int(_) => break,
+                            other => {
+                                return Err(rt(format!(
+                                    "list `sort` comparator must return int, got `{}`",
+                                    other.display()
+                                )))
+                            }
+                        }
+                    }
+                }
+                Ok(Some(Value::List(Rc::new(RefCell::new(snapshot)))))
+            }
             // D-043: take / drop — index-arithmetic slices.
             "take" => {
                 arity_check(1)?;

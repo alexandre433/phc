@@ -157,4 +157,180 @@ input_file: examples/list.phc
  574..575   RParen
  575..576   Semicolon
  577..578   RBrace
- 579..580   RBrace
+ 584..598   LineComment("// D-045: sort")
+ 603..607   Ident("list")
+ 607..608   Lt
+ 608..611   Ident("int")
+ 611..612   Gt
+ 613..614   Dollar
+ 614..622   Ident("unsorted")
+ 623..624   Eq
+ 625..629   Ident("list")
+ 629..630   LParen
+ 630..631   RParen
+ 631..632   Semicolon
+ 637..638   Dollar
+ 638..646   Ident("unsorted")
+ 646..648   Arrow
+ 648..652   Ident("push")
+ 652..653   LParen
+ 653..654   IntLit("3")
+ 654..655   RParen
+ 655..656   Semicolon
+ 661..662   Dollar
+ 662..670   Ident("unsorted")
+ 670..672   Arrow
+ 672..676   Ident("push")
+ 676..677   LParen
+ 677..678   IntLit("1")
+ 678..679   RParen
+ 679..680   Semicolon
+ 685..686   Dollar
+ 686..694   Ident("unsorted")
+ 694..696   Arrow
+ 696..700   Ident("push")
+ 700..701   LParen
+ 701..702   IntLit("2")
+ 702..703   RParen
+ 703..704   Semicolon
+ 709..713   Ident("list")
+ 713..714   Lt
+ 714..717   Ident("int")
+ 717..718   Gt
+ 719..720   Dollar
+ 720..726   Ident("sorted")
+ 727..728   Eq
+ 729..730   Dollar
+ 730..738   Ident("unsorted")
+ 738..740   Arrow
+ 740..744   Ident("sort")
+ 744..745   LParen
+ 745..746   LParen
+ 746..749   Ident("int")
+ 750..751   Dollar
+ 751..752   Ident("a")
+ 752..753   Comma
+ 754..757   Ident("int")
+ 758..759   Dollar
+ 759..760   Ident("b")
+ 760..761   RParen
+ 762..764   FatArrow
+ 765..766   Dollar
+ 766..767   Ident("a")
+ 768..769   Minus
+ 770..771   Dollar
+ 771..772   Ident("b")
+ 772..773   RParen
+ 773..774   Semicolon
+ 779..781   If
+ 782..783   LParen
+ 783..784   Dollar
+ 784..790   Ident("sorted")
+ 790..792   Arrow
+ 792..794   Ident("at")
+ 794..795   LParen
+ 795..796   IntLit("0")
+ 796..797   RParen
+ 798..800   EqEq
+ 801..802   IntLit("1")
+ 803..805   AmpAmp
+ 806..807   Dollar
+ 807..813   Ident("sorted")
+ 813..815   Arrow
+ 815..817   Ident("at")
+ 817..818   LParen
+ 818..819   IntLit("1")
+ 819..820   RParen
+ 821..823   EqEq
+ 824..825   IntLit("2")
+ 826..828   AmpAmp
+ 829..830   Dollar
+ 830..836   Ident("sorted")
+ 836..838   Arrow
+ 838..840   Ident("at")
+ 840..841   LParen
+ 841..842   IntLit("2")
+ 842..843   RParen
+ 844..846   EqEq
+ 847..848   IntLit("3")
+ 848..849   RParen
+ 850..851   LBrace
+ 860..866   Ident("Logger")
+ 866..868   StaticOp
+ 868..872   Ident("info")
+ 872..873   LParen
+ 873..886   StrLit[Text("sort asc ok")]
+ 886..887   RParen
+ 887..888   Semicolon
+ 893..894   RBrace
+ 899..903   Ident("list")
+ 903..904   Lt
+ 904..907   Ident("int")
+ 907..908   Gt
+ 909..910   Dollar
+ 910..914   Ident("desc")
+ 915..916   Eq
+ 917..918   Dollar
+ 918..926   Ident("unsorted")
+ 926..928   Arrow
+ 928..932   Ident("sort")
+ 932..933   LParen
+ 933..934   LParen
+ 934..937   Ident("int")
+ 938..939   Dollar
+ 939..940   Ident("a")
+ 940..941   Comma
+ 942..945   Ident("int")
+ 946..947   Dollar
+ 947..948   Ident("b")
+ 948..949   RParen
+ 950..952   FatArrow
+ 953..954   Dollar
+ 954..955   Ident("b")
+ 956..957   Minus
+ 958..959   Dollar
+ 959..960   Ident("a")
+ 960..961   RParen
+ 961..962   Semicolon
+ 967..969   If
+ 970..971   LParen
+ 971..972   Dollar
+ 972..976   Ident("desc")
+ 976..978   Arrow
+ 978..980   Ident("at")
+ 980..981   LParen
+ 981..982   IntLit("0")
+ 982..983   RParen
+ 984..986   EqEq
+ 987..988   IntLit("3")
+ 989..991   AmpAmp
+ 992..993   Dollar
+ 993..997   Ident("desc")
+ 997..999   Arrow
+ 999..1001  Ident("at")
+1001..1002  LParen
+1002..1003  IntLit("1")
+1003..1004  RParen
+1005..1007  EqEq
+1008..1009  IntLit("2")
+1010..1012  AmpAmp
+1013..1014  Dollar
+1014..1018  Ident("desc")
+1018..1020  Arrow
+1020..1022  Ident("at")
+1022..1023  LParen
+1023..1024  IntLit("2")
+1024..1025  RParen
+1026..1028  EqEq
+1029..1030  IntLit("1")
+1030..1031  RParen
+1032..1033  LBrace
+1042..1048  Ident("Logger")
+1048..1050  StaticOp
+1050..1054  Ident("info")
+1054..1055  LParen
+1055..1069  StrLit[Text("sort desc ok")]
+1069..1070  RParen
+1070..1071  Semicolon
+1076..1077  RBrace
+1078..1079  RBrace

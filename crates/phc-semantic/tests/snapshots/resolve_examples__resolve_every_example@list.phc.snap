@@ -18,3 +18,18 @@ SymbolId(0)  Function  main  (201..205)
  518..522  -> SymbolId(2)  Value  sum
  525..527  -> SymbolId(3)  Value  x
  539..543  -> SymbolId(2)  Value  sum
+ 637..646  -> SymbolId(4)  Value  unsorted
+ 661..670  -> SymbolId(4)  Value  unsorted
+ 685..694  -> SymbolId(4)  Value  unsorted
+ 729..738  -> SymbolId(4)  Value  unsorted
+ 765..767  -> SymbolId(5)  Value  a
+ 770..772  -> SymbolId(6)  Value  b
+ 783..790  -> SymbolId(7)  Value  sorted
+ 806..813  -> SymbolId(7)  Value  sorted
+ 829..836  -> SymbolId(7)  Value  sorted
+ 917..926  -> SymbolId(4)  Value  unsorted
+ 953..955  -> SymbolId(9)  Value  b
+ 958..960  -> SymbolId(8)  Value  a
+ 971..976  -> SymbolId(10)  Value  desc
+ 992..997  -> SymbolId(10)  Value  desc
+1013..1018 -> SymbolId(10)  Value  desc
