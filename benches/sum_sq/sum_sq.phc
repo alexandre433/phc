@@ -1,0 +1,11 @@
+pack benches.sum_sq;
+
+function main(): void {
+    flip int $sum = 0;
+    flip int $i = 0;
+    while ($i < 100000000) {
+        $sum := $sum + $i * $i;
+        $i := $i + 1;
+    }
+    Logger::info("sum: {$sum}");
+}
