@@ -159,6 +159,7 @@ impl<'a> Emitter<'a> {
             "float" => "double".into(),
             "bool" => "bool".into(),
             "string" => "phc_string".into(),
+            "bytes" => "phc_bytes".into(),
             "void" => "void".into(),
             "result" => "phc_result".into(),
             "option" => "phc_option".into(),
@@ -191,7 +192,7 @@ impl<'a> Emitter<'a> {
                 Primitive::String => "phc_string".into(),
                 Primitive::Void => "void".into(),
                 Primitive::Byte => "uint8_t".into(),
-                Primitive::Bytes => "phc_string".into(),
+                Primitive::Bytes => "phc_bytes".into(),
             },
             Ty::Path { path, .. } if path.len() == 1 => {
                 let name = path[0].as_str();
@@ -226,7 +227,7 @@ impl<'a> Emitter<'a> {
                 Primitive::Float => "f64",
                 Primitive::Bool => "b",
                 Primitive::String => "s",
-                Primitive::Bytes => "s",
+                Primitive::Bytes => "bs",
                 Primitive::Byte => "i64",
                 Primitive::Void => "i64",
             },
@@ -924,10 +925,48 @@ impl<'a> Emitter<'a> {
         let sig = self.function_signature(f);
         self.buf.push_str(&sig);
         self.buf.push_str(" {\n");
+        // D-003 marks `async`/`await` as locked syntax, but the
+        // runtime has no task scheduler yet and the C emitter has
+        // no codegen for structured concurrency. Emit a clear
+        // panic stub so calls fail loud at runtime rather than
+        // producing nonsensical C from a `phc_value` placeholder
+        // ladder. The interpreter retains its synchronous
+        // passthrough so existing tests keep passing.
+        if f.is_async {
+            self.buf.push_str(&format!(
+                "    phc_panic(\"async function `{}` not yet implemented in compiled mode\");\n",
+                f.name.name
+            ));
+            self.emit_unreachable_return(&f.return_type);
+            self.buf.push_str("}\n\n");
+            return;
+        }
         for stmt in &f.body.statements {
             self.emit_stmt(stmt, 1);
         }
         self.buf.push_str("}\n\n");
+    }
+
+    /// Emit a trailing `return <zero-value>;` for a function body
+    /// whose real path always panics. C requires a return on every
+    /// non-void function or the compiler warns; the value never
+    /// runs because `phc_panic` is `_Noreturn`, but we still pick a
+    /// shape that matches the declared return type.
+    fn emit_unreachable_return(&mut self, ret_ty: &phc_ast::TypeRef) {
+        let c = self.c_type_for(ret_ty);
+        let stmt = match c.as_str() {
+            "void" => "    return;\n".to_string(),
+            "int64_t" | "uint8_t" => "    return 0;\n".to_string(),
+            "double" => "    return 0.0;\n".to_string(),
+            "bool" => "    return false;\n".to_string(),
+            "phc_string" | "phc_bytes" | "phc_result" | "phc_option" | "phc_lambda" => {
+                format!("    return ({c}){{0}};\n")
+            }
+            "phc_list" | "phc_map" | "phc_set" => "    return NULL;\n".to_string(),
+            _ if c.ends_with('*') => "    return NULL;\n".to_string(),
+            _ => format!("    return ({c}){{0}};\n"),
+        };
+        self.buf.push_str(&stmt);
     }
 
     /// Emit one forward declaration per monomorphization instance.

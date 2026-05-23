@@ -283,6 +283,43 @@ fn generic_free_fn_monomorphizes_per_concrete_arg_tuple() {
 }
 
 #[test]
+fn bytes_primitive_lowers_to_phc_bytes() {
+    let src = r#"pack a;
+        public function take(bytes $b): bytes { return $b; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_bytes phc_take(phc_bytes phc_var_b)"),
+        "bytes should map to phc_bytes, not phc_value:\n{c}"
+    );
+}
+
+#[test]
+fn async_function_emits_runtime_panic_stub() {
+    // D-003 leaves async semantics for a future slice. Compiled
+    // mode must not silently produce broken C — it should emit a
+    // signature + a panic stub that fails loud at runtime.
+    let src = r#"pack a;
+        async function fetch(string $url): result<int, parseError> {
+            return result::ok(1);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("static phc_result phc_fetch(phc_string phc_var_url)"),
+        "async signature should still emit:\n{c}"
+    );
+    assert!(
+        c.contains("async function `fetch` not yet implemented"),
+        "async body should be a panic stub:\n{c}"
+    );
+    assert!(
+        c.contains("return (phc_result){0};"),
+        "unreachable trailing return should be the zero-init form:\n{c}"
+    );
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }
