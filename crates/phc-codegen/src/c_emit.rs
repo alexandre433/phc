@@ -34,6 +34,7 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
         typed,
         file,
         lambdas,
+        current_class: None,
     };
     emitter.emit_prelude();
     // Phase 0: enum typedefs first — class fields and method
@@ -98,6 +99,11 @@ struct Emitter<'a> {
     /// `__phc_lam_<lo>` (where `<lo>` is the lambda's span lo offset)
     /// and emits a matching `__phc_lam_env_<lo>` capture struct.
     lambdas: Vec<&'a Expr>,
+    /// Host class whose body is currently being emitted. Set while
+    /// `emit_class_bodies` walks own + trait-mixin method bodies so
+    /// `$this` resolves to the host class even when the trait body's
+    /// typecheck record doesn't pin a class on the `This` expression.
+    current_class: Option<String>,
 }
 
 /// Per-lambda capture metadata. One `Capture` per outer-scope binding
@@ -384,6 +390,12 @@ impl<'a> Emitter<'a> {
 
     fn emit_class_bodies(&mut self, c: &ClassDecl) {
         let name = c.name.name.clone();
+        // Track the host class while emitting both own and trait-
+        // mixin method bodies so `$this` typing resolves even when
+        // the trait body's own typecheck record can't pin a class on
+        // `This`.
+        let prev_class = self.current_class.take();
+        self.current_class = Some(name.clone());
         // Constructor body.
         if let Some(con) = find_constructor(c) {
             let sig = self.construct_signature(&name, con);
@@ -449,6 +461,7 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        self.current_class = prev_class;
     }
 
     // ===== Lambdas (C5a — inline-invoked only) =====
@@ -2356,6 +2369,15 @@ impl<'a> Emitter<'a> {
     /// the typecheck pass's expr_types map for `Ty::Path { path }`
     /// where path[0] names a known class.
     fn class_of_expr(&self, expr: &Expr) -> Option<String> {
+        // `$this` inside a class or trait-mixin method body always
+        // refers to the host class. The typecheck record for the
+        // trait's own AST can't see the host, so consult the emitter's
+        // current_class first before falling back to the typed table.
+        if let Expr::This { .. } = expr {
+            if let Some(cls) = &self.current_class {
+                return Some(cls.clone());
+            }
+        }
         let span = span_of_expr(expr);
         match self.typed.expr_types.get(&span)? {
             phc_typecheck::Ty::Path { path, .. } if path.len() == 1 && self.is_class(&path[0]) => {

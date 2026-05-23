@@ -198,6 +198,37 @@ fn trait_use_emits_method_under_class_name() {
 }
 
 #[test]
+fn trait_mixin_dispatches_this_method_on_host_class() {
+    // The trait body calls a method on `$this`. The trait's own
+    // typecheck record can't see the host class, so without the
+    // emitter's `current_class` tracking this falls to
+    // "codegen TODO method receiver".
+    let src = r#"pack a;
+        public trait Loggable {
+            function describe(): string { return $this->name(); }
+        }
+        public class User {
+            use Loggable;
+            construct(public string $value) {}
+            public function name(): string { return $this->value; }
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_method_User_describe"),
+        "trait method should be emitted under host class"
+    );
+    assert!(
+        c.contains("phc_method_User_name(phc_var_this)"),
+        "method call on $this in trait body should dispatch to host class:\n{c}"
+    );
+    assert!(
+        !c.contains("codegen TODO method receiver"),
+        "trait body should not fall through to TODO panic"
+    );
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }
