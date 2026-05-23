@@ -21,12 +21,14 @@ use phc_semantic::{Resolved, SymbolId, SymbolKind};
 use phc_span::Span;
 use phc_typecheck::{Primitive, Ty, Typed};
 
+use crate::mono::{collect_mono_instances, concrete_tys_for_call, mangle_instance, MonoInstance};
 use crate::CodegenOutput;
 
 /// Emit a complete C translation unit for `file`.
 pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenOutput {
     let mut out = CodegenOutput::default();
     let lambdas = collect_lambdas(file);
+    let mono_instances = collect_mono_instances(file, resolved, typed);
     let mut emitter = Emitter {
         buf: String::new(),
         diagnostics: &mut out.diagnostics,
@@ -35,6 +37,7 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
         file,
         lambdas,
         current_class: None,
+        mono_instances,
     };
     emitter.emit_prelude();
     // Phase 0: enum typedefs first — class fields and method
@@ -67,6 +70,10 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
             _ => {}
         }
     }
+    // Phase 3a: forward-decl each monomorphization instance so any
+    // call site (including the generic source body, if it ever calls
+    // a peer instance) can resolve the mangled symbol.
+    emitter.emit_mono_decls();
     // Phase 3.5: lambda support — env structs, forward decls, and
     // lifted bodies for every Expr::Lambda the file contains. Emitted
     // before user-function bodies so call sites can reference them.
@@ -83,6 +90,10 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
             _ => {}
         }
     }
+    // Phase 4a: full body per monomorphization instance, after every
+    // non-generic body has emitted so substituted bodies can call
+    // either peer instances or ordinary helpers freely.
+    emitter.emit_mono_bodies();
     emitter.emit_main_wrapper(file);
     out.c_source = emitter.buf;
     out
@@ -104,6 +115,11 @@ struct Emitter<'a> {
     /// `$this` resolves to the host class even when the trait body's
     /// typecheck record doesn't pin a class on the `This` expression.
     current_class: Option<String>,
+    /// One entry per `(generic free function, concrete-type tuple)`
+    /// the source file calls. Drives both the per-instance C
+    /// definition emission and the call-site dispatch rewrite. See
+    /// [`crate::mono`] for the collection pass.
+    mono_instances: Vec<MonoInstance>,
 }
 
 /// Per-lambda capture metadata. One `Capture` per outer-scope binding
@@ -891,11 +907,20 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_function_decl(&mut self, f: &FunctionDecl) {
+        // Generic free functions are emitted per call-site instance
+        // (see emit_mono_decls / emit_mono_bodies) rather than as
+        // their unsubstituted source form.
+        if !f.generic_params.is_empty() {
+            return;
+        }
         let sig = self.function_signature(f);
         self.buf.push_str(&format!("{sig};\n"));
     }
 
     fn emit_function(&mut self, f: &FunctionDecl) {
+        if !f.generic_params.is_empty() {
+            return;
+        }
         let sig = self.function_signature(f);
         self.buf.push_str(&sig);
         self.buf.push_str(" {\n");
@@ -903,6 +928,58 @@ impl<'a> Emitter<'a> {
             self.emit_stmt(stmt, 1);
         }
         self.buf.push_str("}\n\n");
+    }
+
+    /// Emit one forward declaration per monomorphization instance.
+    /// Mirrors the loop in `emit_c` that walks non-generic free
+    /// functions for forward decls, but the substituted name lives
+    /// in `MonoInstance::mangled` so call sites can dispatch through it.
+    fn emit_mono_decls(&mut self) {
+        for inst in self.mono_instances.clone().iter() {
+            let sig = self.mono_signature(&inst.decl, &inst.mangled);
+            self.buf.push_str(&format!("{sig};\n"));
+        }
+    }
+
+    /// Emit one full body per monomorphization instance. Body
+    /// statements come from the substituted clone, so any TypeRef
+    /// already references the concrete type at the point the
+    /// emitter touches it.
+    fn emit_mono_bodies(&mut self) {
+        for inst in self.mono_instances.clone().iter() {
+            let sig = self.mono_signature(&inst.decl, &inst.mangled);
+            self.buf.push_str(&sig);
+            self.buf.push_str(" {\n");
+            for stmt in &inst.decl.body.statements {
+                self.emit_stmt(stmt, 1);
+            }
+            self.buf.push_str("}\n\n");
+        }
+    }
+
+    /// `function_signature`, but emits the given mangled C name
+    /// instead of `phc_<source_name>`. Used for monomorphized
+    /// instances which share signatures-by-shape with the source
+    /// function but need a unique linker symbol.
+    fn mono_signature(&self, f: &FunctionDecl, mangled: &str) -> String {
+        let return_c = self.c_type_for(&f.return_type);
+        let params: Vec<String> = f
+            .params
+            .iter()
+            .map(|p| {
+                format!(
+                    "{} phc_var_{}",
+                    self.c_type_for(&p.ty),
+                    mangle(&p.name.name)
+                )
+            })
+            .collect();
+        let param_list = if params.is_empty() {
+            "void".to_string()
+        } else {
+            params.join(", ")
+        };
+        format!("static {} {}({})", return_c, mangled, param_list)
     }
 
     fn emit_main_wrapper(&mut self, file: &SourceFile) {
@@ -1450,6 +1527,15 @@ impl<'a> Emitter<'a> {
                         arg_src.join(", ")
                     };
                     return format!("phc_construct_{}({})", name.name, args_joined);
+                }
+                // Generic free function call: resolve to the
+                // monomorphization instance so the C symbol exists.
+                // Falls back to the unsubstituted source name when
+                // the arg types couldn't be pinned (matches the
+                // pre-monomorphization behaviour, including the
+                // existing `phc_value` mismatch diagnostic).
+                if let Some(mangled) = self.mono_callee(&name.name, args) {
+                    return format!("{}({})", mangled, arg_src.join(", "));
                 }
                 return format!("phc_{}({})", name.name, arg_src.join(", "));
             }
@@ -2371,6 +2457,20 @@ impl<'a> Emitter<'a> {
     /// Best-effort class lookup for a method-call receiver. Reads
     /// the typecheck pass's expr_types map for `Ty::Path { path }`
     /// where path[0] names a known class.
+    /// Resolve a call site's callee name + arg list to the mangled C
+    /// symbol of a monomorphization instance, if one applies.
+    /// Returns None when the name is not a generic free function or
+    /// when concrete arg types can't be inferred for every generic
+    /// parameter (in which case the existing dispatch path runs).
+    fn mono_callee(&self, name: &str, args: &[Expr]) -> Option<String> {
+        let decl = self.file.items.iter().find_map(|item| match item {
+            Item::Function(f) if f.name.name == name && !f.generic_params.is_empty() => Some(f),
+            _ => None,
+        })?;
+        let concrete = concrete_tys_for_call(decl, args, self.typed)?;
+        Some(mangle_instance(name, &concrete))
+    }
+
     fn class_of_expr(&self, expr: &Expr) -> Option<String> {
         // `$this` inside a class or trait-mixin method body always
         // refers to the host class. The typecheck record for the

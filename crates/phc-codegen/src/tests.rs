@@ -253,6 +253,36 @@ fn string_toint_with_try_emits_result_propagation() {
 }
 
 #[test]
+fn generic_free_fn_monomorphizes_per_concrete_arg_tuple() {
+    // `max<T>` is generic; only one call site (`max(3, 7)`) so a
+    // single int64-specialised instance should emerge. The
+    // unsubstituted `phc_max` symbol must NOT appear in the output —
+    // the C compiler would reject its `phc_value` placeholder params.
+    let src = r#"pack a;
+        public function max<T>(T $a, T $b): T {
+            if ($a > $b) { return $a; }
+            return $b;
+        }
+        public function demo(): int {
+            return max(3, 7);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("static int64_t phc_max__int(int64_t phc_var_a, int64_t phc_var_b)"),
+        "int64 instance signature missing:\n{c}"
+    );
+    assert!(
+        c.contains("phc_max__int((int64_t)3, (int64_t)7)"),
+        "call site should dispatch to the mono instance:\n{c}"
+    );
+    assert!(
+        !c.contains("phc_value phc_max"),
+        "unsubstituted generic must not be emitted:\n{c}"
+    );
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }

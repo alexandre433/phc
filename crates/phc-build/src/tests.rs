@@ -1118,6 +1118,55 @@ function main(): void {
     );
 }
 
+/// Build + run a generic free function specialised at two distinct
+/// concrete types from one source. Verifies the monomorphizer emits
+/// distinct C symbols (no name clash) and dispatches each call site
+/// to the right specialisation.
+#[test]
+fn build_and_run_generic_mono_two_specialisations() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_generic_mono_two_specialisations: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+public function pickLarger<T>(T $a, T $b): T {
+    if ($a > $b) { return $a; }
+    return $b;
+}
+
+function main(): void {
+    int $i = pickLarger(3, 7);
+    float $f = pickLarger(1.5, 2.5);
+    Logger::info("int picked: {$i}");
+    Logger::info("float picked: {$f}");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("generic_mono.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("generic_mono");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines, vec!["int picked: 7", "float picked: 2.5",]);
+}
+
 /// Build + run a 2-pack project where the importing pack constructs
 /// a class from the other pack and dispatches a method on it.
 /// Regression coverage for cross-pack class type plumbing through
