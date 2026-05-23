@@ -320,6 +320,85 @@ fn async_function_emits_runtime_panic_stub() {
 }
 
 #[test]
+fn generic_free_fn_specialises_at_float_and_int_in_one_unit() {
+    let src = r#"pack a;
+        public function pick<T>(T $a, T $b): T {
+            if ($a > $b) { return $a; }
+            return $b;
+        }
+        public function demo(): void {
+            int $i = pick(3, 7);
+            float $f = pick(1.5, 2.5);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_pick__int(int64_t"),
+        "int specialisation missing:\n{c}"
+    );
+    assert!(
+        c.contains("phc_pick__float(double"),
+        "float specialisation missing:\n{c}"
+    );
+    // Each specialisation appears twice — once as a forward decl
+    // and once as a body. The test mostly cares that distinct
+    // C symbols exist for the two type tuples; checking each
+    // appears ≥ 2 times catches a missing-emit regression.
+    assert!(
+        c.matches("static double phc_pick__float").count() >= 2,
+        "float specialisation should have both forward decl and body:\n{c}"
+    );
+    assert!(
+        c.matches("static int64_t phc_pick__int").count() >= 2,
+        "int specialisation should have both forward decl and body:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_with_two_type_params_concatenates_mangling() {
+    let src = r#"pack a;
+        public function pair<A, B>(A $a, B $b): A { return $a; }
+        public function demo(): int {
+            return pair(7, true);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_pair__int_bool"),
+        "two-param mangle should join with `_`:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_with_no_call_sites_emits_nothing() {
+    // Generic fn declared but never called — emitter should skip
+    // both the unsubstituted source and any specialisation.
+    let src = r#"pack a;
+        public function noop<T>(T $a): T { return $a; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        !c.contains("phc_noop"),
+        "uncalled generic must not emit:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_specialises_at_string_type() {
+    let src = r#"pack a;
+        public function identity<T>(T $a): T { return $a; }
+        public function demo(): string {
+            return identity("hello");
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_identity__string(phc_string"),
+        "string specialisation missing:\n{c}"
+    );
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }
