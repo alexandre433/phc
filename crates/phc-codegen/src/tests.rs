@@ -229,6 +229,30 @@ fn trait_mixin_dispatches_this_method_on_host_class() {
 }
 
 #[test]
+fn string_toint_with_try_emits_result_propagation() {
+    // `$raw->toInt()` returns result<int, parseError>; the trailing
+    // `?` must early-return on the err variant and unwrap the int
+    // on ok. Regressions here previously fell to either
+    // "codegen TODO method receiver" or "codegen TODO ? on unknown type".
+    let src = r#"pack a;
+        public function parsePort(string $raw): result<int, parseError> {
+            int $value = $raw->toInt()?;
+            return result::ok($value);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_int_parse(phc_var_raw)"),
+        "toInt should route to phc_int_parse:\n{c}"
+    );
+    assert!(
+        c.contains("phc_result __phc_try_") && c.contains(".ok.i64;"),
+        "postfix `?` should emit result-propagation statement-expression:\n{c}"
+    );
+    assert!(!c.contains("codegen TODO"), "no TODO panics:\n{c}");
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }

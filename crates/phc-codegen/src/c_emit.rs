@@ -2273,6 +2273,9 @@ impl<'a> Emitter<'a> {
             "trim" => ("phc_str_trim", 0),
             "upper" => ("phc_str_upper", 0),
             "lower" => ("phc_str_lower", 0),
+            // toInt routes to the same runtime entry as int::parse
+            // (both return result<int, parseError>).
+            "toInt" => ("phc_int_parse", 0),
             _ => return None,
         };
         if args.len() != arity {

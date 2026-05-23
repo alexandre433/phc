@@ -534,8 +534,21 @@ fn stdlib_method_return_ty(
             "len" => Some(Ty::Primitive(crate::Primitive::Int)),
             "contains" | "startsWith" | "endsWith" => Some(Ty::Primitive(crate::Primitive::Bool)),
             "trim" | "upper" | "lower" => Some(Ty::Primitive(crate::Primitive::String)),
-            // toInt returns result<int, parseError>; precise E type
-            // is stdlib-pending so leave Unknown rather than fake it.
+            // toInt returns result<int, parseError>. Mirrors
+            // int::parse (see static-call inference above) so a
+            // trailing `?` can propagate as expected.
+            "toInt" => Some(Ty::Path {
+                path: vec!["result".to_string()],
+                args: vec![
+                    Ty::Primitive(crate::Primitive::Int),
+                    Ty::Path {
+                        path: vec!["parseError".to_string()],
+                        args: Vec::new(),
+                        nullable: false,
+                    },
+                ],
+                nullable: false,
+            }),
             _ => None,
         },
         Ty::Path { path, args, .. } if path.len() == 1 => {
