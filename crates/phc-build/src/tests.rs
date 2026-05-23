@@ -1118,6 +1118,59 @@ function main(): void {
     );
 }
 
+/// Build + run a 2-pack project where the importing pack constructs
+/// a class from the other pack and dispatches a method on it.
+/// Regression coverage for cross-pack class type plumbing through
+/// `combine_session`.
+#[test]
+fn build_and_run_cross_pack_class_method() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_cross_pack_class_method: no C compiler on PATH");
+        return;
+    }
+    let root = project_root("two_pack_class");
+    std::fs::write(
+        root.join("box.phc"),
+        r#"pack core;
+public class Box {
+    construct(public int $value) {}
+    public function doubled(): int { return $this->value + $this->value; }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("main.phc"),
+        r#"pack app;
+use core.Box;
+function main(): void {
+    Box $b = Box(21);
+    Logger::info("doubled is {$b->doubled()}");
+}
+"#,
+    )
+    .unwrap();
+    let output = output_path("two_pack_class");
+    let result = build_project(&root, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    assert!(
+        stdout.contains("doubled is 42"),
+        "unexpected stdout: {stdout:?}"
+    );
+}
+
 fn project_root(name: &str) -> PathBuf {
     let mut p = PathBuf::from("target");
     p.push("phc-build-session");
