@@ -26,10 +26,20 @@ and reports the best wall-clock per runtime.
   include process startup. Loops are picked large enough (≥10ms) that
   startup overhead doesn't dominate.
 
-## Sample results
+## Sample results (Windows, release, GCC)
 
-Recorded on a generic cloud-container Linux host. Absolute numbers
-will vary; ratios stay roughly stable.
+Recorded on a Windows 11 host (development machine). PHC baselines
+measured 2026-05-26 after the qsort upgrade (D-045 sort now uses stdlib
+qsort via `phc_list_sort_i64`).
+
+| Benchmark      | PHC  | Notes                                              |
+| -------------- | ---- | -------------------------------------------------- |
+| fib(35)        | 136ms | Recursive Fibonacci, no allocation                |
+| sum_sq 1e8     | 143ms | Integer loop, tight arithmetic                    |
+| list_ops 100K  | 31ms  | 100K element list creation + qsort + fold         |
+| class_dispatch 10M | 65ms | 10M method calls through OOP dispatch         |
+
+Linux cloud-container numbers (C / PHP / Python comparison):
 
 | Benchmark      | C    | PHC  | PHP   | Python | Notes                                              |
 | -------------- | ---- | ---- | ----- | ------ | -------------------------------------------------- |
@@ -59,3 +69,5 @@ until the CoW + refcount story (D-022) lands.
   sums overflow i64. Both PHC and C versions overflow the same
   way and produce the same (garbage) sum, so the comparison is
   fair, but the printed number isn't a real total.
+- `list_ops` sort uses `phc_list_sort_i64` backed by stdlib `qsort`.
+  The thread-local lambda trick is safe until async/parallel lands.
