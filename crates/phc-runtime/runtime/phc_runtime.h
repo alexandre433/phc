@@ -175,6 +175,12 @@ phc_string phc_str_trim(phc_string s);
 phc_string phc_str_upper(phc_string s);
 phc_string phc_str_lower(phc_string s);
 
+/* === String extras (D-047) === */
+phc_list   phc_str_split(phc_string s, phc_string delim);         /* list<string> */
+phc_string phc_str_repeat(phc_string s, int64_t n);               /* fresh buffer */
+phc_option phc_str_index_of(phc_string s, phc_string needle);     /* option<int>  */
+phc_string phc_str_replace(phc_string s, phc_string needle, phc_string rep); /* fresh buffer */
+
 /* === Numeric stdlib (D-034) === */
 phc_result phc_int_parse(phc_string s);     /* result<int, parseError> */
 int64_t    phc_int_min(int64_t a, int64_t b);

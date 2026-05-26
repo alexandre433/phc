@@ -310,6 +310,71 @@ phc_string phc_str_lower(phc_string s) {
     return out;
 }
 
+/* ===== String extras (D-047) ===== */
+
+phc_list phc_str_split(phc_string s, phc_string delim) {
+    if (delim.len == 0) phc_panic("string::split: delimiter must not be empty");
+    phc_list out = phc_list_new();
+    size_t start = 0;
+    for (size_t i = 0; i + delim.len <= s.len; ) {
+        if (memcmp(s.data + i, delim.data, delim.len) == 0) {
+            phc_payload p; p.s = phc_string_owned(s.data + start, i - start);
+            phc_list_push(out, p);
+            i += delim.len;
+            start = i;
+        } else {
+            i++;
+        }
+    }
+    phc_payload p; p.s = phc_string_owned(s.data + start, s.len - start);
+    phc_list_push(out, p);
+    return out;
+}
+
+phc_string phc_str_repeat(phc_string s, int64_t n) {
+    if (n < 0) phc_panic("string::repeat: count must be >= 0");
+    if (n == 0 || s.len == 0) return phc_string_owned("", 0);
+    size_t total = s.len * (size_t)n;
+    char* buf = (char*)phc_alloc(total + 1);
+    for (size_t i = 0; i < (size_t)n; i++) memcpy(buf + i * s.len, s.data, s.len);
+    buf[total] = '\0';
+    phc_string out; out.data = buf; out.len = total;
+    return out;
+}
+
+phc_option phc_str_index_of(phc_string s, phc_string needle) {
+    if (needle.len == 0) { phc_option o = {.kind = 0}; o.some.i64 = 0; return o; }
+    for (size_t i = 0; i + needle.len <= s.len; i++) {
+        if (memcmp(s.data + i, needle.data, needle.len) == 0) {
+            phc_option o = {.kind = 0}; o.some.i64 = (int64_t)i; return o;
+        }
+    }
+    phc_option none = {.kind = 1}; return none;
+}
+
+phc_string phc_str_replace(phc_string s, phc_string needle, phc_string rep) {
+    if (needle.len == 0) return phc_string_owned(s.data, s.len);
+    size_t count = 0;
+    for (size_t i = 0; i + needle.len <= s.len; ) {
+        if (memcmp(s.data + i, needle.data, needle.len) == 0) { count++; i += needle.len; }
+        else { i++; }
+    }
+    if (count == 0) return phc_string_owned(s.data, s.len);
+    size_t new_len = s.len - count * needle.len + count * rep.len;
+    char* buf = (char*)phc_alloc(new_len + 1);
+    size_t wi = 0;
+    for (size_t ri = 0; ri < s.len; ) {
+        if (ri + needle.len <= s.len && memcmp(s.data + ri, needle.data, needle.len) == 0) {
+            memcpy(buf + wi, rep.data, rep.len); wi += rep.len; ri += needle.len;
+        } else {
+            buf[wi++] = s.data[ri++];
+        }
+    }
+    buf[wi] = '\0';
+    phc_string out; out.data = buf; out.len = wi;
+    return out;
+}
+
 /* ===== Result / Option ergonomic methods (D-026) ===== */
 
 bool phc_result_is_ok(phc_result r) { return r.kind == 0; }

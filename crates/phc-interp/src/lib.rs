@@ -1327,6 +1327,61 @@ impl<'a> Interp<'a> {
                     .collect();
                 Ok(Some(Value::String(out)))
             }
+            "split" => {
+                arity_check(1)?;
+                let delim = needle_arg(self, env)?;
+                if delim.is_empty() {
+                    return Err(rt("string::split: delimiter must not be empty".to_string()));
+                }
+                let parts: Vec<Value> = s
+                    .split(delim.as_str())
+                    .map(|p| Value::String(p.to_string()))
+                    .collect();
+                Ok(Some(Value::List(Rc::new(RefCell::new(parts)))))
+            }
+            "repeat" => {
+                arity_check(1)?;
+                let n = match self.eval_expr(&args[0], env)? {
+                    Value::Int(n) => n,
+                    other => {
+                        return Err(rt(format!(
+                            "string::repeat expects int, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                if n < 0 {
+                    return Err(rt("string::repeat: count must be >= 0".to_string()));
+                }
+                Ok(Some(Value::String(s.repeat(n as usize))))
+            }
+            "indexOf" => {
+                arity_check(1)?;
+                let needle = needle_arg(self, env)?;
+                match s.find(needle.as_str()) {
+                    Some(idx) => Ok(Some(Value::OptionSome(Box::new(Value::Int(idx as i64))))),
+                    None => Ok(Some(Value::OptionNone)),
+                }
+            }
+            "replace" => {
+                arity_check(2)?;
+                let needle = needle_arg(self, env)?;
+                let rep = match self.eval_expr(&args[1], env)? {
+                    Value::String(r) => r,
+                    other => {
+                        return Err(rt(format!(
+                            "string::replace expects string argument, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                if needle.is_empty() {
+                    return Ok(Some(Value::String(s.to_string())));
+                }
+                Ok(Some(Value::String(
+                    s.replace(needle.as_str(), rep.as_str()),
+                )))
+            }
             _ => Ok(None),
         }
     }

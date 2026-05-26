@@ -1333,3 +1333,74 @@ function main(): void {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["join ok".to_string()]);
 }
+
+#[test]
+fn d047_string_split_produces_list() {
+    let src = r#"pack demo;
+function main(): void {
+    list<string> $parts = "a,b,c"->split(",");
+    assert::eq($parts->len(), 3);
+    assert::eq($parts->at(0), "a");
+    assert::eq($parts->at(1), "b");
+    assert::eq($parts->at(2), "c");
+    list<string> $no_match = "hello"->split(",");
+    assert::eq($no_match->len(), 1);
+    assert::eq($no_match->at(0), "hello");
+    list<string> $multi = "ab--cd--ef"->split("--");
+    assert::eq($multi->len(), 3);
+    io::println("split ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["split ok".to_string()]);
+}
+
+#[test]
+fn d047_string_repeat_produces_repeated_string() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::eq("ab"->repeat(3), "ababab");
+    assert::eq("x"->repeat(1), "x");
+    assert::eq("hello"->repeat(0), "");
+    io::println("repeat ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["repeat ok".to_string()]);
+}
+
+#[test]
+fn d047_string_index_of_returns_option() {
+    let src = r#"pack demo;
+function main(): void {
+    option<int> $found = "hello world"->indexOf("world");
+    assert::eq($found->isSome(), true);
+    assert::eq($found->unwrapOr(-1), 6);
+    option<int> $missing = "hello"->indexOf("xyz");
+    assert::eq($missing->isNone(), true);
+    assert::eq("abcabc"->indexOf("b")->unwrapOr(-1), 1);
+    io::println("indexOf ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["indexOf ok".to_string()]);
+}
+
+#[test]
+fn d047_string_replace_replaces_all_occurrences() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::eq("aabbaa"->replace("a", "x"), "xxbbxx");
+    assert::eq("hello"->replace("l", "r"), "herro");
+    assert::eq("abc"->replace("xyz", "Q"), "abc");
+    assert::eq("abc"->replace("", "Q"), "abc");
+    io::println("replace ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["replace ok".to_string()]);
+}

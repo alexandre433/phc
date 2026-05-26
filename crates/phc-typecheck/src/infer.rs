@@ -549,6 +549,20 @@ fn stdlib_method_return_ty(
                 ],
                 nullable: false,
             }),
+            // D-047: split → list<string>; repeat → string;
+            // indexOf → option<int>; replace → string.
+            "split" => Some(Ty::Path {
+                path: vec!["list".to_string()],
+                args: vec![Ty::Primitive(crate::Primitive::String)],
+                nullable: false,
+            }),
+            "repeat" => Some(Ty::Primitive(crate::Primitive::String)),
+            "indexOf" => Some(Ty::Path {
+                path: vec!["option".to_string()],
+                args: vec![Ty::Primitive(crate::Primitive::Int)],
+                nullable: false,
+            }),
+            "replace" => Some(Ty::Primitive(crate::Primitive::String)),
             _ => None,
         },
         Ty::Path { path, args, .. } if path.len() == 1 => {

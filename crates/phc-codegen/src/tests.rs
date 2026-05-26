@@ -253,6 +253,36 @@ fn string_toint_with_try_emits_result_propagation() {
 }
 
 #[test]
+fn d047_string_extras_emit_correct_c_calls() {
+    let src = r#"pack a;
+        public function demo(string $s): void {
+            list<string> $parts = $s->split(",");
+            string $rep = $s->repeat(3);
+            option<int> $idx = $s->indexOf("x");
+            string $replaced = $s->replace("a", "b");
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_str_split(phc_var_s,"),
+        "split should call phc_str_split:\n{c}"
+    );
+    assert!(
+        c.contains("phc_str_repeat(phc_var_s,"),
+        "repeat should call phc_str_repeat:\n{c}"
+    );
+    assert!(
+        c.contains("phc_str_index_of(phc_var_s,"),
+        "indexOf should call phc_str_index_of:\n{c}"
+    );
+    assert!(
+        c.contains("phc_str_replace(phc_var_s,"),
+        "replace should call phc_str_replace:\n{c}"
+    );
+    assert!(!c.contains("codegen TODO"), "no TODO panics:\n{c}");
+}
+
+#[test]
 fn generic_free_fn_monomorphizes_per_concrete_arg_tuple() {
     // `max<T>` is generic; only one call site (`max(3, 7)`) so a
     // single int64-specialised instance should emerge. The

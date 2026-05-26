@@ -1655,3 +1655,20 @@ Locked during Phase 6 stdlib build-out:
   closure surface without requiring new language features or runtime additions.
 - **Date**: 2026-05-21.
 - **Status**: locked for v0a.
+
+### D-047 — String extras: split / repeat / indexOf / replace (v0a)
+- **Decision**: Extends `string` with four methods deferred from D-025.
+
+  | Method | Signature | Semantics |
+  |--------|-----------|-----------|
+  | `split` | `(string): list<string>` | Split receiver by delimiter; returns list of segments. Empty delimiter panics at runtime. |
+  | `repeat` | `(int): string` | Repeat receiver `n` times; allocates fresh buffer. `n < 0` panics; `n == 0` → empty string. |
+  | `indexOf` | `(string): option<int>` | First byte-offset of needle in receiver; `option::none` if absent. Empty needle → `option::some(0)`. |
+  | `replace` | `(string, string): string` | Replace **all** occurrences of needle with replacement; allocates fresh buffer. Empty needle → return original unchanged. |
+
+  All methods are byte-oriented to match D-025's existing surface. Results that return a `string` allocate a fresh owned buffer.
+
+- **Alternatives considered**: `indexOf` returning `int` with `-1` sentinel (PHP convention; `option<int>` is more idiomatic in PHC); `split` on empty delimiter yielding single-byte segments (useful but adds complexity; panics is safer for v0a); `replaceFirst` vs `replaceAll` (always-replace avoids a flag parameter).
+- **Rationale**: `split` was explicitly blocked on `list<T>` in D-025 — now that D-027 shipped, the blocker is gone. `repeat`, `indexOf`, and `replace` cover the most common string manipulation patterns that have no workaround in v0a. All four follow the same byte-oriented, ASCII-level contract as D-025.
+- **Date**: 2026-05-26.
+- **Status**: locked for v0a. Unicode-aware `split` (by code point), `splitFirst`, `replaceFirst` tracked separately.
