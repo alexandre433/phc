@@ -7,11 +7,7 @@ function main(): void {
         $xs->push(100000 - $i);
         $i := $i + 1;
     }
-    list<int> $sorted = $xs->sort(fn(int $a, int $b): int {
-        if ($a < $b) { return -1; }
-        if ($a > $b) { return 1; }
-        return 0;
-    });
-    int $sum = $sorted->fold(0, fn(int $acc, int $x): int { return $acc + $x; });
+    list<int> $sorted = $xs->sort((int $a, int $b) => $a - $b);
+    int $sum = $sorted->fold(0, (int $acc, int $x) => $acc + $x);
     Logger::info("done");
 }

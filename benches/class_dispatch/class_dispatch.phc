@@ -2,14 +2,17 @@ pack bench;
 
 public class Counter {
     flip int $value = 0;
+
     construct(int $start) {
-        $value := $start;
+        $this->value := $start;
     }
+
     public function inc(): void {
-        $value := $value + 1;
+        $this->value := $this->value + 1;
     }
+
     public function get(): int {
-        return $value;
+        return $this->value;
     }
 }
 

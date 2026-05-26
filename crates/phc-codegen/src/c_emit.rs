@@ -502,6 +502,21 @@ impl<'a> Emitter<'a> {
                     }
                 }
             }
+            // Block body: look at the first return statement's expression type.
+            if let LambdaBody::Block(b) = body {
+                for stmt in &b.statements {
+                    if let Stmt::Return(r) = stmt {
+                        if let Some(e) = &r.value {
+                            if let Some(t) = self.typed.expr_types.get(&span_of_expr(e)) {
+                                if !matches!(t, Ty::Unknown) {
+                                    return self.ty_to_c(t);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
         }
         "int64_t".into()
     }
