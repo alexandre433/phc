@@ -2480,32 +2480,12 @@ impl<'a> Emitter<'a> {
     fn emit_list_sort(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
         let recv_c = self.emit_expr(receiver);
         let cb_c = self.emit_expr(closure);
-        let pm_t = self.payload_member(elem_ty);
-        let c_t = self.ty_to_c(elem_ty);
-        let lo = span_of_expr(receiver).lo;
-        format!(
-            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; \
-             int64_t __len_{lo} = phc_list_len(__xs_{lo}); \
-             phc_list __out_{lo} = phc_list_new(); \
-             for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ \
-               phc_list_push(__out_{lo}, phc_list_at(__xs_{lo}, __i_{lo})); \
-             }} \
-             for (int64_t __i_{lo} = 1; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ \
-               int64_t __j_{lo} = __i_{lo}; \
-               while (__j_{lo} > 0) {{ \
-                 {c_t} __a_{lo} = phc_list_at(__out_{lo}, __j_{lo} - 1).{pm_t}; \
-                 {c_t} __b_{lo} = phc_list_at(__out_{lo}, __j_{lo}).{pm_t}; \
-                 int64_t __cmp_{lo} = ((int64_t(*)(void*, {c_t}, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, __a_{lo}, __b_{lo}); \
-                 if (__cmp_{lo} > 0) {{ \
-                   phc_payload __tmp_{lo} = phc_list_at(__out_{lo}, __j_{lo} - 1); \
-                   phc_list_set(__out_{lo}, __j_{lo} - 1, phc_list_at(__out_{lo}, __j_{lo})); \
-                   phc_list_set(__out_{lo}, __j_{lo}, __tmp_{lo}); \
-                   --__j_{lo}; \
-                 }} else {{ break; }} \
-               }} \
-             }} \
-             __out_{lo}; }})"
-        )
+        let sort_fn = if matches!(elem_ty, Ty::Primitive(Primitive::Float)) {
+            "phc_list_sort_f64"
+        } else {
+            "phc_list_sort_i64"
+        };
+        format!("{sort_fn}({recv_c}, {cb_c})")
     }
 
     fn emit_list_flat_map(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {

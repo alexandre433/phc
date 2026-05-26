@@ -132,6 +132,10 @@ typedef struct {
     void* env;
 } phc_lambda;
 
+/* D-045 sort: qsort-backed, element type selected by suffix (_i64 / _f64). */
+phc_list    phc_list_sort_i64(phc_list xs, phc_lambda cb);
+phc_list    phc_list_sort_f64(phc_list xs, phc_lambda cb);
+
 /* === Constructors === */
 phc_string phc_string_lit(const char* s);
 phc_string phc_string_owned(const char* s, size_t len);

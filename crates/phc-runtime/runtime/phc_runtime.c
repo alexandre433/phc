@@ -457,6 +457,45 @@ int64_t phc_list_len(phc_list l) {
     return (int64_t)l->len;
 }
 
+/* D-045 sort helpers — PHC is single-threaded so one static is safe. */
+static phc_lambda __phc_sort_lam;
+
+static int __phc_sort_cmp_i64(const void* a, const void* b) {
+    int64_t va = ((const phc_payload*)a)->i64;
+    int64_t vb = ((const phc_payload*)b)->i64;
+    int64_t r = ((int64_t(*)(void*, int64_t, int64_t))(__phc_sort_lam.fn))
+                    (__phc_sort_lam.env, va, vb);
+    return r < 0 ? -1 : r > 0 ? 1 : 0;
+}
+
+static int __phc_sort_cmp_f64(const void* a, const void* b) {
+    double va = ((const phc_payload*)a)->f64;
+    double vb = ((const phc_payload*)b)->f64;
+    int64_t r = ((int64_t(*)(void*, double, double))(__phc_sort_lam.fn))
+                    (__phc_sort_lam.env, va, vb);
+    return r < 0 ? -1 : r > 0 ? 1 : 0;
+}
+
+phc_list phc_list_sort_i64(phc_list xs, phc_lambda cb) {
+    int64_t n = phc_list_len(xs);
+    phc_list out = phc_list_new();
+    for (int64_t i = 0; i < n; i++) phc_list_push(out, phc_list_at(xs, i));
+    if (n < 2) return out;
+    __phc_sort_lam = cb;
+    qsort(out->items, (size_t)n, sizeof(phc_payload), __phc_sort_cmp_i64);
+    return out;
+}
+
+phc_list phc_list_sort_f64(phc_list xs, phc_lambda cb) {
+    int64_t n = phc_list_len(xs);
+    phc_list out = phc_list_new();
+    for (int64_t i = 0; i < n; i++) phc_list_push(out, phc_list_at(xs, i));
+    if (n < 2) return out;
+    __phc_sort_lam = cb;
+    qsort(out->items, (size_t)n, sizeof(phc_payload), __phc_sort_cmp_f64);
+    return out;
+}
+
 /* ===== Map stdlib (D-028) ===== */
 
 struct phc_map_entry {
