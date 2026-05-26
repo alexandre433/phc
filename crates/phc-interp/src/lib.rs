@@ -1554,6 +1554,36 @@ impl<'a> Interp<'a> {
                     s.replace(needle.as_str(), rep.as_str()),
                 )))
             }
+            // D-049: slice(int, int) → string. Byte-oriented; indices clamped.
+            "slice" => {
+                arity_check(2)?;
+                let start = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "string::slice expects int start, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let end = match self.eval_expr(&args[1], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "string::slice expects int end, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let lo = (start.max(0) as usize).min(s.len());
+                let hi = (end.max(0) as usize).min(s.len());
+                let result = if lo >= hi {
+                    String::new()
+                } else {
+                    s[lo..hi].to_string()
+                };
+                Ok(Some(Value::String(result)))
+            }
             _ => Ok(None),
         }
     }
@@ -1953,6 +1983,35 @@ impl<'a> Interp<'a> {
                 items.borrow_mut().push(v);
                 Ok(Some(Value::Void))
             }
+            // D-049: set(int, T) — in-place element mutation by index.
+            "set" => {
+                if args.len() != 2 {
+                    return Err(rt(format!(
+                        "list method `set` takes 2 argument(s), got {}",
+                        args.len()
+                    )));
+                }
+                let idx = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i as usize,
+                    other => {
+                        return Err(rt(format!(
+                            "list::set index must be int, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let val = self.eval_expr(&args[1], env)?;
+                let mut items = items.borrow_mut();
+                if idx >= items.len() {
+                    return Err(rt(format!(
+                        "list::set index {} out of bounds (len {})",
+                        idx,
+                        items.len()
+                    )));
+                }
+                items[idx] = val;
+                Ok(Some(Value::Void))
+            }
             "at" => {
                 arity_check(1)?;
                 let iv = self.eval_expr(&args[0], env)?;
@@ -2067,6 +2126,72 @@ impl<'a> Interp<'a> {
                     }
                 }
                 Ok(Some(Value::Bool(true)))
+            }
+            // D-050: count(fn(T): bool) → int.
+            "count" => {
+                arity_check(1)?;
+                let lam = self.eval_lambda_arg(&args[0], env)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                let mut n: i64 = 0;
+                for v in snapshot {
+                    match self.invoke_lambda_with(&lam, vec![v])? {
+                        Value::Bool(true) => n += 1,
+                        Value::Bool(false) => {}
+                        other => {
+                            return Err(rt(format!(
+                                "list `count` predicate must return `bool`, got `{}`",
+                                other.display()
+                            )))
+                        }
+                    }
+                }
+                Ok(Some(Value::Int(n)))
+            }
+            // D-050: sum() → int | float (inferred from first element).
+            // Empty list returns Int(0); for list<float> this is technically
+            // wrong-typed but the typecheck guard prevents downstream misuse.
+            "sum" => {
+                arity_check(0)?;
+                let snapshot: Vec<Value> = items.borrow().clone();
+                if snapshot.is_empty() {
+                    return Ok(Some(Value::Int(0)));
+                }
+                match &snapshot[0] {
+                    Value::Int(_) => {
+                        let mut total: i64 = 0;
+                        for item in &snapshot {
+                            match item {
+                                Value::Int(n) => total += n,
+                                other => {
+                                    return Err(rt(format!(
+                                        "list `sum` mixed element types, got `{}`",
+                                        other.display()
+                                    )))
+                                }
+                            }
+                        }
+                        Ok(Some(Value::Int(total)))
+                    }
+                    Value::Float(_) => {
+                        let mut total: f64 = 0.0;
+                        for item in &snapshot {
+                            match item {
+                                Value::Float(f) => total += f,
+                                other => {
+                                    return Err(rt(format!(
+                                        "list `sum` mixed element types, got `{}`",
+                                        other.display()
+                                    )))
+                                }
+                            }
+                        }
+                        Ok(Some(Value::Float(total)))
+                    }
+                    other => Err(rt(format!(
+                        "list `sum` expected numeric elements, got `{}`",
+                        other.display()
+                    ))),
+                }
             }
             "find" => {
                 arity_check(1)?;

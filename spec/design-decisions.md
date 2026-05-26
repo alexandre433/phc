@@ -1698,3 +1698,35 @@ Locked during Phase 6 stdlib build-out:
 - **Alternatives considered**: `float::truncate` / `float::trunc` (less idiomatic; `toInt` conveys intent); implicit int→float promotion (too implicit for PHC's explicit style); a `math::*` namespace (separate namespace for a handful of functions adds more surface without benefit while D-034 is still small).
 - **Date**: 2026-05-26.
 - **Status**: locked for v0a. Trigonometry, `float::log`, `float::exp`, `int::toHex`, `float::toFixed` tracked separately.
+
+### D-049 — string::slice + list<T>::set (v0a)
+- **Decision**: Two targeted additions to close gaps in existing collections.
+
+  **`string::slice(int, int): string`** — returns bytes `[start, end)`. Both indices
+  clamped to `[0, len]`; if `start >= end`, returns empty string. Byte-oriented to
+  match D-025's existing surface.
+
+  **`list<T>::set(int, T): void`** — replaces element at `index` in-place. Out-of-bounds
+  aborts (same as `at`). Mutation does not require `flip` on the handle because list
+  mutation goes through the shared heap object (same carve-out as `push`, D-027).
+  `phc_list_set` already existed in the C runtime; this slice exposes it at the PHC level.
+
+- **Rationale**: `slice` is the last fundamental string operation needed for typical parsing
+  patterns. `list::set` unblocks mutation-indexed algorithms (sieve, DP tables) that cannot
+  be expressed with `push` alone.
+- **Alternatives considered**: `string::slice` returning `option<string>` on out-of-bounds (adds boilerplate for the common case; clamping matches Go/Kotlin conventions and D-025's byte-oriented stance); `list<T>::set` requiring `flip` on the binding (inconsistent with `push`'s existing carve-out — same shared-heap rationale applies).
+- **Date**: 2026-05-26.
+- **Status**: locked for v0a.
+
+### D-050 — `list<T>` count + sum (v0a)
+- **Decision**: Two convenience aggregation methods for `list<T>`.
+
+  | Method | Signature | Semantics |
+  |--------|-----------|-----------|
+  | `count` | `(fn(T): bool): int` | Number of elements for which predicate returns true. One-pass alternative to `filter(...)->len()`. |
+  | `sum` | `(): int \| float` | Sum of all elements. Return type is the element type (`int` for `list<int>`, `float` for `list<float>`). Empty list → 0. Panics on non-numeric elements. |
+
+- **Rationale**: `count` and `sum` are the two most common aggregations that cannot be expressed idiomatically without a second traversal or an explicit `fold`. Both are zero-new-runtime-primitive additions that compose on existing infrastructure.
+- **Alternatives considered**: `sum` returning `option<T>` for empty list (avoids ambiguous zero but adds boilerplate for the common case; clamping to 0 matches Kotlin/Swift conventions). Skipping `sum` codegen (possible but leaves `phc build` broken for a method that typechecks cleanly; codegen via `payload_member`/`ty_to_c` makes it straightforward).
+- **Date**: 2026-05-26.
+- **Status**: locked for v0a. `sum` on empty `list<float>` returns `Int(0)` in the interpreter (type-correct programs never observe this via a statically-typed consumer).

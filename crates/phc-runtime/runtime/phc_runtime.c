@@ -393,6 +393,15 @@ phc_string phc_str_replace(phc_string s, phc_string needle, phc_string rep) {
     return out;
 }
 
+/* ===== String slice (D-049) ===== */
+
+phc_string phc_str_slice(phc_string s, int64_t start, int64_t end) {
+    if (start < 0) start = 0;
+    if (end > (int64_t)s.len) end = (int64_t)s.len;
+    if (start >= end) return phc_string_owned("", 0);
+    return phc_string_owned(s.data + (size_t)start, (size_t)(end - start));
+}
+
 /* ===== Result / Option ergonomic methods (D-026) ===== */
 
 bool phc_result_is_ok(phc_result r) { return r.kind == 0; }

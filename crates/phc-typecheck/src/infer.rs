@@ -568,6 +568,8 @@ fn stdlib_method_return_ty(
                 nullable: false,
             }),
             "replace" => Some(Ty::Primitive(crate::Primitive::String)),
+            // D-049: slice(int, int) → string.
+            "slice" => Some(Ty::Primitive(crate::Primitive::String)),
             _ => None,
         },
         Ty::Path { path, args, .. } if path.len() == 1 => {
@@ -594,6 +596,9 @@ fn stdlib_method_return_ty(
                 // option<T>.
                 ("list", "fold") => arg_static_ty(0),
                 ("list", "any") | ("list", "all") => Some(Ty::Primitive(crate::Primitive::Bool)),
+                // D-050: count(fn(T): bool) → int; sum() → elem type (int or float).
+                ("list", "count") => Some(Ty::Primitive(crate::Primitive::Int)),
+                ("list", "sum") => elem.clone(),
                 ("list", "find") => Some(Ty::Path {
                     path: vec!["option".to_string()],
                     args: vec![elem.clone().unwrap_or(Ty::Unknown)],
@@ -617,6 +622,8 @@ fn stdlib_method_return_ty(
                 ("list", "join") => Some(Ty::Primitive(crate::Primitive::String)),
                 // D-045: sort(fn(T,T):int) → list<T>.
                 ("list", "sort") => Some(recv_ty.clone()),
+                // D-049: set(int, T) → void.
+                ("list", "set") => Some(Ty::Primitive(crate::Primitive::Void)),
                 // D-046: flatMap(fn(T): list<U>) → list<U>.
                 ("list", "flatMap") => {
                     // lambda returns list<U>; that IS the output type.

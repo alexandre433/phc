@@ -11,6 +11,9 @@ for ok
 sort asc ok
 sort desc ok
 flatMap ok
+count ok
+sum int ok
+empty ok
 
 === result ===
 void

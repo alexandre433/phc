@@ -45,4 +45,24 @@ public function main(): void {
     if ($doubled->len() == 4 && $doubled->at(0) == 1 && $doubled->at(1) == 10 && $doubled->at(2) == 2 && $doubled->at(3) == 20) {
         Logger::info("flatMap ok");
     }
+
+    // D-050: count
+    list<int> $nums = list();
+    $nums->push(1);
+    $nums->push(2);
+    $nums->push(3);
+    $nums->push(4);
+    $nums->push(5);
+    int $evens = $nums->count((int $n) => $n % 2 == 0);
+    if ($evens == 2) { Logger::info("count ok"); }
+
+    // D-050: sum
+    int $total = $nums->sum();
+    if ($total == 15) { Logger::info("sum int ok"); }
+
+    // D-050: empty list edge cases
+    list<int> $empty = list();
+    int $empty_sum = $empty->sum();
+    int $empty_count = $empty->count((int $n) => $n > 0);
+    if ($empty_sum == 0 && $empty_count == 0) { Logger::info("empty ok"); }
 }

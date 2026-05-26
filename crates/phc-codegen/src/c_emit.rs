@@ -2199,6 +2199,14 @@ impl<'a> Emitter<'a> {
                 let idx = self.emit_expr(&args[0]);
                 Some(format!("phc_list_at({recv_c}, {idx}).{pm}"))
             }
+            // D-049: set(int, T) — in-place element mutation.
+            ("set", 2) => {
+                let idx = self.emit_expr(&args[0]);
+                let v = self.emit_expr(&args[1]);
+                Some(format!(
+                    "phc_list_set({recv_c}, {idx}, (phc_payload){{.{pm} = {v}}})"
+                ))
+            }
             // D-030 closure forms. Same stmt-expr pattern as D-029
             // result/option closures: bind receiver + closure once,
             // loop, cast `__cb.fn` to the precise signature, build
@@ -2212,6 +2220,9 @@ impl<'a> Emitter<'a> {
             ("any", 1) => Some(self.emit_list_any(receiver, elem_ty, &args[0])),
             ("all", 1) => Some(self.emit_list_all(receiver, elem_ty, &args[0])),
             ("find", 1) => Some(self.emit_list_find(receiver, elem_ty, &args[0])),
+            // D-050: count / sum.
+            ("count", 1) => Some(self.emit_list_count(receiver, elem_ty, &args[0])),
+            ("sum", 0) => Some(self.emit_list_sum(receiver, elem_ty)),
             // D-038 closure forms.
             ("reduce", 1) => Some(self.emit_list_reduce(receiver, elem_ty, &args[0])),
             ("findIndex", 1) => Some(self.emit_list_find_index(receiver, elem_ty, &args[0])),
@@ -2274,6 +2285,29 @@ impl<'a> Emitter<'a> {
         let lo = span_of_expr(receiver).lo;
         format!(
             "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); bool __ok_{lo} = true; for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo} && __ok_{lo}; ++__i_{lo}) {{ if (!((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t})) {{ __ok_{lo} = false; }} }} __ok_{lo}; }})"
+        )
+    }
+
+    /// D-050: count(fn(T): bool) → int.
+    fn emit_list_count(&mut self, receiver: &Expr, elem_ty: &Ty, closure: &Expr) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let cb_c = self.emit_expr(closure);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; phc_lambda __cb_{lo} = {cb_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); int64_t __n_{lo} = 0; for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ if (((bool(*)(void*, {c_t}))(__cb_{lo}.fn))(__cb_{lo}.env, phc_list_at(__xs_{lo}, __i_{lo}).{pm_t})) {{ ++__n_{lo}; }} }} __n_{lo}; }})"
+        )
+    }
+
+    /// D-050: sum() → int | float. Element type determines C type and union member.
+    fn emit_list_sum(&mut self, receiver: &Expr, elem_ty: &Ty) -> String {
+        let recv_c = self.emit_expr(receiver);
+        let pm_t = self.payload_member(elem_ty);
+        let c_t = self.ty_to_c(elem_ty);
+        let lo = span_of_expr(receiver).lo;
+        format!(
+            "({{ phc_list __xs_{lo} = {recv_c}; int64_t __len_{lo} = phc_list_len(__xs_{lo}); {c_t} __s_{lo} = ({c_t})0; for (int64_t __i_{lo} = 0; __i_{lo} < __len_{lo}; ++__i_{lo}) {{ __s_{lo} += phc_list_at(__xs_{lo}, __i_{lo}).{pm_t}; }} __s_{lo}; }})"
         )
     }
 
@@ -2508,6 +2542,8 @@ impl<'a> Emitter<'a> {
             "repeat" => ("phc_str_repeat", 1),
             "indexOf" => ("phc_str_index_of", 1),
             "replace" => ("phc_str_replace", 2),
+            // D-049: slice(int, int) → string.
+            "slice" => ("phc_str_slice", 2),
             _ => return None,
         };
         if args.len() != arity {
