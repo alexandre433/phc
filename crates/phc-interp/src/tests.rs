@@ -1404,3 +1404,25 @@ function main(): void {
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert_eq!(out.stdout, vec!["replace ok".to_string()]);
 }
+
+#[test]
+fn d048_float_math_and_conversions() {
+    let src = r#"pack demo;
+function main(): void {
+    assert::approxEq(float::sqrt(4.0), 2.0);
+    assert::approxEq(float::floor(2.9), 2.0);
+    assert::approxEq(float::ceil(2.1), 3.0);
+    assert::approxEq(float::round(2.5), 3.0);
+    assert::approxEq(float::pow(2.0, 10.0), 1024.0);
+    assert::eq(float::toInt(3.9), 3);
+    assert::eq(float::toInt(-3.9), -3);
+    assert::approxEq(int::toFloat(7), 7.0);
+    assert::eq(int::pow(2, 10), 1024);
+    assert::eq(int::pow(3, 0), 1);
+    io::println("math ok");
+}
+"#;
+    let out = run_src(src);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["math ok".to_string()]);
+}

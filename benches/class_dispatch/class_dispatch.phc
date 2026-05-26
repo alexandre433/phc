@@ -1,0 +1,24 @@
+pack bench;
+
+public class Counter {
+    flip int $value = 0;
+    construct(int $start) {
+        $value := $start;
+    }
+    public function inc(): void {
+        $value := $value + 1;
+    }
+    public function get(): int {
+        return $value;
+    }
+}
+
+function main(): void {
+    Counter $c = Counter(0);
+    flip int $i = 0;
+    while ($i < 10000000) {
+        $c->inc();
+        $i := $i + 1;
+    }
+    Logger::info("done");
+}

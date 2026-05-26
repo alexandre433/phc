@@ -436,7 +436,8 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
                             ],
                             nullable: false,
                         },
-                        "min" | "max" | "abs" => Ty::Primitive(crate::Primitive::Int),
+                        "min" | "max" | "abs" | "pow" => Ty::Primitive(crate::Primitive::Int),
+                        "toFloat" => Ty::Primitive(crate::Primitive::Float),
                         _ => Ty::Unknown,
                     };
                 }
@@ -454,8 +455,12 @@ fn call_return_ty(callee: &Expr, args: &[Expr], resolved: &Resolved, typed: &Typ
                             ],
                             nullable: false,
                         },
-                        "min" | "max" | "abs" => Ty::Primitive(crate::Primitive::Float),
+                        "min" | "max" | "abs" | "sqrt" | "floor" | "ceil" | "round" => {
+                            Ty::Primitive(crate::Primitive::Float)
+                        }
+                        "pow" => Ty::Primitive(crate::Primitive::Float),
                         "isNaN" => Ty::Primitive(crate::Primitive::Bool),
+                        "toInt" => Ty::Primitive(crate::Primitive::Int),
                         _ => Ty::Unknown,
                     };
                 }

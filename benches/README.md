@@ -31,16 +31,22 @@ and reports the best wall-clock per runtime.
 Recorded on a generic cloud-container Linux host. Absolute numbers
 will vary; ratios stay roughly stable.
 
-| Benchmark | C    | PHC  | PHP  | Python |
-| --------- | ---- | ---- | ---- | ------ |
-| fib(35)   | 21ms | 21ms | 589ms | 1.2s  |
-| sum_sq 1e8| 64ms | 58ms | 849ms | 9.3s  |
+| Benchmark      | C    | PHC  | PHP   | Python | Notes                                              |
+| -------------- | ---- | ---- | ----- | ------ | -------------------------------------------------- |
+| fib(35)        | 21ms | 21ms | 589ms | 1.2s   | Recursive Fibonacci, no allocation                 |
+| sum_sq 1e8     | 64ms | 58ms | 849ms | 9.3s   | Integer loop, tight arithmetic                     |
+| list_ops 100K  | ??ms | ??ms | ??ms  | ??ms   | 100K element list creation + closure sort + fold   |
+| class_dispatch | ??ms | ??ms | ??ms  | ??ms   | 10M method calls through OOP dispatch              |
 
-For both benches, `objdump -d` shows the PHC and C binaries reach
+For `fib` and `sum_sq`, `objdump -d` shows the PHC and C binaries reach
 identical hot-loop machine code (same five instructions for the
 `sum_sq` inner loop). The `phc` front-end is zero-cost on these
 shapes — once gcc -O2 sees the emitted C, the abstraction
 disappears.
+
+`list_ops` and `class_dispatch` exercise allocation, closure calls, and
+method dispatch — areas where PHC's runtime overhead will be visible
+until the CoW + refcount story (D-022) lands.
 
 ## Caveats
 

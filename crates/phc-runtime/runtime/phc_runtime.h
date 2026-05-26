@@ -193,6 +193,16 @@ double     phc_float_max(double a, double b);
 double     phc_float_abs(double v);
 bool       phc_float_is_nan(double v);
 
+/* === Math functions + conversions (D-048) === */
+double  phc_float_sqrt(double v);
+double  phc_float_floor(double v);
+double  phc_float_ceil(double v);
+double  phc_float_round(double v);
+double  phc_float_pow(double b, double e);
+int64_t phc_float_to_int(double v);
+double  phc_int_to_float(int64_t v);
+int64_t phc_int_pow(int64_t b, int64_t e);
+
 /* === Conversion to phc_string === */
 phc_string phc_to_string_int64(int64_t v);
 phc_string phc_to_string_double(double v);

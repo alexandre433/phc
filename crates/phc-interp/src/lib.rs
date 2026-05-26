@@ -1138,6 +1138,54 @@ impl<'a> Interp<'a> {
                     a.max(b)
                 })))
             }
+            ("int", "toFloat") => {
+                if args.len() != 1 {
+                    return Err(rt(format!(
+                        "int::toFloat takes 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "int::toFloat expects `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(v as f64)))
+            }
+            ("int", "pow") => {
+                if args.len() != 2 {
+                    return Err(rt(format!(
+                        "int::pow takes 2 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let b = match self.eval_expr(&args[0], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "int::pow expects `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let e = match self.eval_expr(&args[1], env)? {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(rt(format!(
+                            "int::pow expects `int`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                if e < 0 {
+                    return Err(rt("int::pow: exponent must be >= 0".to_string()));
+                }
+                Ok(Some(Value::Int(b.wrapping_pow(e as u32))))
+            }
             ("float", "parse") => {
                 if args.len() != 1 {
                     return Err(rt("float::parse takes 1 argument".to_string()));
@@ -1202,6 +1250,130 @@ impl<'a> Interp<'a> {
                 } else {
                     a.max(b)
                 })))
+            }
+            ("float", "sqrt") => {
+                if args.len() != 1 {
+                    return Err(rt(format!(
+                        "float::sqrt takes 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::sqrt expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(v.sqrt())))
+            }
+            ("float", "floor") => {
+                if args.len() != 1 {
+                    return Err(rt(format!(
+                        "float::floor takes 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::floor expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(v.floor())))
+            }
+            ("float", "ceil") => {
+                if args.len() != 1 {
+                    return Err(rt(format!(
+                        "float::ceil takes 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::ceil expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(v.ceil())))
+            }
+            ("float", "round") => {
+                if args.len() != 1 {
+                    return Err(rt(format!(
+                        "float::round takes 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::round expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(v.round())))
+            }
+            ("float", "pow") => {
+                if args.len() != 2 {
+                    return Err(rt(format!(
+                        "float::pow takes 2 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let b = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::pow expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                let e = match self.eval_expr(&args[1], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::pow expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Float(b.powf(e))))
+            }
+            ("float", "toInt") => {
+                if args.len() != 1 {
+                    return Err(rt(format!(
+                        "float::toInt takes 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = match self.eval_expr(&args[0], env)? {
+                    Value::Float(f) => f,
+                    Value::Int(i) => i as f64,
+                    other => {
+                        return Err(rt(format!(
+                            "float::toInt expects `float`, got `{}`",
+                            other.display()
+                        )))
+                    }
+                };
+                Ok(Some(Value::Int(v as i64)))
             }
             ("result", "ok") => {
                 let v = single_arg(args, "result::ok", self, env)?;

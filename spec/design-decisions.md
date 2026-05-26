@@ -1672,3 +1672,29 @@ Locked during Phase 6 stdlib build-out:
 - **Rationale**: `split` was explicitly blocked on `list<T>` in D-025 — now that D-027 shipped, the blocker is gone. `repeat`, `indexOf`, and `replace` cover the most common string manipulation patterns that have no workaround in v0a. All four follow the same byte-oriented, ASCII-level contract as D-025.
 - **Date**: 2026-05-26.
 - **Status**: locked for v0a. Unicode-aware `split` (by code point), `splitFirst`, `replaceFirst` tracked separately.
+
+### D-048 — Numeric stdlib: math functions + int/float conversions (v0a)
+- **Decision**: Extends D-034's `int::*` / `float::*` namespaces with math functions and numeric type conversions.
+
+  **New `float::*`:**
+
+  | Function | Signature | Notes |
+  |----------|-----------|-------|
+  | `float::sqrt` | `(float): float` | Square root. Negative input → NaN (C `sqrt` behaviour). |
+  | `float::floor` | `(float): float` | Round toward −∞. |
+  | `float::ceil` | `(float): float` | Round toward +∞. |
+  | `float::round` | `(float): float` | Round half-away-from-zero (`round`, not `rint`). |
+  | `float::pow` | `(float, float): float` | `b^e`. Delegates to C `pow`. |
+  | `float::toInt` | `(float): int` | Truncate toward zero (same as C cast). |
+
+  **New `int::*`:**
+
+  | Function | Signature | Notes |
+  |----------|-----------|-------|
+  | `int::toFloat` | `(int): float` | Lossless for values in [-2^53, 2^53]. |
+  | `int::pow` | `(int, int): int` | `b^e`; `e < 0` panics; wraps on overflow. |
+
+- **Rationale**: These unblock numeric benchmarks and common arithmetic patterns (e.g. computing distances, implementing sorting comparators with floats, mixing int/float arithmetic without manual casts).
+- **Alternatives considered**: `float::truncate` / `float::trunc` (less idiomatic; `toInt` conveys intent); implicit int→float promotion (too implicit for PHC's explicit style); a `math::*` namespace (separate namespace for a handful of functions adds more surface without benefit while D-034 is still small).
+- **Date**: 2026-05-26.
+- **Status**: locked for v0a. Trigonometry, `float::log`, `float::exp`, `int::toHex`, `float::toFixed` tracked separately.

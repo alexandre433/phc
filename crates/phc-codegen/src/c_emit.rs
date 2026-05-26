@@ -1644,6 +1644,21 @@ impl<'a> Emitter<'a> {
                 let v = self.emit_expr(&args[0]);
                 Some(format!("phc_int_abs({v})"))
             }
+            "toFloat" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("phc_int_to_float({v})"))
+            }
+            "pow" => {
+                if args.len() != 2 {
+                    return Some(arity_err(self, 2));
+                }
+                let b = self.emit_expr(&args[0]);
+                let e = self.emit_expr(&args[1]);
+                Some(format!("phc_int_pow({b}, {e})"))
+            }
             _ => None,
         }
     }
@@ -1694,6 +1709,36 @@ impl<'a> Emitter<'a> {
                 }
                 let v = self.emit_expr(&args[0]);
                 Some(format!("phc_float_is_nan({v})"))
+            }
+            "sqrt" | "floor" | "ceil" | "round" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("phc_float_{member}({v})"))
+            }
+            "pow" => {
+                if args.len() != 2 {
+                    return Some(arity_err(self, 2));
+                }
+                let b = self.emit_expr(&args[0]);
+                let e = self.emit_expr(&args[1]);
+                Some(format!("phc_float_pow({b}, {e})"))
+            }
+            "toInt" => {
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("phc_float_to_int({v})"))
+            }
+            "toFloat" => {
+                // float::toFloat is identity — emit arg unchanged but cast for clarity
+                if args.len() != 1 {
+                    return Some(arity_err(self, 1));
+                }
+                let v = self.emit_expr(&args[0]);
+                Some(format!("(double)({v})"))
             }
             _ => None,
         }

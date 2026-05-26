@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static char* phc_xmalloc(size_t n) {
     char* p = (char*)malloc(n);
@@ -222,6 +223,23 @@ double phc_float_min(double a, double b) { return a < b ? a : b; }
 double phc_float_max(double a, double b) { return a > b ? a : b; }
 double phc_float_abs(double v) { return v < 0.0 ? -v : v; }
 bool   phc_float_is_nan(double v) { return v != v; }
+
+/* ===== Math functions + conversions (D-048) ===== */
+
+double phc_float_sqrt(double v) { return sqrt(v); }
+double phc_float_floor(double v) { return floor(v); }
+double phc_float_ceil(double v) { return ceil(v); }
+double phc_float_round(double v) { return round(v); }
+double phc_float_pow(double b, double e) { return pow(b, e); }
+int64_t phc_float_to_int(double v) { return (int64_t)v; }
+double phc_int_to_float(int64_t v) { return (double)v; }
+
+int64_t phc_int_pow(int64_t b, int64_t e) {
+    if (e < 0) phc_panic("int::pow: exponent must be >= 0");
+    int64_t result = 1;
+    while (e-- > 0) result *= b;
+    return result;
+}
 
 phc_string phc_to_string_int64(int64_t v) {
     char tmp[32];
