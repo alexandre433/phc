@@ -283,6 +283,25 @@ fn generic_free_fn_monomorphizes_per_concrete_arg_tuple() {
 }
 
 #[test]
+fn generic_free_fn_nullable_primitive_arg_emits_valid_ctype() {
+    // Regression: ty_to_typeref must handle NullablePrimitive so a
+    // generic called with `int?` maps to int64_t, not `phc_value`.
+    let src = r#"pack a;
+        public function wrap<T>(T $val): T { return $val; }
+        public function demo(int? $x): int? { return wrap($x); }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_wrap__int_opt"),
+        "int_opt mono instance should be emitted:\n{c}"
+    );
+    assert!(
+        !c.contains("phc_value phc_wrap__int_opt"),
+        "nullable int arg must not produce phc_value param:\n{c}"
+    );
+}
+
+#[test]
 fn bytes_primitive_lowers_to_phc_bytes() {
     let src = r#"pack a;
         public function take(bytes $b): bytes { return $b; }

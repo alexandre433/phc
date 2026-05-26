@@ -120,11 +120,7 @@ pub fn mangle_instance(source_name: &str, concrete_tys: &[Ty]) -> String {
 /// generic function, in the function's `generic_params` order.
 /// Returns `None` if any binding can't be inferred (the call stays
 /// unspecialised so the existing diagnostic path runs).
-pub fn concrete_tys_for_call(
-    decl: &FunctionDecl,
-    args: &[Expr],
-    typed: &Typed,
-) -> Option<Vec<Ty>> {
+pub fn concrete_tys_for_call(decl: &FunctionDecl, args: &[Expr], typed: &Typed) -> Option<Vec<Ty>> {
     let mut out = Vec::with_capacity(decl.generic_params.len());
     for gp in &decl.generic_params {
         let pos = direct_param_position(decl, &gp.name.name)?;
@@ -198,6 +194,18 @@ fn ty_to_typeref(ty: &Ty, span: Span) -> TypeRef {
                     .collect(),
                 args: Vec::new(),
                 nullable: false,
+                fn_return: None,
+                span,
+            };
+        }
+        Ty::NullablePrimitive(p) => {
+            return TypeRef {
+                path: vec![Ident {
+                    name: p.as_str().to_string(),
+                    span,
+                }],
+                args: Vec::new(),
+                nullable: true,
                 fn_return: None,
                 span,
             };
