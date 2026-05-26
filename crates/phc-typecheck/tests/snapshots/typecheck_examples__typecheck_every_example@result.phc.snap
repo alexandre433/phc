@@ -1,5 +1,6 @@
 ---
 source: crates/phc-typecheck/tests/typecheck_examples.rs
+assertion_line: 87
 expression: rendered
 input_file: examples/result.phc
 ---
@@ -9,7 +10,7 @@ SymbolId(0)(string $raw) -> result<int, ParseError>
 === expr types ===
  106..110  : string
  106..117  : <unknown>
- 106..119  : <unknown>
+ 106..119  : result<int, parseError>
  106..120  : <unknown>
  133..139  : <unknown>
  133..143  : <unknown>

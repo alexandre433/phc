@@ -22,6 +22,16 @@ typedef struct {
     char* data;
 } phc_string;
 
+/* Owned binary buffer. Same layout as `phc_string` (D-022 still
+ * lists `bytes` as the binary primitive) but kept as its own
+ * typedef so the C compiler refuses to mix them by accident. No
+ * NUL-terminator guarantee — callers that pass it to plain C
+ * string APIs must explicitly add one. */
+typedef struct {
+    size_t len;
+    uint8_t* data;
+} phc_bytes;
+
 /* Opaque value cell. v0 only uses it for `null` / `void`. */
 typedef struct {
     int kind; /* 0 = null, 1 = void */
@@ -35,6 +45,7 @@ typedef union {
     double  f64;
     int     b; /* C `bool` accessed via `int` to avoid alignment surprises */
     phc_string s;
+    phc_bytes  bs;
     void*   ptr; /* instances, lambdas, anything boxed */
 } phc_payload;
 

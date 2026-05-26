@@ -245,3 +245,166 @@ function main(): void {
         report.warnings
     );
 }
+
+// ===== Walker-arm coverage for the underexercised paths in
+// `walk_block_for_unreachable` and `collect_locals` — class methods,
+// trait methods, test blocks, lambdas, loops, reassigns. =====
+
+#[test]
+fn pascal_naming_fires_on_enum_interface_trait() {
+    let src = r#"pack demo;
+public enum status { Ok }
+public interface drawable { function draw(): void; }
+public trait loggable {
+    function log(): void { Logger::info("hi"); }
+}
+"#;
+    let report = lint_source(src);
+    let names_with_warning: Vec<&str> = report
+        .warnings
+        .iter()
+        .filter(|d| d.message.contains("PascalCase"))
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        names_with_warning.iter().any(|m| m.contains("enum")),
+        "expected enum PascalCase warning: {:?}",
+        report.warnings
+    );
+    assert!(
+        names_with_warning.iter().any(|m| m.contains("interface")),
+        "expected interface PascalCase warning: {:?}",
+        report.warnings
+    );
+    assert!(
+        names_with_warning.iter().any(|m| m.contains("trait")),
+        "expected trait PascalCase warning: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn unused_local_in_class_method_is_warned() {
+    let src = r#"pack demo;
+public class Box {
+    construct(public int $value) {}
+    public function noop(): void {
+        int $unused = 5;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.warnings.iter().any(|d| d.message.contains("unused")),
+        "expected unused-local warning inside class method: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn unused_local_in_trait_method_is_warned() {
+    let src = r#"pack demo;
+public trait Doubler {
+    function doubled(): int {
+        int $stash = 7;
+        return 0;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.warnings.iter().any(|d| d.message.contains("unused")),
+        "expected unused-local warning inside trait method: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn unused_local_in_test_block_is_warned() {
+    let src = r#"pack demo;
+test "scratch" {
+    int $unused = 1;
+    assert::isTrue(true);
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.warnings.iter().any(|d| d.message.contains("unused")),
+        "expected unused-local warning inside test block: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn unreachable_after_return_in_class_method_is_warned() {
+    let src = r#"pack demo;
+public class Box {
+    construct(public int $value) {}
+    public function get(): int {
+        return $this->value;
+        Logger::info("unreachable");
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("unreachable")),
+        "expected unreachable warning inside class method: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn unreachable_after_return_in_while_body_is_warned() {
+    let src = r#"pack demo;
+public function loop(): void {
+    while (true) {
+        return;
+        Logger::info("unreachable");
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|d| d.message.contains("unreachable")),
+        "expected unreachable warning inside while body: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn unused_local_in_for_loop_body_is_warned() {
+    let src = r#"pack demo;
+public function each(): void {
+    list<int> $xs = list();
+    $xs->push(1);
+    for (int $x in $xs) {
+        int $unused = $x + 1;
+    }
+}
+"#;
+    let report = lint_source(src);
+    assert!(
+        report.warnings.iter().any(|d| d.message.contains("unused")),
+        "expected unused-local warning inside for-loop body: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn report_ok_method_reflects_warning_state() {
+    // Smoke-test the `Report::ok()` helper so it gets coverage in
+    // both states.
+    let clean = lint_source("pack a;\npublic function f(): int { return 1; }\n");
+    assert!(clean.ok(), "clean report should be ok");
+    let dirty = lint_source(
+        "pack a;\npublic function f(): void { int $unused = 1; Logger::info(\"hi\"); }\n",
+    );
+    assert!(!dirty.ok(), "dirty report should not be ok");
+}

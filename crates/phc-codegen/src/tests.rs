@@ -198,6 +198,226 @@ fn trait_use_emits_method_under_class_name() {
 }
 
 #[test]
+fn trait_mixin_dispatches_this_method_on_host_class() {
+    // The trait body calls a method on `$this`. The trait's own
+    // typecheck record can't see the host class, so without the
+    // emitter's `current_class` tracking this falls to
+    // "codegen TODO method receiver".
+    let src = r#"pack a;
+        public trait Loggable {
+            function describe(): string { return $this->name(); }
+        }
+        public class User {
+            use Loggable;
+            construct(public string $value) {}
+            public function name(): string { return $this->value; }
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_method_User_describe"),
+        "trait method should be emitted under host class"
+    );
+    assert!(
+        c.contains("phc_method_User_name(phc_var_this)"),
+        "method call on $this in trait body should dispatch to host class:\n{c}"
+    );
+    assert!(
+        !c.contains("codegen TODO method receiver"),
+        "trait body should not fall through to TODO panic"
+    );
+}
+
+#[test]
+fn string_toint_with_try_emits_result_propagation() {
+    // `$raw->toInt()` returns result<int, parseError>; the trailing
+    // `?` must early-return on the err variant and unwrap the int
+    // on ok. Regressions here previously fell to either
+    // "codegen TODO method receiver" or "codegen TODO ? on unknown type".
+    let src = r#"pack a;
+        public function parsePort(string $raw): result<int, parseError> {
+            int $value = $raw->toInt()?;
+            return result::ok($value);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_int_parse(phc_var_raw)"),
+        "toInt should route to phc_int_parse:\n{c}"
+    );
+    assert!(
+        c.contains("phc_result __phc_try_") && c.contains(".ok.i64;"),
+        "postfix `?` should emit result-propagation statement-expression:\n{c}"
+    );
+    assert!(!c.contains("codegen TODO"), "no TODO panics:\n{c}");
+}
+
+#[test]
+fn generic_free_fn_monomorphizes_per_concrete_arg_tuple() {
+    // `max<T>` is generic; only one call site (`max(3, 7)`) so a
+    // single int64-specialised instance should emerge. The
+    // unsubstituted `phc_max` symbol must NOT appear in the output —
+    // the C compiler would reject its `phc_value` placeholder params.
+    let src = r#"pack a;
+        public function max<T>(T $a, T $b): T {
+            if ($a > $b) { return $a; }
+            return $b;
+        }
+        public function demo(): int {
+            return max(3, 7);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("static int64_t phc_max__int(int64_t phc_var_a, int64_t phc_var_b)"),
+        "int64 instance signature missing:\n{c}"
+    );
+    assert!(
+        c.contains("phc_max__int((int64_t)3, (int64_t)7)"),
+        "call site should dispatch to the mono instance:\n{c}"
+    );
+    assert!(
+        !c.contains("phc_value phc_max"),
+        "unsubstituted generic must not be emitted:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_nullable_primitive_arg_emits_valid_ctype() {
+    // Regression: ty_to_typeref must handle NullablePrimitive so a
+    // generic called with `int?` maps to int64_t, not `phc_value`.
+    let src = r#"pack a;
+        public function wrap<T>(T $val): T { return $val; }
+        public function demo(int? $x): int? { return wrap($x); }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_wrap__int_opt"),
+        "int_opt mono instance should be emitted:\n{c}"
+    );
+    assert!(
+        !c.contains("phc_value phc_wrap__int_opt"),
+        "nullable int arg must not produce phc_value param:\n{c}"
+    );
+}
+
+#[test]
+fn bytes_primitive_lowers_to_phc_bytes() {
+    let src = r#"pack a;
+        public function take(bytes $b): bytes { return $b; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_bytes phc_take(phc_bytes phc_var_b)"),
+        "bytes should map to phc_bytes, not phc_value:\n{c}"
+    );
+}
+
+#[test]
+fn async_function_emits_runtime_panic_stub() {
+    // D-003 leaves async semantics for a future slice. Compiled
+    // mode must not silently produce broken C — it should emit a
+    // signature + a panic stub that fails loud at runtime.
+    let src = r#"pack a;
+        async function fetch(string $url): result<int, parseError> {
+            return result::ok(1);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("static phc_result phc_fetch(phc_string phc_var_url)"),
+        "async signature should still emit:\n{c}"
+    );
+    assert!(
+        c.contains("async function `fetch` not yet implemented"),
+        "async body should be a panic stub:\n{c}"
+    );
+    assert!(
+        c.contains("return (phc_result){0};"),
+        "unreachable trailing return should be the zero-init form:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_specialises_at_float_and_int_in_one_unit() {
+    let src = r#"pack a;
+        public function pick<T>(T $a, T $b): T {
+            if ($a > $b) { return $a; }
+            return $b;
+        }
+        public function demo(): void {
+            int $i = pick(3, 7);
+            float $f = pick(1.5, 2.5);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_pick__int(int64_t"),
+        "int specialisation missing:\n{c}"
+    );
+    assert!(
+        c.contains("phc_pick__float(double"),
+        "float specialisation missing:\n{c}"
+    );
+    // Each specialisation appears twice — once as a forward decl
+    // and once as a body. The test mostly cares that distinct
+    // C symbols exist for the two type tuples; checking each
+    // appears ≥ 2 times catches a missing-emit regression.
+    assert!(
+        c.matches("static double phc_pick__float").count() >= 2,
+        "float specialisation should have both forward decl and body:\n{c}"
+    );
+    assert!(
+        c.matches("static int64_t phc_pick__int").count() >= 2,
+        "int specialisation should have both forward decl and body:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_with_two_type_params_concatenates_mangling() {
+    let src = r#"pack a;
+        public function pair<A, B>(A $a, B $b): A { return $a; }
+        public function demo(): int {
+            return pair(7, true);
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_pair__int_bool"),
+        "two-param mangle should join with `_`:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_with_no_call_sites_emits_nothing() {
+    // Generic fn declared but never called — emitter should skip
+    // both the unsubstituted source and any specialisation.
+    let src = r#"pack a;
+        public function noop<T>(T $a): T { return $a; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        !c.contains("phc_noop"),
+        "uncalled generic must not emit:\n{c}"
+    );
+}
+
+#[test]
+fn generic_free_fn_specialises_at_string_type() {
+    let src = r#"pack a;
+        public function identity<T>(T $a): T { return $a; }
+        public function demo(): string {
+            return identity("hello");
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_identity__string(phc_string"),
+        "string specialisation missing:\n{c}"
+    );
+}
+
+#[test]
 fn forward_decls_let_main_call_helper_declared_later() {
     let src = r#"pack a;
         function main(): void { helper(); }

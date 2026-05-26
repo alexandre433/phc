@@ -13,6 +13,7 @@
 //! mirroring the interpreter's I1..I7 progression.
 
 mod c_emit;
+mod mono;
 
 #[cfg(test)]
 mod tests;
