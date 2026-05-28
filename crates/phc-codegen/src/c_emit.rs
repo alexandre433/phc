@@ -13,13 +13,15 @@
 //! returns).
 
 use phc_ast::{
-    BinOp, Block, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item,
-    LambdaBody, MatchArm, Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
+    BinOp, Block, Borrow, ClassDecl, ClassMember, ConstructDecl, ConstructParam, EnumDecl, Expr,
+    FunctionDecl, Item, LambdaBody, MatchArm, Param, Pattern, SourceFile, Stmt, StrPart, TraitDecl,
+    TypeRef, UnaryOp,
 };
 use phc_errors::{Diagnostic, Severity};
 use phc_semantic::{Resolved, SymbolId, SymbolKind};
 use phc_span::Span;
 use phc_typecheck::{Primitive, Ty, Typed};
+use std::collections::HashSet;
 
 use crate::mono::{collect_mono_instances, concrete_tys_for_call, mangle_instance, MonoInstance};
 use crate::CodegenOutput;
@@ -38,6 +40,7 @@ pub fn emit_c(file: &SourceFile, resolved: &Resolved, typed: &Typed) -> CodegenO
         lambdas,
         current_class: None,
         mono_instances,
+        flip_params: HashSet::new(),
     };
     emitter.emit_prelude();
     // Phase 0: enum typedefs first — class fields and method
@@ -120,6 +123,11 @@ struct Emitter<'a> {
     /// definition emission and the call-site dispatch rewrite. See
     /// [`crate::mono`] for the collection pass.
     mono_instances: Vec<MonoInstance>,
+    /// Mangled names of the `&flip` (mutable-borrow) parameters of the
+    /// function/method/constructor body currently being emitted. Such
+    /// params are passed as `T*`, so every read or write of one must
+    /// dereference. Set by [`Self::enter_flip_scope`] around each body.
+    flip_params: HashSet<String>,
 }
 
 /// Per-lambda capture metadata. One `Capture` per outer-scope binding
@@ -129,6 +137,39 @@ struct Emitter<'a> {
 struct Capture {
     name: String,
     ty: Ty,
+}
+
+/// Shared accessor over `Param` and `ConstructParam` so the borrow-
+/// aware C-parameter emission (`&flip` → `T*`) works for both function
+/// and constructor signatures without duplicating the logic.
+trait ParamLike {
+    fn borrow(&self) -> Borrow;
+    fn ty(&self) -> &TypeRef;
+    fn name(&self) -> &str;
+}
+
+impl ParamLike for Param {
+    fn borrow(&self) -> Borrow {
+        self.borrow
+    }
+    fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+    fn name(&self) -> &str {
+        &self.name.name
+    }
+}
+
+impl ParamLike for ConstructParam {
+    fn borrow(&self) -> Borrow {
+        self.borrow
+    }
+    fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+    fn name(&self) -> &str {
+        &self.name.name
+    }
 }
 
 impl<'a> Emitter<'a> {
@@ -261,19 +302,40 @@ impl<'a> Emitter<'a> {
             .unwrap_or(false)
     }
 
+    /// C parameter declaration. A `&flip` (mutable) borrow is emitted
+    /// as a pointer `T*` so the callee writes through to the caller's
+    /// storage; shared (`&`) and owned params pass by their plain C
+    /// type. Mirrored at the call site by [`Self::emit_expr`]'s
+    /// `Expr::Borrow` arm (`&flip $x` → `&(...)`) and at the use site
+    /// by the `Expr::Var` deref of [`Self::flip_params`].
+    fn c_param<P: ParamLike>(&self, p: &P) -> String {
+        let base = self.c_type_for(p.ty());
+        let name = mangle(p.name());
+        if p.borrow() == Borrow::Mutable {
+            format!("{base}* phc_var_{name}")
+        } else {
+            format!("{base} phc_var_{name}")
+        }
+    }
+
+    /// Record the `&flip` params of the body about to be emitted so
+    /// their reads/writes dereference. Call before the statement loop;
+    /// pair with [`Self::leave_flip_scope`].
+    fn enter_flip_scope<P: ParamLike>(&mut self, params: &[P]) {
+        self.flip_params = params
+            .iter()
+            .filter(|p| p.borrow() == Borrow::Mutable)
+            .map(|p| mangle(p.name()))
+            .collect();
+    }
+
+    fn leave_flip_scope(&mut self) {
+        self.flip_params.clear();
+    }
+
     fn function_signature(&self, f: &FunctionDecl) -> String {
         let return_c = self.c_type_for(&f.return_type);
-        let params: Vec<String> = f
-            .params
-            .iter()
-            .map(|p| {
-                format!(
-                    "{} phc_var_{}",
-                    self.c_type_for(&p.ty),
-                    mangle(&p.name.name)
-                )
-            })
-            .collect();
+        let params: Vec<String> = f.params.iter().map(|p| self.c_param(p)).collect();
         let param_list = if params.is_empty() {
             "void".to_string()
         } else {
@@ -288,11 +350,7 @@ impl<'a> Emitter<'a> {
         let return_c = self.c_type_for(&m.return_type);
         let mut params = vec![format!("phc_obj_{class}* phc_var_this")];
         for p in &m.params {
-            params.push(format!(
-                "{} phc_var_{}",
-                self.c_type_for(&p.ty),
-                mangle(&p.name.name)
-            ));
+            params.push(self.c_param(p));
         }
         format!(
             "static {} phc_method_{class}_{}({})",
@@ -304,17 +362,7 @@ impl<'a> Emitter<'a> {
 
     /// Constructor signature: `static phc_obj_<Class>* phc_construct_<Class>(args...)`.
     fn construct_signature(&self, class: &str, c: &ConstructDecl) -> String {
-        let mut params: Vec<String> = c
-            .params
-            .iter()
-            .map(|p| {
-                format!(
-                    "{} phc_var_{}",
-                    self.c_type_for(&p.ty),
-                    mangle(&p.name.name)
-                )
-            })
-            .collect();
+        let mut params: Vec<String> = c.params.iter().map(|p| self.c_param(p)).collect();
         if params.is_empty() {
             params.push("void".into());
         }
@@ -421,20 +469,28 @@ impl<'a> Emitter<'a> {
             self.buf.push_str(&format!(
                 "    phc_obj_{name}* phc_var_this = phc_alloc(sizeof(*phc_var_this));\n"
             ));
-            // Promoted params copy into the field.
+            // Promoted params copy into the field. A promoted `&flip`
+            // param is a `T*`, so deref to copy the pointed-to value
+            // into the (value-typed) field rather than the pointer.
             for p in &con.params {
                 if p.promoted {
-                    self.buf.push_str(&format!(
-                        "    phc_var_this->{name_p} = phc_var_{name_p};\n",
-                        name_p = mangle(&p.name.name)
-                    ));
+                    let name_p = mangle(&p.name.name);
+                    let src = if p.borrow == Borrow::Mutable {
+                        format!("(*phc_var_{name_p})")
+                    } else {
+                        format!("phc_var_{name_p}")
+                    };
+                    self.buf
+                        .push_str(&format!("    phc_var_this->{name_p} = {src};\n"));
                 }
             }
             // Field defaults run before the user body.
             self.emit_field_defaults(c);
+            self.enter_flip_scope(&con.params);
             for stmt in &con.body.statements {
                 self.emit_stmt(stmt, 1);
             }
+            self.leave_flip_scope();
             self.buf.push_str("    return phc_var_this;\n}\n\n");
         } else {
             // Default no-arg constructor.
@@ -453,9 +509,11 @@ impl<'a> Emitter<'a> {
                 let sig = self.method_signature(&name, m);
                 self.buf.push_str(&sig);
                 self.buf.push_str(" {\n");
+                self.enter_flip_scope(&m.params);
                 for stmt in &m.body.statements {
                     self.emit_stmt(stmt, 1);
                 }
+                self.leave_flip_scope();
                 self.buf.push_str("}\n\n");
             }
         }
@@ -469,9 +527,11 @@ impl<'a> Emitter<'a> {
                             let sig = self.method_signature(&name, m);
                             self.buf.push_str(&sig);
                             self.buf.push_str(" {\n");
+                            self.enter_flip_scope(&m.params);
                             for stmt in &m.body.statements {
                                 self.emit_stmt(stmt, 1);
                             }
+                            self.leave_flip_scope();
                             self.buf.push_str("}\n\n");
                         }
                     }
@@ -796,10 +856,17 @@ impl<'a> Emitter<'a> {
             "struct __phc_lam_env_{lo}* __env = phc_alloc(sizeof(*__env)); "
         ));
         for cap in &captures {
-            body.push_str(&format!(
-                "__env->{name} = phc_var_{name}; ",
-                name = mangle(&cap.name)
-            ));
+            // Captures are by-value snapshots. A captured `&flip` param
+            // is an in-scope `T*`, so deref it to copy the pointed-to
+            // value into the (value-typed) env field rather than the
+            // pointer itself.
+            let name = mangle(&cap.name);
+            let src = if self.flip_params.contains(&name) {
+                format!("(*phc_var_{name})")
+            } else {
+                format!("phc_var_{name}")
+            };
+            body.push_str(&format!("__env->{name} = {src}; "));
         }
         body.push_str(&format!(
             "(phc_lambda){{.fn = {fn_addr}, .env = (void*)__env}}; "
@@ -897,10 +964,17 @@ impl<'a> Emitter<'a> {
             "struct __phc_lam_env_{lo}* __env = phc_alloc(sizeof(*__env)); "
         ));
         for cap in &captures {
-            body.push_str(&format!(
-                "__env->{name} = phc_var_{name}; ",
-                name = mangle(&cap.name)
-            ));
+            // Captures are by-value snapshots. A captured `&flip` param
+            // is an in-scope `T*`, so deref it to copy the pointed-to
+            // value into the (value-typed) env field rather than the
+            // pointer itself.
+            let name = mangle(&cap.name);
+            let src = if self.flip_params.contains(&name) {
+                format!("(*phc_var_{name})")
+            } else {
+                format!("phc_var_{name}")
+            };
+            body.push_str(&format!("__env->{name} = {src}; "));
         }
         body.push_str("void* __env_void = __env; ");
         body.push_str(&format!("(({fn_ptr_ty})({fn_addr}))({call_args}); "));
@@ -956,9 +1030,11 @@ impl<'a> Emitter<'a> {
             self.buf.push_str("}\n\n");
             return;
         }
+        self.enter_flip_scope(&f.params);
         for stmt in &f.body.statements {
             self.emit_stmt(stmt, 1);
         }
+        self.leave_flip_scope();
         self.buf.push_str("}\n\n");
     }
 
@@ -1004,9 +1080,11 @@ impl<'a> Emitter<'a> {
             let sig = self.mono_signature(&inst.decl, &inst.mangled);
             self.buf.push_str(&sig);
             self.buf.push_str(" {\n");
+            self.enter_flip_scope(&inst.decl.params);
             for stmt in &inst.decl.body.statements {
                 self.emit_stmt(stmt, 1);
             }
+            self.leave_flip_scope();
             self.buf.push_str("}\n\n");
         }
     }
@@ -1017,17 +1095,7 @@ impl<'a> Emitter<'a> {
     /// function but need a unique linker symbol.
     fn mono_signature(&self, f: &FunctionDecl, mangled: &str) -> String {
         let return_c = self.c_type_for(&f.return_type);
-        let params: Vec<String> = f
-            .params
-            .iter()
-            .map(|p| {
-                format!(
-                    "{} phc_var_{}",
-                    self.c_type_for(&p.ty),
-                    mangle(&p.name.name)
-                )
-            })
-            .collect();
+        let params: Vec<String> = f.params.iter().map(|p| self.c_param(p)).collect();
         let param_list = if params.is_empty() {
             "void".to_string()
         } else {
@@ -1179,7 +1247,17 @@ impl<'a> Emitter<'a> {
             }
             Expr::NullLit { .. } => "phc_null()".into(),
             Expr::StrLit { parts, .. } => self.emit_string_literal(parts),
-            Expr::Var { name, .. } => format!("phc_var_{}", mangle(&name.name)),
+            Expr::Var { name, .. } => {
+                let m = mangle(&name.name);
+                // A `&flip` param is a `T*`; reads (and `:=` writes, whose
+                // LHS routes through here) dereference to reach the
+                // caller's storage.
+                if self.flip_params.contains(&m) {
+                    format!("(*phc_var_{m})")
+                } else {
+                    format!("phc_var_{m}")
+                }
+            }
             Expr::This { .. } => "phc_var_this".into(),
             Expr::Member {
                 receiver, field, ..
@@ -1199,10 +1277,37 @@ impl<'a> Emitter<'a> {
             }
             // A shared borrow (`&$x`) is transparent in the C backend:
             // classes are already pointers and scalars pass by value, so
-            // the borrow modifier carries no representation. Mirrors the
-            // interpreter's value passthrough (phc-interp eval_expr).
-            // `&flip` write-back through the borrow is a separate concern.
-            Expr::Borrow { operand, .. } => self.emit_expr(operand),
+            // the modifier carries no representation — emit the operand.
+            // A mutable borrow (`&flip $x`) targets a `T*` param, so take
+            // the address of the operand's lvalue; if the operand is
+            // itself a `&flip` param, `emit_expr` already deref'd it, so
+            // `&(*p)` collapses back to the forwarded pointer.
+            Expr::Borrow {
+                kind,
+                operand,
+                span,
+            } => match kind {
+                Borrow::Mutable => {
+                    // `&flip` targets a `T*` param, so take the address of
+                    // the operand's lvalue. Only `$var` / `$x->field` are
+                    // addressable; anything else (an index, a call result)
+                    // would be `&` of a temporary — reject loudly instead
+                    // of emitting uncompilable C.
+                    if matches!(
+                        unwrap_paren(operand),
+                        Expr::Var { .. } | Expr::Member { .. }
+                    ) {
+                        format!("&({})", self.emit_expr(operand))
+                    } else {
+                        self.diag(
+                            *span,
+                            "mutable borrow `&flip` of a non-lvalue is not supported",
+                        );
+                        "phc_panic(\"codegen TODO: &flip non-lvalue\")".into()
+                    }
+                }
+                _ => self.emit_expr(operand),
+            },
             Expr::Binary { op, lhs, rhs, .. } => self.emit_binary(*op, lhs, rhs),
             Expr::Cast { value, ty, .. } => {
                 let inner = self.emit_expr(value);

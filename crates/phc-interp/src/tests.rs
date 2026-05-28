@@ -49,6 +49,45 @@ fn main_can_print_a_plain_string() {
 }
 
 #[test]
+fn flip_borrow_writes_back_to_caller() {
+    // D-005 mutable borrow: a `&flip` param's mutation is visible in
+    // the caller after the call returns. `bump` mutates a primitive
+    // through the borrow; `twice` chains the borrow through a nested
+    // call. Without write-back both lines would print the original 1.
+    let out = run_src(
+        r#"pack a;
+           function bump(&flip int $c): void { $c := $c + 1; }
+           function twice(&flip int $c): void { bump(&flip $c); bump(&flip $c); }
+           function main(): void {
+               flip int $x = 1;
+               bump(&flip $x);
+               Logger::info("x is {$x}");
+               twice(&flip $x);
+               Logger::info("x is {$x}");
+           }"#,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["x is 2", "x is 4"]);
+}
+
+#[test]
+fn flip_borrow_writes_back_through_constructor() {
+    // A `&flip` constructor param's mutation is visible in the caller
+    // after construction, matching the function/method path.
+    let out = run_src(
+        r#"pack a;
+           public class Box { construct(&flip int $seed) { $seed := $seed + 100; } }
+           function main(): void {
+               flip int $s = 1;
+               Box $b = Box(&flip $s);
+               Logger::info("s is {$s}");
+           }"#,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["s is 101"]);
+}
+
+#[test]
 fn string_interpolation_renders_local_variable() {
     let out = run_src(
         r#"pack a;

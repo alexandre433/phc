@@ -76,6 +76,96 @@ fn shared_borrow_arg_passes_operand_through() {
 }
 
 #[test]
+fn flip_borrow_param_is_pointer_with_deref_and_addr_of() {
+    // A `&flip` (mutable) borrow param is emitted as `T*`; reads and
+    // `:=` writes inside the body dereference it; the call site passes
+    // the address of the caller's lvalue.
+    let src = r#"pack a;
+        function bump(&flip int $c): void { $c := $c + 1; }
+        function main(): void {
+            flip int $x = 1;
+            bump(&flip $x);
+        }"#;
+    let c = emit_for(src);
+    // Pointer parameter in the signature.
+    assert!(
+        c.contains("int64_t* phc_var_c"),
+        "expected pointer param, got:\n{c}"
+    );
+    // The `:=` write dereferences the pointer LHS.
+    assert!(
+        c.contains("(*phc_var_c) ="),
+        "expected deref on write, got:\n{c}"
+    );
+    // Both the read and the write deref it (≥2 occurrences).
+    assert!(
+        c.matches("(*phc_var_c)").count() >= 2,
+        "expected read + write deref, got:\n{c}"
+    );
+    // Call site takes the address of the caller's binding.
+    assert!(
+        c.contains("&(phc_var_x)"),
+        "expected address-of at call site, got:\n{c}"
+    );
+}
+
+#[test]
+fn lambda_capturing_flip_param_copies_deref_value() {
+    // A lambda that captures a `&flip` param snapshots the pointed-to
+    // value into its env, not the pointer: the capture copy must deref.
+    let src = r#"pack a;
+        function compute(&flip int $c): int {
+            $c := $c + 1;
+            fn(): int $f = () => $c + 100;
+            return $f();
+        }
+        function main(): void {
+            flip int $x = 5;
+            int $r = compute(&flip $x);
+        }"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("__env->c = (*phc_var_c)"),
+        "capture of a flip param must copy the deref'd value, got:\n{c}"
+    );
+}
+
+#[test]
+fn shared_borrow_param_stays_by_value() {
+    // A plain `&` (shared) borrow carries no representation: the param
+    // keeps its base C type and reads are not dereferenced.
+    let src = r#"pack a;
+        function peek(&int $c): int { return $c; }
+        function main(): void {
+            int $x = 7;
+            int $y = peek(&$x);
+        }"#;
+    let c = emit_for(src);
+    assert!(c.contains("int64_t phc_var_c"));
+    assert!(!c.contains("int64_t* phc_var_c"));
+    assert!(c.contains("peek(phc_var_x)"));
+}
+
+#[test]
+fn flip_borrow_of_non_lvalue_emits_stub_not_address_of_temporary() {
+    // `&flip` of an index result is not an addressable lvalue; the
+    // emitter rejects it with a TODO stub rather than emitting an
+    // uncompilable `&`-of-temporary.
+    let src = r#"pack a;
+        function bump(&flip int $c): void { $c := $c + 1; }
+        function main(): void {
+            flip list<int> $xs = list();
+            $xs->push(1);
+            bump(&flip $xs[0]);
+        }"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("codegen TODO: &flip non-lvalue"),
+        "non-lvalue mutable borrow should hit the stub, got:\n{c}"
+    );
+}
+
+#[test]
 fn string_interpolation_emits_concat_chain() {
     let src = r#"pack a;
         function main(): void {

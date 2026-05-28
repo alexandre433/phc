@@ -16,8 +16,8 @@
 //! alongside the matching language feature.
 
 use phc_ast::{
-    BinOp, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item, LambdaBody,
-    MatchArm, Param, Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
+    BinOp, Borrow, ClassDecl, ClassMember, ConstructDecl, EnumDecl, Expr, FunctionDecl, Item,
+    LambdaBody, MatchArm, Param, Pattern, SourceFile, Stmt, StrPart, TraitDecl, UnaryOp,
 };
 use phc_semantic::{Resolved, Symbol, SymbolId, SymbolKind};
 use phc_typecheck::Typed;
@@ -2410,7 +2410,11 @@ impl<'a> Interp<'a> {
         for a in args {
             arg_values.push(self.eval_expr(a, caller_env)?);
         }
-        self.run_function_with_this(method, arg_values, Some(receiver))
+        let mut flip_finals = Vec::new();
+        let ret =
+            self.run_function_with_this(method, arg_values, Some(receiver), &mut flip_finals)?;
+        self.write_back_flips(args, &flip_finals, caller_env)?;
+        Ok(ret)
     }
 
     fn construct_class(
@@ -2449,7 +2453,15 @@ impl<'a> Interp<'a> {
             }
             // Resolver records `$this` def_span at the class name
             // (not the `construct` keyword), so pass class.name.span.
-            self.run_constructor(ctor, arg_values, instance.clone(), class_decl.name.span)?;
+            let mut flip_finals = Vec::new();
+            self.run_constructor(
+                ctor,
+                arg_values,
+                instance.clone(),
+                class_decl.name.span,
+                &mut flip_finals,
+            )?;
+            self.write_back_flips(args, &flip_finals, caller_env)?;
         } else if !args.is_empty() {
             return Err(rt(format!(
                 "class `{class_name}` has no constructor but received {} arguments",
@@ -2465,6 +2477,7 @@ impl<'a> Interp<'a> {
         arg_values: Vec<Value>,
         this: Value,
         this_span: phc_span::Span,
+        flip_finals: &mut Vec<(usize, Value)>,
     ) -> EvalResult<()> {
         if arg_values.len() != ctor.params.len() {
             return Err(rt(format!(
@@ -2490,6 +2503,18 @@ impl<'a> Interp<'a> {
             self.bind_this(&mut env, this.clone(), this_span);
         }
         let result = self.eval_block_body(&ctor.body.statements, &mut env);
+        // Capture `&flip` ctor params for caller write-back, mirroring
+        // `run_function_with_this` (D-005 mutable borrow). Done before
+        // `env.leave()` discards the frame.
+        for (i, param) in ctor.params.iter().enumerate() {
+            if param.borrow == Borrow::Mutable {
+                if let Some(sid) = self.symbol_at_def(param.name.span) {
+                    if let Some(v) = env.lookup(sid).cloned() {
+                        flip_finals.push((i, v));
+                    }
+                }
+            }
+        }
         env.leave();
         match result {
             Ok(Flow::Normal) | Ok(Flow::Return(_)) => Ok(()),
@@ -2512,6 +2537,7 @@ impl<'a> Interp<'a> {
         decl: &FunctionDecl,
         arg_values: Vec<Value>,
         this: Option<Value>,
+        flip_finals: &mut Vec<(usize, Value)>,
     ) -> EvalResult<Value> {
         if arg_values.len() != decl.params.len() {
             return Err(rt(format!(
@@ -2532,6 +2558,20 @@ impl<'a> Interp<'a> {
             self.bind_this(&mut env, this_value, decl.name.span);
         }
         let result = self.eval_block_body(&decl.body.statements, &mut env);
+        // Capture each `&flip` param's final value so the caller can
+        // write it back to the borrowed lvalue (D-005 mutable borrow).
+        // Done before `env.leave()` discards the callee frame, and for
+        // every exit path (normal/return/propagate) so mutations made
+        // before an early return still propagate.
+        for (i, param) in decl.params.iter().enumerate() {
+            if param.borrow == Borrow::Mutable {
+                if let Some(sid) = self.symbol_at_def(param.name.span) {
+                    if let Some(v) = env.lookup(sid).cloned() {
+                        flip_finals.push((i, v));
+                    }
+                }
+            }
+        }
         env.leave();
         match result {
             Ok(Flow::Return(v)) => Ok(v),
@@ -2570,7 +2610,28 @@ impl<'a> Interp<'a> {
         for a in args {
             arg_values.push(self.eval_expr(a, caller_env)?);
         }
-        self.run_function_with_this(decl, arg_values, None)
+        let mut flip_finals = Vec::new();
+        let ret = self.run_function_with_this(decl, arg_values, None, &mut flip_finals)?;
+        self.write_back_flips(args, &flip_finals, caller_env)?;
+        Ok(ret)
+    }
+
+    /// Copy each `&flip` param's post-call value back into the caller's
+    /// borrowed lvalue. The arg for a mutable-borrow param is always a
+    /// `&flip <lvalue>` (`Expr::Borrow` over a `$var` or `$x->field`)
+    /// per borrowcheck, so `do_assign` reaches the right storage.
+    fn write_back_flips(
+        &mut self,
+        args: &[Expr],
+        flip_finals: &[(usize, Value)],
+        caller_env: &mut Env,
+    ) -> EvalResult<()> {
+        for (i, value) in flip_finals {
+            if let Some(Expr::Borrow { operand, .. }) = args.get(*i) {
+                self.do_assign(operand, value.clone(), caller_env)?;
+            }
+        }
+        Ok(())
     }
 
     fn eval_match(
