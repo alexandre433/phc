@@ -1197,6 +1197,12 @@ impl<'a> Emitter<'a> {
                     UnaryOp::Await => inner, // sync passthrough
                 }
             }
+            // A shared borrow (`&$x`) is transparent in the C backend:
+            // classes are already pointers and scalars pass by value, so
+            // the borrow modifier carries no representation. Mirrors the
+            // interpreter's value passthrough (phc-interp eval_expr).
+            // `&flip` write-back through the borrow is a separate concern.
+            Expr::Borrow { operand, .. } => self.emit_expr(operand),
             Expr::Binary { op, lhs, rhs, .. } => self.emit_binary(*op, lhs, rhs),
             Expr::Cast { value, ty, .. } => {
                 let inner = self.emit_expr(value);

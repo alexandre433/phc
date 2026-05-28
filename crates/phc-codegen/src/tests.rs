@@ -53,6 +53,29 @@ fn logger_info_emits_phc_print() {
 }
 
 #[test]
+fn shared_borrow_arg_passes_operand_through() {
+    // `&$u` is transparent in the C backend: the borrow operand is
+    // emitted directly, not a `codegen TODO expr` panic. Member access
+    // on a borrowed class param resolves to a struct-pointer `->`.
+    let src = r#"pack a;
+        public class User { construct(public string $name) {} }
+        function read(&User $u): string { return $u->name; }
+        function main(): void {
+            User $u = User("A");
+            Logger::info(read(&$u));
+        }"#;
+    let c = emit_for(src);
+    assert!(
+        !c.contains("codegen TODO expr"),
+        "borrow arg should not hit the unsupported-expr stub:\n{c}"
+    );
+    // The borrow operand `$u` is forwarded verbatim to the call.
+    assert!(c.contains("phc_read(phc_var_u)"));
+    // Member access on the class-typed borrow param emits `->`.
+    assert!(c.contains("(phc_var_u)->name"));
+}
+
+#[test]
 fn string_interpolation_emits_concat_chain() {
     let src = r#"pack a;
         function main(): void {
