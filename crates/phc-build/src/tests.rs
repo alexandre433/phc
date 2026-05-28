@@ -251,6 +251,61 @@ function main(): void {
     assert_eq!(lines, vec!["x is 2", "x is 4", "box.n is 101"]);
 }
 
+/// Build + run a `??` (null-coalesce) program. Exercises literal
+/// `null ?? x`, a nullable-reference fallback when null and when
+/// present, and runtime short-circuit (the side-effecting rhs must
+/// not run for a present lhs — observed via a `&flip` counter).
+#[test]
+fn build_and_run_null_coalesce() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_null_coalesce: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+public class Box { construct(public int $v) {} }
+
+function bump(&flip int $c): Box { $c := $c + 1; return Box(0); }
+
+function main(): void {
+    int $x = null ?? 7;
+    Logger::info("x is {$x}");
+
+    Box? $empty = null;
+    Box $a = $empty ?? Box(42);
+    Logger::info("a is {$a->v}");
+
+    flip int $calls = 0;
+    Box $keep = Box(5);
+    Box $b = $keep ?? bump(&flip $calls);
+    Logger::info("b is {$b->v}, calls is {$calls}");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("null_coalesce.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("null_coalesce");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines, vec!["x is 7", "a is 42", "b is 5, calls is 0"]);
+}
+
 /// Build + run a Result/Option program. Exercises result::ok,
 /// result::err, option::some, option::none, and ? propagation
 /// across function boundaries.

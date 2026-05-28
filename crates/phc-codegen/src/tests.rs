@@ -166,6 +166,51 @@ fn flip_borrow_of_non_lvalue_emits_stub_not_address_of_temporary() {
 }
 
 #[test]
+fn null_coalesce_reference_emits_short_circuit_ternary() {
+    // `b ?? Box(1)` lowers to a temp + NULL-check ternary so the lhs is
+    // evaluated once and the rhs only at runtime when it is NULL.
+    let src = r#"pack a;
+        public class Box { construct(public int $v) {} }
+        function pick(Box? $b): Box { return $b ?? Box(1); }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("__nc = (phc_var_b)"),
+        "expected coalesce temp seeded from lhs, got:\n{c}"
+    );
+    assert!(
+        c.contains("__nc ? __nc :"),
+        "expected NULL-check ternary, got:\n{c}"
+    );
+}
+
+#[test]
+fn null_literal_lhs_coalesce_emits_rhs() {
+    // `null ?? 7` is unconditionally the rhs — no temp/ternary.
+    let src = r#"pack a;
+        function pick(): int { return null ?? 7; }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(c.contains("(int64_t)7"), "expected rhs emitted, got:\n{c}");
+    assert!(
+        !c.contains("__nc"),
+        "literal-null lhs should not build a temp, got:\n{c}"
+    );
+}
+
+#[test]
+fn null_literal_emits_c_null_for_reference() {
+    let src = r#"pack a;
+        public class Box { construct(public int $v) {} }
+        function main(): void { Box? $b = null; }"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("phc_obj_Box* phc_var_b = NULL"),
+        "null should emit the C null constant into a pointer slot, got:\n{c}"
+    );
+}
+
+#[test]
 fn string_interpolation_emits_concat_chain() {
     let src = r#"pack a;
         function main(): void {

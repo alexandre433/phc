@@ -7,6 +7,7 @@
 //! grows to cover them.
 
 use phc_ast::{BinOp, Block, Expr, Item, LocalBinding, SourceFile, Stmt, StrPart};
+use phc_errors::{Diagnostic, Severity};
 use phc_semantic::{Resolved, SymbolId};
 use phc_span::Span;
 use std::collections::HashMap;
@@ -116,6 +117,18 @@ fn walk_local(
 ) {
     walk_expr(&b.value, resolved, bindings, typed);
     let ty = lower_type_ref(&b.ty);
+    // A nullable primitive has no null slot in the C backend, so a
+    // literal `int? x = null` is rejected uniformly (same rule as the
+    // `??` gate). Non-literal null flowing into a nullable primitive
+    // (e.g. `int? x = f()`) is a known v0 limitation — use `option<T>`.
+    if let (Ty::NullablePrimitive(_), Expr::NullLit { span }) = (&ty, &b.value) {
+        typed.diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            message: "a nullable primitive cannot hold `null` in v0; use `option<T>` instead"
+                .to_string(),
+            span: *span,
+        });
+    }
     if let Some(sid) = symbol_at_def(resolved, b.name.span) {
         bindings.insert(sid, ty);
     }
@@ -341,7 +354,38 @@ fn infer_binary(op: BinOp, lhs: &Expr, rhs: &Expr, typed: &mut Typed, span: Span
                 _ => Ty::Unknown,
             }
         }
-        NullCoalesce => Ty::Unknown,
+        NullCoalesce => {
+            // `a ?? b`. Reference nullables (classes, list/map/set) are
+            // pointer-represented, so the C backend can NULL-coalesce
+            // them; a nullable *primitive* (`int?`, `string?`, ...) has
+            // no null slot in v0, so reject it uniformly here — both the
+            // compiler and the interpreter refuse rather than diverge.
+            let lhs_ty = typed.expr_types.get(&span_of(lhs)).cloned();
+            if matches!(lhs_ty, Some(Ty::NullablePrimitive(_))) {
+                typed.diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    message: "`??` on a nullable primitive is not supported in v0; \
+                              use `option<T>` instead"
+                        .to_string(),
+                    span,
+                });
+            }
+            // Result of `a ?? b` is the non-null form of the lhs, or the
+            // rhs type when the lhs is the untyped `null` literal.
+            match lhs_ty {
+                Some(Ty::Path { path, args, .. }) => Ty::Path {
+                    path,
+                    args,
+                    nullable: false,
+                },
+                Some(Ty::NullablePrimitive(p)) => Ty::Primitive(p),
+                _ => typed
+                    .expr_types
+                    .get(&span_of(rhs))
+                    .cloned()
+                    .unwrap_or(Ty::Unknown),
+            }
+        }
     }
 }
 

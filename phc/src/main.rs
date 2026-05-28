@@ -376,6 +376,12 @@ fn run_file(path: &PathBuf) -> ExitCode {
     }
 
     let typed = typecheck(&file_ast, &resolved);
+    if !typed.diagnostics.is_empty() {
+        for d in &typed.diagnostics {
+            eprintln!("type error at {}..{}: {}", d.span.lo, d.span.hi, d.message);
+        }
+        return ExitCode::from(1);
+    }
     let borrowed = borrowcheck(&file_ast, &resolved, &typed);
     if !borrowed.diagnostics.is_empty() {
         for d in &borrowed.diagnostics {

@@ -264,6 +264,40 @@ fn null_coalesce_returns_rhs_when_lhs_null() {
 }
 
 #[test]
+fn null_coalesce_reference_uses_fallback_when_null() {
+    let out = run_src(
+        r#"pack a;
+           public class Box { construct(public int $v) {} }
+           function main(): void {
+               Box? $empty = null;
+               Box $r = $empty ?? Box(42);
+               Logger::info("v = {$r->v}");
+           }"#,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["v = 42"]);
+}
+
+#[test]
+fn null_coalesce_short_circuits_rhs() {
+    // The rhs is only evaluated when the lhs is null, so the
+    // side-effecting `bump` never runs for a present value.
+    let out = run_src(
+        r#"pack a;
+           public class Box { construct(public int $v) {} }
+           function bump(&flip int $c): Box { $c := $c + 1; return Box(0); }
+           function main(): void {
+               flip int $calls = 0;
+               Box? $keep = Box(5);
+               Box $r = $keep ?? bump(&flip $calls);
+               Logger::info("calls = {$calls}, v = {$r->v}");
+           }"#,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.stdout, vec!["calls = 0, v = 5"]);
+}
+
+#[test]
 fn class_construction_and_field_read() {
     let out = run_src(
         r#"pack a;

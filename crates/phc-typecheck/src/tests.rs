@@ -277,6 +277,42 @@ fn enum_match_missing_variant_is_an_error() {
 }
 
 #[test]
+fn null_coalesce_on_nullable_primitive_is_rejected() {
+    // B (D-051): nullable primitives have no null slot in the C
+    // backend, so `??` on one is rejected uniformly in typecheck.
+    let typed = typed_for(
+        r#"pack a;
+           function pick(int? $x): int { return $x ?? 0; }
+           function main(): void {}"#,
+    );
+    assert!(
+        typed
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("nullable primitive")),
+        "expected a nullable-primitive `??` diagnostic, got {:?}",
+        typed.diagnostics
+    );
+}
+
+#[test]
+fn null_coalesce_on_nullable_reference_is_allowed() {
+    // A nullable *reference* (class) is pointer-represented and may be
+    // coalesced — no diagnostic.
+    let typed = typed_for(
+        r#"pack a;
+           public class Box { construct(public int $v) {} }
+           function pick(Box? $b): Box { return $b ?? Box(0); }
+           function main(): void {}"#,
+    );
+    assert!(
+        typed.diagnostics.is_empty(),
+        "nullable-reference `??` should be accepted, got {:?}",
+        typed.diagnostics
+    );
+}
+
+#[test]
 fn enum_match_with_wildcard_passes() {
     let typed = typed_for(
         r#"pack a;

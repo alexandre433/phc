@@ -1245,7 +1245,12 @@ impl<'a> Emitter<'a> {
                     "false".into()
                 }
             }
-            Expr::NullLit { .. } => "phc_null()".into(),
+            // `null` is the absent value of a nullable *reference*
+            // (class / list / map / set — all pointer-represented in
+            // C); nullable primitives that could hold null are rejected
+            // in typecheck, so a `null` reaching codegen always targets
+            // a pointer slot, where the C null constant is correct.
+            Expr::NullLit { .. } => "NULL".into(),
             Expr::StrLit { parts, .. } => self.emit_string_literal(parts),
             Expr::Var { name, .. } => {
                 let m = mangle(&name.name);
@@ -1469,8 +1474,19 @@ impl<'a> Emitter<'a> {
             BinOp::And => "&&",
             BinOp::Or => "||",
             BinOp::NullCoalesce => {
-                self.diag(span_of_expr(lhs), "`??` codegen not yet implemented");
-                return "phc_panic(\"codegen TODO ??\")".into();
+                // Literal `null ?? b` is unconditionally `b`.
+                if matches!(unwrap_paren(lhs), Expr::NullLit { .. }) {
+                    return format!("({rhs_c})");
+                }
+                // Nullable references are pointers; coalesce through a
+                // temp so the lhs is evaluated once and the rhs only at
+                // runtime when it is NULL. Nullable primitives are
+                // rejected in typecheck, so the lhs is always a pointer.
+                let t = match lhs_ty {
+                    Some(ty) => self.ty_to_c(ty),
+                    None => "phc_value".to_string(),
+                };
+                return format!("({{ {t} __nc = ({lhs_c}); __nc ? __nc : ({rhs_c}); }})");
             }
         };
         format!("(({lhs_c}) {c_op} ({rhs_c}))")

@@ -646,6 +646,16 @@ impl<'a> Interp<'a> {
                     let r = self.eval_expr(rhs, env)?;
                     return Ok(Value::Bool(truthy(&r)?));
                 }
+                // `??` short-circuits like `&&`/`||`: the rhs is only
+                // evaluated when the lhs is null, so a side-effecting
+                // rhs does not run for a present value.
+                if matches!(op, BinOp::NullCoalesce) {
+                    let l = self.eval_expr(lhs, env)?;
+                    if matches!(l, Value::Null) {
+                        return self.eval_expr(rhs, env);
+                    }
+                    return Ok(l);
+                }
                 let l = self.eval_expr(lhs, env)?;
                 let r = self.eval_expr(rhs, env)?;
                 eval_binary(*op, l, r)
