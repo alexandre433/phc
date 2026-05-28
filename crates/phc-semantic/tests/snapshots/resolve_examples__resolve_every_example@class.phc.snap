@@ -1,5 +1,6 @@
 ---
 source: crates/phc-semantic/tests/resolve_examples.rs
+assertion_line: 65
 expression: rendered
 input_file: examples/class.phc
 ---
@@ -7,8 +8,15 @@ input_file: examples/class.phc
 SymbolId(0)  Interface  Greet  (44..49)
 SymbolId(2)  Trait  Loggable  (94..102)
 SymbolId(4)  Class  User  (180..184)
+SymbolId(9)  Function  main  (541..545)
 
 === uses ===
- 145..150  -> SymbolId(9)  Value  this
- 301..306  -> SymbolId(10)  Value  this
- 457..462  -> SymbolId(13)  Value  this
+ 145..150  -> SymbolId(10)  Value  this
+ 392..397  -> SymbolId(14)  Value  this
+ 407..412  -> SymbolId(14)  Value  this
+ 479..484  -> SymbolId(15)  Value  this
+ 500..505  -> SymbolId(15)  Value  this
+ 591..593  -> SymbolId(16)  Value  u
+ 606..608  -> SymbolId(16)  Value  u
+ 629..631  -> SymbolId(16)  Value  u
+ 676..678  -> SymbolId(16)  Value  u

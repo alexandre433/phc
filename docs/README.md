@@ -21,16 +21,18 @@ support. Anything described here works in `phc build`, `phc run`, and
 ## Examples corpus
 
 Every `.phc` file in [`../examples/`](../examples/) parses, type-checks,
-borrow-checks, and runs through the interpreter (and the codegen path,
-where applicable). Reach for them when the docs link to a concrete
-artefact:
+and borrow-checks cleanly. Each one that defines a `main` also runs
+through the interpreter and compiles natively via the codegen path
+(both CI-gated); the main-less files are feature snapshots exercised
+via `phc check` and the interpreter/typecheck harnesses. Reach for them
+when the docs link to a concrete artefact:
 
 | File | Concept |
 |------|---------|
 | `hello.phc` | Minimal `main()` + `Logger::info`. |
 | `bindings.phc` | Immutable + `flip` mutable locals, `:=` reassignment. |
 | `borrows.phc` | `&name` shared + `&flip name` mutable borrows. |
-| `class.phc` | Class with constructor + traits + property hooks. |
+| `class.phc` | Class with constructor + interface + trait mixin + `flip` field. |
 | `match.phc` | `match` expression with enum exhaustiveness. |
 | `result.phc` | `result<T, E>` with postfix `?` propagation. |
 | `async.phc` | `async function` + `await` skeleton. |

@@ -1,5 +1,6 @@
 ---
 source: crates/phc-typecheck/tests/typecheck_examples.rs
+assertion_line: 87
 expression: rendered
 input_file: examples/class.phc
 ---
@@ -7,6 +8,27 @@ input_file: examples/class.phc
 SymbolId(1)() -> string
 SymbolId(3)() -> void
 SymbolId(5)(string $name, int $age) -> User
-SymbolId(8)() -> string
+SymbolId(7)() -> string
+SymbolId(8)() -> void
+SymbolId(9)() -> void
 
 === expr types ===
+ 570..574  : <unknown>
+ 570..585  : <unknown>
+ 575..580  : string
+ 582..584  : int
+ 591..593  : User
+ 591..598  : <unknown>
+ 591..600  : <unknown>
+ 606..608  : User
+ 606..621  : <unknown>
+ 606..623  : void
+ 629..631  : User
+ 629..644  : <unknown>
+ 629..646  : void
+ 652..658  : <unknown>
+ 652..664  : <unknown>
+ 652..693  : <unknown>
+ 665..692  : string
+ 676..678  : User
+ 676..690  : <unknown>

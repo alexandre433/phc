@@ -84,6 +84,48 @@ fn build_and_run_hello_world() {
     );
 }
 
+/// Native-build gate over the example corpus. Every `examples/*.phc`
+/// that defines a `main` must compile to a binary with no build
+/// errors — this is the codegen counterpart to the typecheck/interp
+/// snapshot harnesses and stops a committed example from silently
+/// claiming a codegen path it cannot actually emit. Main-less examples
+/// (feature snapshots exercised only via `phc check` / the interpreter)
+/// are skipped, since `phc build` needs an entry point.
+#[test]
+fn every_main_bearing_example_builds() {
+    if !cc_available() {
+        eprintln!("skipping every_main_bearing_example_builds: no C compiler on PATH");
+        return;
+    }
+    let dir = Path::new("../../examples");
+    let mut built = 0;
+    for entry in std::fs::read_dir(dir).expect("read examples dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("phc") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("read example");
+        // Only examples with an entry point can produce a binary.
+        if !src.contains("function main") {
+            continue;
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
+        let output = output_path(&format!("example_{stem}"));
+        let result = build_file(&path, &output);
+        assert!(
+            result.errors.is_empty() && result.ok(),
+            "example {} failed to build: {:?}",
+            path.display(),
+            result.errors
+        );
+        built += 1;
+    }
+    assert!(
+        built >= 6,
+        "expected to build several examples, built {built}"
+    );
+}
+
 /// Build + run a synthesised .phc that exercises arithmetic,
 /// control flow, function arguments, and string interpolation —
 /// the full C2 surface. Writes the source to a scratch file to
@@ -148,6 +190,65 @@ function main(): void {
             "classify(-3) -> negative",
         ]
     );
+}
+
+/// Build + run a program that mutates through a `&flip` (mutable)
+/// borrow. Verifies the write-back is observable in the caller:
+/// `bump` increments a primitive through the borrow, `addTo` targets
+/// a class field's lvalue (`&flip $box->n`), and `twice` chains the
+/// borrow through a second call. Without `&flip` write-back the
+/// compiled binary would print the un-mutated values.
+#[test]
+fn build_and_run_flip_borrow_write_back() {
+    if !cc_available() {
+        eprintln!("skipping build_and_run_flip_borrow_write_back: no C compiler on PATH");
+        return;
+    }
+    let src = r#"pack demo;
+
+public class Box { construct(public flip int $n) {} }
+
+function bump(&flip int $c): void { $c := $c + 1; }
+
+function twice(&flip int $c): void {
+    bump(&flip $c);
+    bump(&flip $c);
+}
+
+function main(): void {
+    flip int $x = 1;
+    bump(&flip $x);
+    Logger::info("x is {$x}");
+    twice(&flip $x);
+    Logger::info("x is {$x}");
+    flip Box $box = Box(100);
+    bump(&flip $box->n);
+    Logger::info("box.n is {$box->n}");
+}
+"#;
+    let mut src_path = PathBuf::from("target");
+    src_path.push("phc-build-test");
+    std::fs::create_dir_all(&src_path).expect("create test source dir");
+    src_path.push("flip_borrow.phc");
+    std::fs::write(&src_path, src).expect("write test source");
+
+    let output = output_path("flip_borrow");
+    let result = build_file(&src_path, &output);
+    assert!(
+        result.errors.is_empty(),
+        "build errors: {:?}",
+        result.errors
+    );
+    assert!(result.ok());
+
+    let run = match run_or_skip_on_av(&output, "binary spawn") {
+        Some(r) => r,
+        None => return,
+    };
+    assert!(run.status.success(), "binary exited non-zero");
+    let stdout = String::from_utf8(run.stdout).expect("stdout is utf-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines, vec!["x is 2", "x is 4", "box.n is 101"]);
 }
 
 /// Build + run a Result/Option program. Exercises result::ok,

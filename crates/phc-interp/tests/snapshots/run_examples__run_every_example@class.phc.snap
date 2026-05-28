@@ -1,8 +1,12 @@
 ---
 source: crates/phc-interp/tests/run_examples.rs
+assertion_line: 61
 expression: rendered
 input_file: examples/class.phc
 ---
+=== stdout ===
+Hi, Ada (36)
+logins = 2
 
-=== errors ===
-no `main` function defined in this source file
+=== result ===
+void

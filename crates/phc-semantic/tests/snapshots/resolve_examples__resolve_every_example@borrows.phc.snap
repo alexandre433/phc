@@ -1,13 +1,20 @@
 ---
 source: crates/phc-semantic/tests/resolve_examples.rs
+assertion_line: 65
 expression: rendered
 input_file: examples/borrows.phc
 ---
 === top level ===
-SymbolId(1)  Function  bump  (111..115)
-SymbolId(0)  Function  read  (40..44)
+SymbolId(0)  Class  User  (37..41)
+SymbolId(3)  Function  bump  (303..307)
+SymbolId(4)  Function  main  (378..382)
+SymbolId(2)  Function  read  (166..170)
 
 === uses ===
-  79..84   -> SymbolId(2)  Value  user
- 148..156  -> SymbolId(3)  Value  counter
- 160..168  -> SymbolId(3)  Value  counter
+ 205..210  -> SymbolId(7)  Value  user
+ 340..348  -> SymbolId(8)  Value  counter
+ 352..360  -> SymbolId(8)  Value  counter
+ 443..445  -> SymbolId(9)  Value  u
+ 489..494  -> SymbolId(10)  Value  hits
+ 512..517  -> SymbolId(10)  Value  hits
+ 546..551  -> SymbolId(10)  Value  hits

@@ -11,15 +11,24 @@ public class User implements Greet {
 
     construct(
         public string $name,
-        int $age,
-    ) {
-        $this->createdAt = instant::now();
-    }
+        public int $age,
+    ) {}
 
-    instant $createdAt;
     flip int $loginCount = 0;
 
     public function greet(): string {
-        return "Hi, {$this->name}";
+        return "Hi, {$this->name} ({$this->age})";
     }
+
+    public function recordLogin(): void {
+        $this->loginCount := $this->loginCount + 1;
+    }
+}
+
+function main(): void {
+    User $u = User("Ada", 36);
+    $u->log();
+    $u->recordLogin();
+    $u->recordLogin();
+    Logger::info("logins = {$u->loginCount}");
 }

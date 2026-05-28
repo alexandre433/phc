@@ -21,7 +21,7 @@ Pre-Phase-2 corpus (lifted from `spec/language-reference.md`):
 | `hello.phc` | Minimal `main()` + `Logger::info`. |
 | `bindings.phc` | Immutable + `flip` locals, `:=` reassignment. |
 | `borrows.phc` | `&name` shared + `&flip name` mutable borrows. |
-| `class.phc` | Class + constructor + traits + property hooks. |
+| `class.phc` | Class + constructor + interface + trait mixin + `flip` field. |
 | `match.phc` | `match` expression with enum exhaustiveness. |
 | `result.phc` | `result<T, E>` with postfix `?` propagation. |
 | `async.phc` | `async function` + `await` skeleton. |

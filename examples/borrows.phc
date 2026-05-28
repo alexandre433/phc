@@ -1,9 +1,25 @@
 pack examples.borrows;
 
+public class User {
+    construct(public string $name) {}
+}
+
+// Shared borrow: `read` may observe the user but not mutate it.
 public function read(&User $user): string {
     return $user->name;
 }
 
+// Mutable borrow: `bump` writes through to the caller's binding.
 public function bump(&flip int $counter): void {
     $counter := $counter + 1;
+}
+
+function main(): void {
+    User $u = User("Ada");
+    Logger::info(read(&$u));
+
+    flip int $hits = 0;
+    bump(&flip $hits);
+    bump(&flip $hits);
+    Logger::info("hits = {$hits}");
 }
