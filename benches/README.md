@@ -1,7 +1,7 @@
 # PHC benchmarks
 
 CPU-bound microbenchmarks comparing `phc build` output against
-handwritten C, PHP, and CPython.
+handwritten C, Rust, Go, PHP, and CPython.
 
 ## How to run
 
@@ -9,65 +9,87 @@ handwritten C, PHP, and CPython.
 benches/run.sh
 ```
 
-Each bench directory holds parallel `.phc`, `.c`, `.php`, and `.py`
-sources for the same algorithm. The script builds the C and PHC
-versions (both via `cc -O2`), then runs each language three times
-and reports the best wall-clock per runtime.
+Each bench directory holds parallel `.phc`, `.c`, `.rs`, `.go`, `.php`,
+and `.py` sources for the same algorithm. The script builds the C
+(`cc -O2`), PHC (`phc build`), Rust (`rustc -O`), and Go (`go build`)
+versions, then runs each available runtime three times and reports the
+best wall-clock per runtime. Rust and Go are skipped automatically if
+`rustc` / `go` are not on `PATH`. A bench that needs a runtime-supplied
+input ships an `input.txt`, which is piped to every runtime's stdin.
 
 ## Methodology
 
 - PHC pipeline: `phc build` lexes → parses → typechecks → emits C →
   invokes `cc -std=c11 -O2`. The reference C version is compiled with
-  the same flags so the comparison reflects what the PHC front-end
+  the same flags, so the comparison reflects what the PHC front-end
   adds to a vanilla C build, not differences in the C compiler.
-- PHP is whichever `php` the shell finds. Recent runs used 8.4.19.
-- Python is `python3`. Recent runs used CPython 3.11.15.
+- Rust is `rustc -O`; Go is `go build`. Both are native AOT peers and
+  are the credible comparison for the "C speed + Rust safety" pitch —
+  beating only the interpreters (PHP/Python) proves little.
+- PHP is whichever `php` the shell finds; Python is `python3`.
 - Three runs per language; the best wall-clock is reported. Times
-  include process startup. Loops are picked large enough (≥10ms) that
-  startup overhead doesn't dominate.
+  include process startup.
+- **No loop elision.** Every bench observes its result (prints the
+  computed value), so an optimizing compiler can't dead-code-eliminate
+  the work. `class_dispatch` additionally reads its loop count from
+  stdin and marks the dispatched method non-inlinable in every language
+  (`@noinline` in PHC per D-052, `__attribute__((noinline))` in C,
+  `#[inline(never)]` in Rust, `//go:noinline` in Go) — otherwise gcc's
+  induction-variable pass collapses the whole loop to `value = count`
+  and the benchmark measures nothing. See "Caveats" below.
 
-## Sample results (Windows, release, GCC)
+## Sample results (Windows, release, GCC/rustc)
 
-Recorded on a Windows 11 host (development machine). PHC baselines
-measured 2026-05-26 after the qsort upgrade (D-045 sort now uses stdlib
-qsort via `phc_list_sort_i64`).
+Best-of-3 wall-clock on a Windows 11 host, measured 2026-05-29. These
+include ~60 ms of process-startup overhead, which is a large fraction
+of the faster benches on Windows — run on Linux (startup ≈ 1 ms) for
+clean small-bench numbers. Go omitted (not installed on this host).
 
-| Benchmark      | PHC  | Notes                                              |
-| -------------- | ---- | -------------------------------------------------- |
-| fib(35)        | 136ms | Recursive Fibonacci, no allocation                |
-| sum_sq 1e8     | 143ms | Integer loop, tight arithmetic                    |
-| list_ops 100K  | 31ms  | 100K element list creation + qsort + fold         |
-| class_dispatch 10M | 65ms | 10M method calls through OOP dispatch         |
+| Benchmark          | C     | PHC   | Rust  | PHP    | Python  | Notes                                          |
+| ------------------ | ----- | ----- | ----- | ------ | ------- | ---------------------------------------------- |
+| fib(35)            | 63ms  | 62ms  | 68ms  | 1318ms | 1476ms  | Recursive Fibonacci, no allocation             |
+| sum_sq 1e8         | 79ms  | 78ms  | 48ms  | 1724ms | 11325ms | Integer loop, tight arithmetic                 |
+| list_ops 100K      | 50ms  | 53ms  | 49ms  | 111ms  | 173ms   | 100K list build + qsort + fold-sum             |
+| class_dispatch 10M | 65ms  | 58ms  | 61ms  | 503ms  | 948ms   | 10M genuine `@noinline` method dispatches      |
 
-Linux cloud-container numbers (C / PHP / Python comparison):
-
-| Benchmark      | C    | PHC  | PHP   | Python | Notes                                              |
-| -------------- | ---- | ---- | ----- | ------ | -------------------------------------------------- |
-| fib(35)        | 21ms | 21ms | 589ms | 1.2s   | Recursive Fibonacci, no allocation                 |
-| sum_sq 1e8     | 64ms | 58ms | 849ms | 9.3s   | Integer loop, tight arithmetic                     |
-| list_ops 100K  | ??ms | ??ms | ??ms  | ??ms   | 100K element list creation + closure sort + fold   |
-| class_dispatch | ??ms | ??ms | ??ms  | ??ms   | 10M method calls through OOP dispatch              |
-
-For `fib` and `sum_sq`, `objdump -d` shows the PHC and C binaries reach
-identical hot-loop machine code (same five instructions for the
-`sum_sq` inner loop). The `phc` front-end is zero-cost on these
-shapes — once gcc -O2 sees the emitted C, the abstraction
-disappears.
-
-`list_ops` and `class_dispatch` exercise allocation, closure calls, and
-method dispatch — areas where PHC's runtime overhead will be visible
-until the CoW + refcount story (D-022) lands.
+PHC tracks C within noise on every bench; the compiled peers (C, PHC,
+Rust) cluster together while the interpreters trail by 8–150×. For
+`fib` and `sum_sq`, `objdump -d` shows the PHC and C binaries reach
+identical hot-loop machine code — the `phc` front-end is zero-cost on
+these shapes once gcc -O2 sees the emitted C. For `class_dispatch`,
+`objdump` confirms both the C and PHC binaries emit a real `call` to
+the (noinline) increment method inside the loop, so all four compiled
+languages are measured doing the same 10M genuine dispatches.
 
 ## Caveats
 
-- Microbenchmarks only. None of these exercise allocation,
-  collections, or class dispatch — those will not be at C parity
-  until the runtime's CoW + refcount story (D-022) lands.
-- No async or I/O benches yet — async codegen is still a panic stub
-  in the compiled backend.
-- Signed-overflow UB in the `sum_sq` benches: 1e8 × 1e8 squared
-  sums overflow i64. Both PHC and C versions overflow the same
-  way and produce the same (garbage) sum, so the comparison is
-  fair, but the printed number isn't a real total.
+- Microbenchmarks only — four CPU-bound shapes, not a representative
+  suite. They do not exercise maps/sets, string-heavy work, async, or
+  I/O. Collection-mutation throughput will not be at C parity until the
+  runtime's CoW + refcount story (D-022) lands.
+- No async or I/O benches yet — async codegen is still a panic stub in
+  the compiled backend.
+- **Signed-overflow in `sum_sq`**: 1e8 i*i squared sums overflow i64.
+  The compiled languages (C, PHC, Rust, Go) all wrap two's-complement
+  and print the *same* value (`662921401752298880`), so their
+  comparison is fair. PHP and Python promote to arbitrary precision and
+  print the true sum — a different number by design; their `sum_sq`
+  output is not expected to match the compiled set.
+- **`class_dispatch` requires `@noinline` to be honest.** With a trivial
+  inlinable `value++`, gcc's induction-variable pass collapses the loop
+  to `value = count` and constant-folds it — for both handwritten C and
+  PHC-emitted C — making the benchmark measure process startup, not
+  dispatch. A runtime-sourced loop count does not defeat this; only
+  hiding the callee body does. The non-inline pragmas (D-052 for PHC)
+  force a genuine call per iteration in all four compiled languages.
 - `list_ops` sort uses `phc_list_sort_i64` backed by stdlib `qsort`.
   The thread-local lambda trick is safe until async/parallel lands.
+- **Rust `sum_sq` auto-vectorizes**: `objdump` shows LLVM emits an
+  SSE2 `paddq` accumulation loop, so Rust's number reflects a
+  SIMD-vectorized loop, not the scalar one C/PHC run. It's a real loop
+  (verified it scales with iteration count), just not like-for-like
+  scalar. `class_dispatch` was verified honest for every compiled
+  language by differential timing (the loop scales linearly with the
+  stdin count) and by `objdump` (C and PHC emit a surviving `call`).
+- Go is skipped unless `go` is installed; the table above was measured
+  without it.

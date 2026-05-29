@@ -9,5 +9,5 @@ function main(): void {
     }
     list<int> $sorted = $xs->sort((int $a, int $b) => $a - $b);
     int $sum = $sorted->fold(0, (int $acc, int $x) => $acc + $x);
-    Logger::info("done");
+    Logger::info("sum = {$sum}");
 }

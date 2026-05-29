@@ -17,6 +17,6 @@ int main(void) {
     int64_t sum = 0;
     for (int64_t i = 0; i < N; i++) sum += xs[i];
     free(xs);
-    puts("done");
+    printf("sum = %lld\n", (long long)sum);
     return 0;
 }

@@ -1,5 +1,10 @@
 pack bench;
 
+// Real method-dispatch throughput. The loop count is read from stdin
+// so no compiler can constant-fold the loop, and `inc` is marked
+// `@noinline` (D-052) so gcc emits a genuine call per iteration
+// instead of inlining + collapsing it to `value = count`. The peer
+// C/Rust/Go sources use their own noinline pragmas for parity.
 public class Counter {
     flip int $value = 0;
 
@@ -7,7 +12,7 @@ public class Counter {
         $this->value := $start;
     }
 
-    public function inc(): void {
+    @noinline public function inc(): void {
         $this->value := $this->value + 1;
     }
 
@@ -17,11 +22,13 @@ public class Counter {
 }
 
 function main(): void {
+    int $count = int::parse(io::readLine()->unwrapOr("0"))->unwrapOr(0);
     Counter $c = Counter(0);
     flip int $i = 0;
-    while ($i < 10000000) {
+    while ($i < $count) {
         $c->inc();
         $i := $i + 1;
     }
-    Logger::info("done");
+    int $r = $c->get();
+    io::println("counter = {$r}");
 }
