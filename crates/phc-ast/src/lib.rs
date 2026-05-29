@@ -229,9 +229,19 @@ pub struct TestDecl {
     pub span: Span,
 }
 
-/// `[public] [async] function name<T>(p1, p2): RetType { ... }`.
+/// `@name` attribute on a declaration (D-052). v0 recognises only
+/// `@noinline`; the parser rejects any other name with a diagnostic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribute {
+    pub name: Ident,
+    pub span: Span,
+}
+
+/// `[@attr...] [public] [async] function name<T>(p1, p2): RetType { ... }`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDecl {
+    /// Leading `@name` attributes (D-052), in source order.
+    pub attributes: Vec<Attribute>,
     pub visibility: Visibility,
     pub is_async: bool,
     pub name: Ident,

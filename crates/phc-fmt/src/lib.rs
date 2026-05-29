@@ -209,7 +209,8 @@ fn needs_space(prev: &Token, current: &Token) -> bool {
     }
     // `&` hugs the operand identifier in borrow expressions.
     // `$` hugs the identifier in `$name` references (D-023 sigil).
-    if matches!(prev, Amp | Dollar) {
+    // `@` hugs the attribute name in `@noinline` (D-052).
+    if matches!(prev, Amp | Dollar | At) {
         return false;
     }
     // After `<` / before `>`: no space inserted. Comparisons stay

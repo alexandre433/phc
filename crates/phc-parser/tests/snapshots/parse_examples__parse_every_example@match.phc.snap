@@ -192,6 +192,7 @@ SourceFile {
         ),
         Function(
             FunctionDecl {
+                attributes: [],
                 visibility: Public,
                 is_async: false,
                 name: Ident {

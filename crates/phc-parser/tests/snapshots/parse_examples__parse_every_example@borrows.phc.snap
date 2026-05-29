@@ -1,6 +1,5 @@
 ---
 source: crates/phc-parser/tests/parse_examples.rs
-assertion_line: 41
 expression: rendered
 input_file: examples/borrows.phc
 ---
@@ -145,6 +144,7 @@ SourceFile {
         ),
         Function(
             FunctionDecl {
+                attributes: [],
                 visibility: Public,
                 is_async: false,
                 name: Ident {
@@ -301,6 +301,7 @@ SourceFile {
         ),
         Function(
             FunctionDecl {
+                attributes: [],
                 visibility: Public,
                 is_async: false,
                 name: Ident {
@@ -475,6 +476,7 @@ SourceFile {
         ),
         Function(
             FunctionDecl {
+                attributes: [],
                 visibility: Default,
                 is_async: false,
                 name: Ident {

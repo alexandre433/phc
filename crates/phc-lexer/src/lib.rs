@@ -410,6 +410,9 @@ pub enum Token {
     /// Variable / parameter / field sigil; precedes every `$name`.
     #[token("$")]
     Dollar,
+    /// Attribute sigil; heads a `@name` declaration attribute (D-052).
+    #[token("@")]
+    At,
     /// Instance member access.
     #[token("->")]
     Arrow,
@@ -947,8 +950,8 @@ mod tests {
 
     #[test]
     fn unknown_byte_yields_error_span_then_resumes() {
-        // The `@` is not part of the v0 lexical vocabulary.
-        let mut lexer = Lexer::new("function @ return", FileId(0));
+        // The backtick is not part of the v0 lexical vocabulary.
+        let mut lexer = Lexer::new("function ` return", FileId(0));
         assert!(matches!(
             lexer.next(),
             Some(Ok(Spanned {

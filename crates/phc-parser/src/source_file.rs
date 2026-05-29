@@ -71,6 +71,10 @@ pub(crate) fn parse_source_file(cursor: &mut Cursor<'_>) -> Option<SourceFile> {
 /// in P6.
 fn parse_item(cursor: &mut Cursor<'_>) -> Option<Item> {
     let mut offset = 0;
+    // Skip leading `@name` attributes (D-052) to reach the item keyword.
+    while matches!(cursor.peek_at(offset).map(|s| &s.token), Some(Token::At)) {
+        offset += 2; // `@` + name
+    }
     if matches!(
         cursor.peek_at(offset).map(|s| &s.token),
         Some(Token::Public)

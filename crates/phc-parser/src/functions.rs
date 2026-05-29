@@ -17,7 +17,7 @@
 //! `{}` body is accepted in this commit. Anything else surfaces a
 //! diagnostic and the parser recovers to the closing `}`.
 
-use phc_ast::{Borrow, FunctionDecl, Ident, Param, Visibility};
+use phc_ast::{Attribute, Borrow, FunctionDecl, Ident, Param, Visibility};
 use phc_lexer::Token;
 use phc_span::Span;
 
@@ -29,6 +29,7 @@ use crate::Cursor;
 /// first relevant token (`public`, `async`, or `function`).
 pub(crate) fn parse_function_decl(cursor: &mut Cursor<'_>) -> Option<FunctionDecl> {
     let start_span = cursor.current_span();
+    let attributes = parse_attributes(cursor);
     let visibility = if cursor.eat(&Token::Public).is_some() {
         Visibility::Public
     } else {
@@ -48,6 +49,7 @@ pub(crate) fn parse_function_decl(cursor: &mut Cursor<'_>) -> Option<FunctionDec
     let body = parse_block(cursor)?;
     let end = body.span.hi;
     Some(FunctionDecl {
+        attributes,
         visibility,
         is_async,
         name,
@@ -57,6 +59,32 @@ pub(crate) fn parse_function_decl(cursor: &mut Cursor<'_>) -> Option<FunctionDec
         body,
         span: Span::new(cursor.file(), start_span.lo, end),
     })
+}
+
+/// Parse leading `@name` declaration attributes (D-052). v0 accepts
+/// only `@noinline`; any other name surfaces a diagnostic but is
+/// still recorded so recovery continues past it.
+pub(crate) fn parse_attributes(cursor: &mut Cursor<'_>) -> Vec<Attribute> {
+    let mut attributes = Vec::new();
+    while matches!(cursor.peek_token(), Some(Token::At)) {
+        let at_span = cursor.current_span();
+        cursor.advance(); // consume `@`
+        let Some(name) = expect_ident(cursor, "attribute name after `@`") else {
+            break;
+        };
+        let span = Span::new(cursor.file(), at_span.lo, name.span.hi);
+        if name.name != "noinline" {
+            cursor.error(
+                span,
+                format!(
+                    "unknown attribute `@{}`; v0 supports only `@noinline`",
+                    name.name
+                ),
+            );
+        }
+        attributes.push(Attribute { name, span });
+    }
+    attributes
 }
 
 fn parse_param_list(cursor: &mut Cursor<'_>) -> Option<Vec<Param>> {
@@ -167,6 +195,31 @@ mod tests {
         let f = parse_ok("public async function fetch(): void {}");
         assert_eq!(f.visibility, Visibility::Public);
         assert!(f.is_async);
+    }
+
+    #[test]
+    fn noinline_attribute_before_modifiers() {
+        let f = parse_ok("@noinline public function inc(): void {}");
+        assert_eq!(f.attributes.len(), 1);
+        assert_eq!(f.attributes[0].name.name, "noinline");
+        assert_eq!(f.visibility, Visibility::Public);
+        assert_eq!(f.name.name, "inc");
+    }
+
+    #[test]
+    fn function_without_attributes_has_empty_list() {
+        let f = parse_ok("function main(): void {}");
+        assert!(f.attributes.is_empty());
+    }
+
+    #[test]
+    fn unknown_attribute_is_an_error() {
+        let (decl, diags) = parse("@inline function f(): void {}");
+        // Still parses the decl (recovery), but flags the bad name.
+        assert!(decl.is_some());
+        assert!(diags
+            .iter()
+            .any(|d| d.message.contains("unknown attribute `@inline`")));
     }
 
     #[test]

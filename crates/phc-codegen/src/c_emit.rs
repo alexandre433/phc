@@ -341,7 +341,13 @@ impl<'a> Emitter<'a> {
         } else {
             params.join(", ")
         };
-        format!("static {} phc_{}({})", return_c, f.name.name, param_list)
+        format!(
+            "static {}{} phc_{}({})",
+            noinline_attr(f),
+            return_c,
+            f.name.name,
+            param_list
+        )
     }
 
     /// Method signature: `static <ret> phc_method_<Class>_<name>(
@@ -353,7 +359,8 @@ impl<'a> Emitter<'a> {
             params.push(self.c_param(p));
         }
         format!(
-            "static {} phc_method_{class}_{}({})",
+            "static {}{} phc_method_{class}_{}({})",
+            noinline_attr(m),
             return_c,
             m.name.name,
             params.join(", ")
@@ -3016,6 +3023,18 @@ fn find_trait<'a>(file: &'a SourceFile, name: &str) -> Option<&'a TraitDecl> {
 
 fn mangle(name: &str) -> String {
     name.replace('-', "_")
+}
+
+/// C attribute prefix for a function/method carrying `@noinline`
+/// (D-052). Emitted between `static` and the return type so gcc keeps
+/// the call instead of inlining + constant-folding the body. Empty
+/// when the attribute is absent.
+fn noinline_attr(f: &FunctionDecl) -> &'static str {
+    if f.attributes.iter().any(|a| a.name.name == "noinline") {
+        "__attribute__((noinline)) "
+    } else {
+        ""
+    }
 }
 
 /// Render a Rust string as a C string literal: wrap in `"..."` and

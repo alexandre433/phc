@@ -618,3 +618,41 @@ fn forward_decls_let_main_call_helper_declared_later() {
     assert!(main_decl_pos < first_body_pos);
     assert!(helper_decl_pos < first_body_pos);
 }
+
+#[test]
+fn noinline_attribute_emits_gcc_attribute_on_function() {
+    let src = r#"pack a;
+        @noinline function step(int $x): int { return ($x + 1); }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("static __attribute__((noinline)) int64_t phc_step(int64_t phc_var_x)"),
+        "noinline attribute missing on free function:\n{c}"
+    );
+}
+
+#[test]
+fn noinline_attribute_emits_gcc_attribute_on_method() {
+    let src = r#"pack a;
+        public class Counter {
+            flip int $value = 0;
+            construct(int $start) { $this->value := $start; }
+            @noinline public function inc(): void { $this->value := $this->value + 1; }
+        }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(
+        c.contains("static __attribute__((noinline)) void phc_method_Counter_inc("),
+        "noinline attribute missing on method:\n{c}"
+    );
+}
+
+#[test]
+fn function_without_noinline_has_no_attribute() {
+    let src = r#"pack a;
+        function step(int $x): int { return ($x + 1); }
+        function main(): void {}"#;
+    let c = emit_for(src);
+    assert!(c.contains("static int64_t phc_step(int64_t phc_var_x)"));
+    assert!(!c.contains("__attribute__((noinline))"));
+}

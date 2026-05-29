@@ -148,6 +148,13 @@ fn parse_trait_use(cursor: &mut Cursor<'_>) -> Option<TraitUse> {
 /// `async`/`function` (method).
 fn parse_field_or_method(cursor: &mut Cursor<'_>) -> Option<ClassMember> {
     let mut offset = 0;
+    // Leading `@name` attributes (D-052) only attach to methods, so
+    // their presence forces the method path regardless of what follows.
+    let mut has_attr = false;
+    while matches!(cursor.peek_at(offset).map(|s| &s.token), Some(Token::At)) {
+        has_attr = true;
+        offset += 2; // `@` + name
+    }
     if matches!(
         cursor.peek_at(offset).map(|s| &s.token),
         Some(Token::Public)
@@ -159,6 +166,7 @@ fn parse_field_or_method(cursor: &mut Cursor<'_>) -> Option<ClassMember> {
     }
     match cursor.peek_at(offset).map(|s| &s.token) {
         Some(Token::Function) => parse_function_decl(cursor).map(ClassMember::Method),
+        _ if has_attr => parse_function_decl(cursor).map(ClassMember::Method),
         _ => parse_field_decl(cursor).map(ClassMember::Field),
     }
 }
@@ -271,7 +279,8 @@ fn recover_inside_class(cursor: &mut Cursor<'_>) {
             | Token::Use
             | Token::Function
             | Token::Public
-            | Token::Async => return,
+            | Token::Async
+            | Token::At => return,
             _ => {
                 cursor.advance();
             }

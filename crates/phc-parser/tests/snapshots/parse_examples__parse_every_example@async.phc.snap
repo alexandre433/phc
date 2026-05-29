@@ -49,6 +49,7 @@ SourceFile {
     items: [
         Function(
             FunctionDecl {
+                attributes: [],
                 visibility: Default,
                 is_async: true,
                 name: Ident {
@@ -294,6 +295,7 @@ SourceFile {
         ),
         Function(
             FunctionDecl {
+                attributes: [],
                 visibility: Public,
                 is_async: true,
                 name: Ident {
