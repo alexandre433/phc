@@ -141,6 +141,10 @@ pub fn build_file(input: &Path, output: &Path) -> BuildResult {
         .arg(output)
         .arg(&program_c)
         .arg(&runtime_c)
+        // libm: phc_runtime.c uses sqrt/pow/round; Linux needs -lm
+        // explicit (mingw/macOS link it implicitly but accept the flag).
+        // Library args go after the sources so the linker resolves them.
+        .arg("-lm")
         .output();
 
     match status {
@@ -276,6 +280,8 @@ fn invoke_cc(scratch: &Path, c_source: &str, output: &Path) -> Result<(), String
         .arg(output)
         .arg(&program_c)
         .arg(&runtime_c)
+        // libm: see the build() path above — Linux needs -lm explicit.
+        .arg("-lm")
         .output()
         .map_err(|e| format!("failed to invoke `{cc}`: {e}"))?;
     if !status.status.success() {
