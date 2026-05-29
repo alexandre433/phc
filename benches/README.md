@@ -38,22 +38,23 @@ input ships an `input.txt`, which is piped to every runtime's stdin.
   induction-variable pass collapses the whole loop to `value = count`
   and the benchmark measures nothing. See "Caveats" below.
 
-## Sample results (Windows, release, GCC/rustc)
+## Sample results (Windows, release, GCC/rustc/go)
 
-Best-of-3 wall-clock on a Windows 11 host, measured 2026-05-29. These
-include ~60 ms of process-startup overhead, which is a large fraction
-of the faster benches on Windows — run on Linux (startup ≈ 1 ms) for
-clean small-bench numbers. Go omitted (not installed on this host).
+Best-of-5 wall-clock on a Windows 11 host, measured 2026-05-29 in a
+single pass so the columns are mutually consistent. These include
+~60 ms of process-startup overhead, which is a large fraction of the
+faster benches on Windows — run on Linux (startup ≈ 1 ms) for clean
+small-bench numbers.
 
-| Benchmark          | C     | PHC   | Rust  | PHP    | Python  | Notes                                          |
-| ------------------ | ----- | ----- | ----- | ------ | ------- | ---------------------------------------------- |
-| fib(35)            | 63ms  | 62ms  | 68ms  | 1318ms | 1476ms  | Recursive Fibonacci, no allocation             |
-| sum_sq 1e8         | 79ms  | 78ms  | 48ms  | 1724ms | 11325ms | Integer loop, tight arithmetic                 |
-| list_ops 100K      | 50ms  | 53ms  | 49ms  | 111ms  | 173ms   | 100K list build + qsort + fold-sum             |
-| class_dispatch 10M | 65ms  | 58ms  | 61ms  | 503ms  | 948ms   | 10M genuine `@noinline` method dispatches      |
+| Benchmark          | C    | PHC  | Rust | Go   | PHP    | Python  | Notes                                     |
+| ------------------ | ---- | ---- | ---- | ---- | ------ | ------- | ----------------------------------------- |
+| fib(35)            | 68ms | 67ms | 71ms | 88ms | 1360ms | 1447ms  | Recursive Fibonacci, no allocation        |
+| sum_sq 1e8         | 86ms | 85ms | 54ms | 90ms | 1790ms | 10511ms | Integer loop, tight arithmetic            |
+| list_ops 100K      | 53ms | 55ms | 50ms | 53ms | 111ms  | 171ms   | 100K list build + qsort + fold-sum        |
+| class_dispatch 10M | 69ms | 61ms | 63ms | 66ms | 518ms  | 977ms   | 10M genuine `@noinline` method dispatches |
 
 PHC tracks C within noise on every bench; the compiled peers (C, PHC,
-Rust) cluster together while the interpreters trail by 8–150×. For
+Rust, Go) cluster together while the interpreters trail by 8–120×. For
 `fib` and `sum_sq`, `objdump -d` shows the PHC and C binaries reach
 identical hot-loop machine code — the `phc` front-end is zero-cost on
 these shapes once gcc -O2 sees the emitted C. For `class_dispatch`,
@@ -89,7 +90,8 @@ languages are measured doing the same 10M genuine dispatches.
   SIMD-vectorized loop, not the scalar one C/PHC run. It's a real loop
   (verified it scales with iteration count), just not like-for-like
   scalar. `class_dispatch` was verified honest for every compiled
-  language by differential timing (the loop scales linearly with the
-  stdin count) and by `objdump` (C and PHC emit a surviving `call`).
-- Go is skipped unless `go` is installed; the table above was measured
-  without it.
+  language (C, PHC, Rust, Go) by differential timing — the loop scales
+  linearly with the stdin count (10M→2000M ≈ 200×) — and, for C and
+  PHC, by `objdump` showing a surviving `call` to the increment method.
+- `run.sh` skips Rust / Go when `rustc` / `go` are absent. The table
+  above was measured with all six (go1.26.3, rustc 1.95).
