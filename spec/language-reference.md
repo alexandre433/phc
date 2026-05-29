@@ -206,6 +206,7 @@ Blocks (`{ ... }`) group statements. They are not expressions — except `match`
 - The body is a `{}` block of statements terminated by `;`.
 - `return <expr>;` yields a value. There is no implicit last-expression return.
 - `async function` marks an asynchronous function; the body may use `await`.
+- `@noinline` (D-052) before a function or method forces the compiler to emit a real call instead of inlining the body. It is a codegen-only hint — a no-op in the interpreter, with no effect on types or semantics. v0 recognises only `@noinline`; any other `@name` is an error. Attributes precede the `public` / `async` modifiers.
 
 ```phc
 public function add(int $a, int $b): int {
@@ -214,6 +215,10 @@ public function add(int $a, int $b): int {
 
 async function fetch(string $url): result<bytes, HttpError> {
     // ...
+}
+
+@noinline public function step(): void {
+    // emitted as a genuine call — never inlined away
 }
 ```
 

@@ -63,6 +63,7 @@ These spell out as ordinary identifiers everywhere except in specific grammar po
 | `->`  | Instance member access (fields, methods, property hooks). |
 | `::`  | Static access (enum variants, static methods, class constants). |
 | `.`   | Path separator only (pack paths, namespaced type references). |
+| `@`   | Declaration-attribute sigil; heads `@name` (D-052). v0 recognises only `@noinline`. |
 
 ## Reserved-but-pending
 

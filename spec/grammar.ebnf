@@ -156,8 +156,9 @@ MemberAssignLhs = VarRef Arrow Identifier { Arrow Identifier } ;
 
 (* ===== Declarations ===== *)
 
-(* Function declaration (D-009 + D-023) *)
-FunctionDecl    = Visibility [ "async" ] "function" Identifier [ GenericParams ] "(" [ ParamList ] ")" ":" Type Block ;
+(* Function declaration (D-009 + D-023 + D-052 attributes) *)
+FunctionDecl    = { Attribute } Visibility [ "async" ] "function" Identifier [ GenericParams ] "(" [ ParamList ] ")" ":" Type Block ;
+Attribute       = "@" Identifier ;   (* D-052: v0 recognises only `@noinline` *)
 ParamList       = Param { "," Param } [ "," ] ;
 Param           = [ BorrowMod ] Type VarRef ;
 BorrowMod       = "&" | "&" "flip" ;

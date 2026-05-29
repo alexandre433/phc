@@ -14,6 +14,7 @@ Canonical precedence/associativity table. Grows as expression syntax lands.
 | `::`     | Static / type-level access | D-023. `Status::Ok`, `User::new()`. |
 | `.`      | Path separator only — pack paths, namespaced types | D-023. Never a member-access operator. |
 | `$`      | Leading sigil on every variable, parameter, and field reference | D-023. |
+| `@`      | Declaration-attribute sigil; heads `@name` on a function/method | D-052. v0 recognises only `@noinline` (codegen hint). |
 
 ## Banned
 
